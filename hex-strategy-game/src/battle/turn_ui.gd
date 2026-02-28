@@ -125,13 +125,42 @@ func _update_hovered_tile_resource() -> void:
 		hovered_tile_label.text = "Hover: out of map"
 		return
 	var info: Dictionary = _hex_map_node.get_resource_info_at_cell(cell_i)
+	var lines: Array[String] = [_build_hovered_resource_line(cell_i, info)]
+	var units_at_cell: Array = _get_visible_units_at_hovered_cell(cell_i)
+	if units_at_cell.is_empty():
+		lines.append("Units: none")
+	else:
+		lines.append("Units (%d):" % units_at_cell.size())
+		for unit in units_at_cell:
+			lines.append("- %s" % _format_hovered_unit_line(unit))
+	hovered_tile_label.text = "\n".join(lines)
+
+func _build_hovered_resource_line(cell_i: Vector2i, info: Dictionary) -> String:
 	if info.is_empty():
-		hovered_tile_label.text = "Hover [%d,%d]: no resource" % [cell_i.x, cell_i.y]
-		return
+		return "Hover [%d,%d]: no resource" % [cell_i.x, cell_i.y]
 	var rtype: String = str(info.get("resource_type", "resource"))
 	var amount: int = int(info.get("amount", 0))
 	var max_amount: int = int(info.get("max_amount", 0))
 	if rtype == "people":
-		hovered_tile_label.text = "Hover [%d,%d]: village people %d/%d" % [cell_i.x, cell_i.y, amount, max_amount]
-	else:
-		hovered_tile_label.text = "Hover [%d,%d]: %s %d/%d" % [cell_i.x, cell_i.y, rtype, amount, max_amount]
+		return "Hover [%d,%d]: village people %d/%d" % [cell_i.x, cell_i.y, amount, max_amount]
+	return "Hover [%d,%d]: %s %d/%d" % [cell_i.x, cell_i.y, rtype, amount, max_amount]
+
+func _get_visible_units_at_hovered_cell(cell_i: Vector2i) -> Array:
+	var result: Array = []
+	if _units_node == null:
+		return result
+	var all_units: Array[Unit] = _units_node.get_all_units()
+	for unit in all_units:
+		if not is_instance_valid(unit) or not unit.is_active or not unit.visible:
+			continue
+		var unit_cell := unit.cell
+		if int(unit_cell.x) == cell_i.x and int(unit_cell.y) == cell_i.y:
+			result.append(unit)
+	return result
+
+func _format_hovered_unit_line(unit: Unit) -> String:
+	var unit_name: String = unit.def.name if unit.def else "Unit"
+	var group_name: String = unit.get_parent().name if unit.get_parent() else "?"
+	var energy_now: int = unit.energy if unit.max_energy > 0 else 0
+	var energy_max: int = unit.max_energy if unit.max_energy > 0 else 0
+	return "[%s] %s HP %d/%d E %d/%d" % [group_name, unit_name, unit.health, unit.max_health, energy_now, energy_max]
