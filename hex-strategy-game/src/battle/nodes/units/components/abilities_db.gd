@@ -23,9 +23,11 @@ func get_options_for_action_key(action_key: String) -> Array:
 			result.append({"ac": ac, "is_move": true})
 		return _filter_acs_and_wrap(result)
 	if action_key in unit.def.ability_action_keys:
-		if Actions.get_action_type(action_key) == "extract" and not _can_extract_from_current_cell():
-			return []
 		var config: Dictionary = Actions.get_action_config(action_key)
+		if not _has_required_group_resources(config):
+			return []
+		if Actions.get_action_type(action_key) == "extract" and not _can_extract_from_current_cell(action_key):
+			return []
 		var power: int = int(config.get("energy_consumption", 0))
 		if power > 0 and unit.max_energy > 0 and unit.energy < power:
 			return []
@@ -36,13 +38,37 @@ func get_options_for_action_key(action_key: String) -> Array:
 		return _filter_acs_and_wrap(result)
 	return []
 
-func _can_extract_from_current_cell() -> bool:
+func _can_extract_from_current_cell(action_key: String) -> bool:
 	var cell: Vector2 = unit.cell
 	var key := HexGrid.get_cell_key(int(cell.x), int(cell.y))
 	if not Navigation.grid.has(key):
 		return false
 	var tile: Dictionary = Navigation.grid[key]
-	return int(tile.get("resource_amount", 0)) > 0
+	if int(tile.get("resource_amount", 0)) <= 0:
+		return false
+	var config: Dictionary = Actions.get_action_config(action_key)
+	var allowed_types = config.get("allowed_resource_types", [])
+	if allowed_types is Array and not allowed_types.is_empty():
+		var resource_type: String = str(tile.get("resource_type", ""))
+		return resource_type in allowed_types
+	return true
+
+func _has_required_group_resources(config: Dictionary) -> bool:
+	var required_type: String = str(config.get("required_group_resource_type", ""))
+	var required_amount: int = int(config.get("required_group_resource_amount", 0))
+	if required_type.is_empty() or required_amount <= 0:
+		return true
+	var inventory: Dictionary = _get_group_resource_inventory()
+	return int(inventory.get(required_type, 0)) >= required_amount
+
+func _get_group_resource_inventory() -> Dictionary:
+	var group_node: Node = unit.get_parent()
+	if group_node == null or not group_node.has_meta("resource_inventory"):
+		return {}
+	var inv = group_node.get_meta("resource_inventory")
+	if not (inv is Dictionary):
+		return {}
+	return inv
 
 func _filter_acs_and_wrap(entries: Array) -> Array:
 	var acs: Array = []

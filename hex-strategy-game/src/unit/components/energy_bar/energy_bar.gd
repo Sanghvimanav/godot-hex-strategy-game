@@ -1,5 +1,5 @@
 extends Node2D
-## Blue energy squares displayed below the health bar. Used by Ghost and other energy-based units.
+## Blue energy squares displayed below the health bar. Used by Scouts and other energy-based units.
 
 const BOX_SIZE: Vector2 = Vector2(4, 4)
 const SPACING: int = 1

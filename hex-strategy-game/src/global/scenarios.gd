@@ -10,16 +10,16 @@ func _ready() -> void:
 
 func _build_scenarios() -> void:
 	available_scenarios.clear()
-	# Default: Knight, Ghost, Mage vs Zergling (matches current battle.tscn layout)
+	# Default: Knight, Scout, Mage vs Zergling (matches current battle.tscn layout)
 	available_scenarios.append({
 		"id": "default",
-		"display_name": "Default (Knight, Ghost, Mage vs Zergling)",
+		"display_name": "Default (Knight, Scout, Mage vs Zergling)",
 		"groups": [
 			{
 				"name": "player",
 				"units": [
 					{"def_path": "res://src/unit/definitions/knight.tres", "cell": Vector2i(1, 0)},
-					{"def_path": "res://src/unit/definitions/ghost.tres", "cell": Vector2i(0, 1)},
+					{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(0, 1)},
 					{"def_path": "res://src/unit/definitions/mage.tres", "cell": Vector2i(0, 0)},
 				]
 			},
@@ -32,13 +32,13 @@ func _build_scenarios() -> void:
 		},
 		]
 	})
-	# Ghost energy debug: just Ghost vs Zergling
+	# Scout energy debug: just Scout vs Zergling
 	available_scenarios.append({
-		"id": "ghost_debug",
-		"display_name": "Ghost Debug (Ghost vs Zergling)",
+		"id": "scout_debug",
+		"display_name": "Scout Debug (Scout vs Zergling)",
 		"groups": [
 			{"name": "player", "units": [
-				{"def_path": "res://src/unit/definitions/ghost.tres", "cell": Vector2i(0, 0)},
+				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(0, 0)},
 			]},
 			{"name": "opponent", "ai": true, "units": [
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-1, 1)},
@@ -85,15 +85,15 @@ func _build_scenarios() -> void:
 			]},
 		]
 	})
-	# Terran with Base: Base + Marine + Ghost vs Zerglings (base heals/resupplies adjacent)
+	# Terran with Base: Base + Marine + Scout vs Zerglings (base heals/resupplies adjacent)
 	available_scenarios.append({
 		"id": "terran_with_base",
-		"display_name": "Terran with Base (Base + Marine + Ghost vs Zerglings)",
+		"display_name": "Terran with Base (Base + Marine + Scout vs Zerglings)",
 		"groups": [
 			{"name": "player", "units": [
 				{"def_path": "res://src/unit/definitions/terran_base.tres", "cell": Vector2i(0, 0)},
 				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(1, 0)},
-				{"def_path": "res://src/unit/definitions/ghost.tres", "cell": Vector2i(0, 1)},
+				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(0, 1)},
 			]},
 			{"name": "opponent", "ai": true, "units": [
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-1, 1)},
@@ -101,7 +101,26 @@ func _build_scenarios() -> void:
 			]},
 		]
 	})
-	# Zerg vs Terran: Base + 2 Marines + Ghost vs 5 Zerglings + Baneling (randomized positions)
+	# Scout recruit test: gather people from villages, then unlock base scout spawn.
+	available_scenarios.append({
+		"id": "scout_recruit_test",
+		"display_name": "Scout Recruit Test (Village -> Base Spawn)",
+		"groups": [
+			{"name": "player", "units": [
+				{"def_path": "res://src/unit/definitions/terran_base.tres", "cell": Vector2i(0, 0)},
+				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(1, 0)},
+			]},
+			{"name": "opponent", "ai": true, "units": [
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 4)},
+			]},
+		],
+		"tile_resources": _with_village_resources([
+			Vector2i(1, 0),
+			Vector2i(2, 0),
+			Vector2i(-1, 1),
+		], 5),
+	})
+	# Zerg vs Terran: Base + 2 Marines + Scout vs 5 Zerglings + Baneling (randomized positions)
 	available_scenarios.append({
 		"id": "zerg_vs_terran",
 		"display_name": "Zerg vs Terran",
@@ -113,7 +132,7 @@ func _build_scenarios() -> void:
 					{"def_path": "res://src/unit/definitions/terran_base.tres"},
 					{"def_path": "res://src/unit/definitions/marine.tres"},
 					{"def_path": "res://src/unit/definitions/marine.tres"},
-					{"def_path": "res://src/unit/definitions/ghost.tres"},
+					{"def_path": "res://src/unit/definitions/scout.tres"},
 				],
 				"cell_pool": [
 					Vector2i(0, 0), Vector2i(0, 1), Vector2i(0, 2), Vector2i(0, 3), Vector2i(0, 4), Vector2i(0, 5),
@@ -149,6 +168,12 @@ func _build_scenarios() -> void:
 				],
 			},
 		],
+		"tile_resources": _with_village_resources([
+			Vector2i(-3, 1),
+			Vector2i(-1, 2),
+			Vector2i(1, -2),
+			Vector2i(3, -2),
+		], 5),
 	})
 	# Spawning Pool: Pool + 2 Zerglings vs Marine (test spawn)
 	available_scenarios.append({
@@ -190,6 +215,30 @@ func _default_tile_resources() -> Dictionary:
 		HexGrid.get_cell_key(2, 0): { amount = 1, max_amount = 1, resource_type = "crystal" },
 		HexGrid.get_cell_key(-2, 1): { amount = 3, max_amount = 3, resource_type = "gas" },
 	}
+
+func _village_tile_resources(cells: Array, amount_per_village: int = 5) -> Dictionary:
+	var villages: Dictionary = {}
+	var capped_amount: int = maxi(1, amount_per_village)
+	for raw_cell in cells:
+		var cell: Vector2i = Vector2i.ZERO
+		if raw_cell is Vector2i:
+			cell = raw_cell
+		elif raw_cell is Vector2:
+			cell = Vector2i(int(raw_cell.x), int(raw_cell.y))
+		elif raw_cell is Array and raw_cell.size() >= 2:
+			cell = Vector2i(int(raw_cell[0]), int(raw_cell[1]))
+		var key := HexGrid.get_cell_key(cell.x, cell.y)
+		villages[key] = { amount = capped_amount, max_amount = capped_amount, resource_type = "people" }
+	return villages
+
+func _merge_tile_resources(base: Dictionary, extra: Dictionary) -> Dictionary:
+	var merged: Dictionary = base.duplicate(true)
+	for key in extra:
+		merged[key] = extra[key]
+	return merged
+
+func _with_village_resources(cells: Array, amount_per_village: int = 5) -> Dictionary:
+	return _merge_tile_resources(_default_tile_resources(), _village_tile_resources(cells, amount_per_village))
 
 func _with_tile_resources(s: Dictionary) -> Dictionary:
 	var decorated: Dictionary = s.duplicate(true)

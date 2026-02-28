@@ -9,8 +9,10 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_energy_and_recharge_config(tests) and ok
 	ok = _test_reload_recharge_slow_ability(tests) and ok
 	ok = _test_attack_support_ability_types(tests) and ok
-	ok = _test_ghost_attack_ray_range_and_pattern(tests) and ok
+	ok = _test_scout_attack_ray_range_and_pattern(tests) and ok
 	ok = _test_extract_tile_action_config(tests) and ok
+	ok = _test_recruit_people_action_config(tests) and ok
+	ok = _test_spawn_scout_action_config(tests) and ok
 	return ok
 
 ## Ensures get_action_type and get_action_config stay static so scripts can call them without preloading (avoids parser error).
@@ -106,8 +108,8 @@ static func _test_attack_support_ability_types(tests: Node) -> bool:
 	tests._pass("attack/support ability types")
 	return true
 
-static func _test_ghost_attack_ray_range_and_pattern(tests: Node) -> bool:
-	tests._log("test_actions: ghost attack_ray uses target-only range 2-3")
+static func _test_scout_attack_ray_range_and_pattern(tests: Node) -> bool:
+	tests._log("test_actions: scout attack_ray uses target-only range 2-3")
 	var c: Dictionary = Actions.get_action_config("attack_ray")
 	if c.get("pattern", "") != "target":
 		tests._fail("attack_ray should use pattern=target, got %s" % c.get("pattern", ""))
@@ -118,7 +120,7 @@ static func _test_ghost_attack_ray_range_and_pattern(tests: Node) -> bool:
 	if int(c.get("max_range", -1)) != 3:
 		tests._fail("attack_ray max_range should be 3, got %s" % c.get("max_range", -1))
 		return false
-	tests._pass("ghost attack_ray uses target-only range 2-3")
+	tests._pass("scout attack_ray uses target-only range 2-3")
 	return true
 
 static func _test_extract_tile_action_config(tests: Node) -> bool:
@@ -134,4 +136,44 @@ static func _test_extract_tile_action_config(tests: Node) -> bool:
 		tests._fail("extract_tile should deplete 1 resource per use")
 		return false
 	tests._pass("extract_tile action config")
+	return true
+
+static func _test_recruit_people_action_config(tests: Node) -> bool:
+	tests._log("test_actions: recruit_people action exists and extracts people")
+	var c: Dictionary = Actions.get_action_config("recruit_people")
+	if c.is_empty():
+		tests._fail("recruit_people config should exist")
+		return false
+	if c.get("type", "") != "extract":
+		tests._fail("recruit_people type should be extract, got %s" % c.get("type", ""))
+		return false
+	if c.get("name", "") != "Recruit":
+		tests._fail("recruit_people display name should be Recruit")
+		return false
+	var allowed = c.get("allowed_resource_types", [])
+	if not (allowed is Array) or "people" not in allowed:
+		tests._fail("recruit_people should allow extracting people only")
+		return false
+	tests._pass("recruit_people action config")
+	return true
+
+static func _test_spawn_scout_action_config(tests: Node) -> bool:
+	tests._log("test_actions: spawn_scout action requires people and spawns scout")
+	var c: Dictionary = Actions.get_action_config("spawn_scout")
+	if c.is_empty():
+		tests._fail("spawn_scout config should exist")
+		return false
+	if c.get("type", "") != "spawn":
+		tests._fail("spawn_scout type should be spawn")
+		return false
+	if c.get("spawn_unit", "") != "res://src/unit/definitions/scout.tres":
+		tests._fail("spawn_scout should spawn scout unit")
+		return false
+	if c.get("required_group_resource_type", "") != "people":
+		tests._fail("spawn_scout should require people resource type")
+		return false
+	if int(c.get("required_group_resource_amount", 0)) != 5:
+		tests._fail("spawn_scout should require exactly 5 people")
+		return false
+	tests._pass("spawn_scout action config")
 	return true

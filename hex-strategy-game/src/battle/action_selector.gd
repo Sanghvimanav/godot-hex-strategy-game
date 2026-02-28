@@ -44,12 +44,11 @@ func _rebuild_buttons() -> void:
 		return
 	var def: UnitDefinition = _current_unit.def
 	for key in def.move_action_keys:
+		if _current_unit.abilities_db.get_options_for_action_key(key).is_empty():
+			continue
 		_add_action_button(move_buttons, key, true)
 	for key in def.ability_action_keys:
-		# Hide energy-consuming abilities when unit doesn't have enough energy
-		var config: Dictionary = Actions.get_action_config(key)
-		var power: int = int(config.get("energy_consumption", 0))
-		if power > 0 and _current_unit.max_energy > 0 and _current_unit.energy < power:
+		if _current_unit.abilities_db.get_options_for_action_key(key).is_empty():
 			continue
 		_add_action_button(ability_buttons, key, false)
 	for key in def.passive_action_keys:

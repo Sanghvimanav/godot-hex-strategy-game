@@ -20,9 +20,7 @@ Exit code: `0` on success, `1` on failure. If `godot` is not found, add Godot to
 
 ## Run on PR / merge (CI)
 
-Tests run automatically on **push** and **pull_request** to `main` or `master` via GitHub Actions (`.github/workflows/tests.yml`). The workflow installs Godot 4.2.2 on Ubuntu and runs the test scene.
-
-To run the same command manually (e.g. in another CI), from the repo root:
+CI test workflow is currently disabled. Run the test command manually before creating a PR:
 
 ```bash
 cd hex-strategy-game
