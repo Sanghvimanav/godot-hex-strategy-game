@@ -12,6 +12,8 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_scout_attack_ray_range_and_pattern(tests) and ok
 	ok = _test_scout_attack_ray_energy_cost(tests) and ok
 	ok = _test_scout_visibility_range(tests) and ok
+	ok = _test_medic_definition_stats_and_actions(tests) and ok
+	ok = _test_zerg_vs_terran_includes_medic(tests) and ok
 	ok = _test_extract_tile_action_config(tests) and ok
 	ok = _test_recruit_people_action_config(tests) and ok
 	ok = _test_spawn_scout_action_config(tests) and ok
@@ -145,6 +147,54 @@ static func _test_scout_visibility_range(tests: Node) -> bool:
 		tests._fail("scout sight_range should be 3, got %s" % scout_sight_range)
 		return false
 	tests._pass("scout has sight_range 3")
+	return true
+
+static func _test_medic_definition_stats_and_actions(tests: Node) -> bool:
+	tests._log("test_actions: medic unit has requested terran stats and loadout")
+	var medic_def := load("res://src/unit/definitions/medic.tres")
+	if medic_def == null:
+		tests._fail("medic.tres should load")
+		return false
+	if int(medic_def.get("faction")) != 2:
+		tests._fail("medic faction should be Terran (2)")
+		return false
+	if int(medic_def.get("max_health")) != 2:
+		tests._fail("medic max_health should be 2")
+		return false
+	if int(medic_def.get("max_energy")) != 4:
+		tests._fail("medic max_energy should be 4")
+		return false
+	var move_keys_variant = medic_def.get("move_action_keys")
+	var move_keys: Array = move_keys_variant if move_keys_variant is Array else []
+	if move_keys.size() != 2 or "move_short" not in move_keys or "reload" not in move_keys:
+		tests._fail("medic move_action_keys should include only move_short and reload, got %s" % move_keys)
+		return false
+	var ability_keys_variant = medic_def.get("ability_action_keys")
+	var ability_keys: Array = ability_keys_variant if ability_keys_variant is Array else []
+	if ability_keys.size() != 1 or str(ability_keys[0]) != "heal_adjacent":
+		tests._fail("medic ability_action_keys should be [heal_adjacent], got %s" % ability_keys)
+		return false
+	tests._pass("medic unit has requested terran stats and loadout")
+	return true
+
+static func _test_zerg_vs_terran_includes_medic(tests: Node) -> bool:
+	tests._log("test_actions: zerg_vs_terran scenario includes terran medic")
+	var scenario: Dictionary = Scenarios.get_scenario_by_id("zerg_vs_terran")
+	if scenario.is_empty():
+		tests._fail("zerg_vs_terran scenario should exist")
+		return false
+	var has_player_medic := false
+	for g in scenario.get("groups", []):
+		if str(g.get("name", "")) != "player":
+			continue
+		for u in g.get("units", []):
+			if str(u.get("def_path", "")) == "res://src/unit/definitions/medic.tres":
+				has_player_medic = true
+				break
+	if not has_player_medic:
+		tests._fail("zerg_vs_terran should include a player medic")
+		return false
+	tests._pass("zerg_vs_terran scenario includes terran medic")
 	return true
 
 static func _test_extract_tile_action_config(tests: Node) -> bool:

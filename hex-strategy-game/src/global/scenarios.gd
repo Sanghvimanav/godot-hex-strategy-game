@@ -133,7 +133,7 @@ func _build_scenarios() -> void:
 			]},
 		]
 	})
-	# Zerg vs Terran: Base + 2 Marines + Scout vs 5 Zerglings + Baneling (randomized positions)
+	# Zerg vs Terran: Base + 2 Marines + Scout + Medic vs 5 Zerglings + Baneling + Viper (randomized positions)
 	available_scenarios.append({
 		"id": "zerg_vs_terran",
 		"display_name": "Zerg vs Terran",
@@ -146,6 +146,7 @@ func _build_scenarios() -> void:
 					{"def_path": "res://src/unit/definitions/marine.tres"},
 					{"def_path": "res://src/unit/definitions/marine.tres"},
 					{"def_path": "res://src/unit/definitions/scout.tres"},
+					{"def_path": "res://src/unit/definitions/medic.tres"},
 				],
 				"cell_pool": [
 					Vector2i(0, 0), Vector2i(0, 1), Vector2i(0, 2), Vector2i(0, 3), Vector2i(0, 4), Vector2i(0, 5),
