@@ -26,6 +26,8 @@ static func _has_extractable_resource_for_config(entry: Variant, action_config: 
 			var resource_type: String = str(entry.get("resource_type", ""))
 			return resource_type in allowed_types
 		return true
+	if entry == null:
+		return false
 	if allowed_types is Array and not allowed_types.is_empty():
 		return false
 	return int(entry) > 0
