@@ -139,6 +139,21 @@ func get_resource_amount_at_cell(cell: Vector2i) -> int:
 		return 0
 	return int(grid[key].get("resource_amount", 0))
 
+## Returns {} for non-resource cells, otherwise { resource_type, amount, max_amount }.
+func get_resource_info_at_cell(cell: Vector2i) -> Dictionary:
+	var key := HexGrid.get_cell_key(int(cell.x), int(cell.y))
+	if not grid.has(key):
+		return {}
+	var tile: Dictionary = grid[key]
+	var max_amount: int = int(tile.get("resource_max_amount", 0))
+	if max_amount <= 0:
+		return {}
+	return {
+		resource_type = str(tile.get("resource_type", "")),
+		amount = clampi(int(tile.get("resource_amount", 0)), 0, max_amount),
+		max_amount = max_amount
+	}
+
 func deplete_resource_at(q: int, r: int, amount: int = 1, reason: String = "event") -> int:
 	return deplete_resource_at_cell(Vector2i(q, r), amount, reason)
 

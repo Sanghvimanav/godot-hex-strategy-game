@@ -144,3 +144,36 @@ text = "Replay Turn"
 [node name="scenarios_button" type="Button" parent="turn_ui/turn_panel/vbox"]
 layout_mode = 2
 text = "Scenarios"
+
+[node name="resources_panel" type="PanelContainer" parent="turn_ui"]
+anchors_preset = 6
+anchor_top = 1.0
+anchor_right = 0.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = -180.0
+offset_right = 230.0
+offset_bottom = -10.0
+
+[node name="margin" type="MarginContainer" parent="turn_ui/resources_panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="vbox" type="VBoxContainer" parent="turn_ui/resources_panel/margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="title" type="Label" parent="turn_ui/resources_panel/margin/vbox"]
+layout_mode = 2
+text = "Resources"
+
+[node name="resources_label" type="Label" parent="turn_ui/resources_panel/margin/vbox"]
+layout_mode = 2
+text = "None"
+
+[node name="hovered_tile_label" type="Label" parent="turn_ui/resources_panel/margin/vbox"]
+layout_mode = 2
+text = "Hover: n/a"
