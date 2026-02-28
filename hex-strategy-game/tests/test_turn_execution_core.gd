@@ -22,6 +22,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_execute_turn_spawn_scout_requires_people(tests) and ok
 	ok = _test_execute_turn_scout_attack_ray_damages_only_target_tile(tests) and ok
 	ok = _test_execute_turn_zergling_fast_move_hits_scout_before_scout_move(tests) and ok
+	ok = _test_execute_turn_zergling_moves_onto_marine_attack_tile_takes_one_damage(tests) and ok
 	ok = _test_check_win_condition_one_alive(tests) and ok
 	ok = _test_check_win_condition_both_alive(tests) and ok
 	ok = _test_check_win_condition_both_dead(tests) and ok
@@ -472,6 +473,43 @@ static func _test_execute_turn_zergling_fast_move_hits_scout_before_scout_move(t
 		tests._fail("scout should not be in died_ids after taking one damage")
 		return false
 	tests._pass("zergling fast-move onto scout then scout moves takes one damage")
+	return true
+
+static func _test_execute_turn_zergling_moves_onto_marine_attack_tile_takes_one_damage(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: zergling moves onto tile marine attacks (marine not on tile) takes exactly 1 damage")
+	# Marine at (1,0) attacks (2,0). Zergling at (0,0) fast-moves to (2,0). Zergling should take 1 damage from marine's attack_short, not 2.
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 3, "max_health": 3, "energy": 2, "max_energy": 4 }
+			]},
+			{ "name": "opponent", "ai": false, "units": [
+				{ "unit_id": 2, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [0, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
+			]}
+		]
+	}
+	var zerg_path: Array = []
+	for p in HexGrid.build_path_to(0, 0, 2, 0):
+		zerg_path.append([int(p.x), int(p.y)])
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "attack_short", "path": [], "end_point": [2, 0] }
+		],
+		"opponent": [
+			{ "unit_id": 2, "action_key": "fast_move", "path": zerg_path, "end_point": [2, 0] }
+		]
+	}
+	var recording := TurnExecutionCore.execute_turn(game_state, player_actions)
+	var zerg_found := TurnExecutionCore.find_unit_by_id(game_state, 2)
+	if zerg_found.is_empty():
+		tests._fail("zergling should survive (3 hp - 1 dmg = 2)")
+		return false
+	var zerg: Dictionary = zerg_found.unit
+	var zerg_health: int = zerg.get("health", 0)
+	if zerg_health != 2:
+		tests._fail("zergling should take exactly 1 damage (3 -> 2), got health %d" % zerg_health)
+		return false
+	tests._pass("zergling moves onto marine attack tile takes one damage")
 	return true
 
 static func _test_check_win_condition_one_alive(tests: Node) -> bool:

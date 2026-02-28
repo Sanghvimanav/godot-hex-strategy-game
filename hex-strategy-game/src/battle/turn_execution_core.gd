@@ -326,7 +326,9 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 					if config.has("area_of_effect"):
 						var aoe_cells: Array = HexGrid.get_aoe_tiles(Vector2(uq, ur), Vector2(_cell_q(end_pt), _cell_r(end_pt)), config.area_of_effect)
 						for c in aoe_cells:
-							target_cells.append(Vector2i(int(c.x), int(c.y)))
+							var v := Vector2i(int(c.x), int(c.y))
+							if v not in target_cells:
+								target_cells.append(v)
 					var damage_amount: int = int(config.get("damage", 1))
 					for cell in target_cells:
 						for o in get_units_at_cell(game_state, cell):

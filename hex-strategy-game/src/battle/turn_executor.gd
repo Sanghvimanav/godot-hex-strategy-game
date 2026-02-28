@@ -280,6 +280,13 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 			var target_cell: Vector2 = ac.end_point
 			var aoe_cells: Array = HexGrid.get_aoe_tiles(from_cell, target_cell, aoe)
 			for aoe_cell in aoe_cells:
+				var already_in_path := false
+				for fp in full_path:
+					if HexGrid.cell_equal(fp, aoe_cell):
+						already_in_path = true
+						break
+				if already_in_path:
+					continue
 				for group in ctx.groups:
 					for child in group.get_children():
 						if child is Unit and HexGrid.cell_equal(child.cell, aoe_cell) and child != attacker:
