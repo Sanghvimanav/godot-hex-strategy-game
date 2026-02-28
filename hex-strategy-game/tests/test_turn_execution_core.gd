@@ -22,6 +22,8 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_execute_turn_spawn_scout_requires_people(tests) and ok
 	ok = _test_execute_turn_scout_attack_ray_damages_only_target_tile(tests) and ok
 	ok = _test_execute_turn_zergling_fast_move_hits_scout_before_scout_move(tests) and ok
+	ok = _test_execute_turn_marine_attack_short_aoe_hits_moved_zergling_once(tests) and ok
+	ok = _test_execute_turn_marine_attack_short_aoe_dedupes_duplicate_cells(tests) and ok
 	ok = _test_check_win_condition_one_alive(tests) and ok
 	ok = _test_check_win_condition_both_alive(tests) and ok
 	ok = _test_check_win_condition_both_dead(tests) and ok
@@ -472,6 +474,87 @@ static func _test_execute_turn_zergling_fast_move_hits_scout_before_scout_move(t
 		tests._fail("scout should not be in died_ids after taking one damage")
 		return false
 	tests._pass("zergling fast-move onto scout then scout moves takes one damage")
+	return true
+
+static func _test_execute_turn_marine_attack_short_aoe_hits_moved_zergling_once(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: marine attack_short AoE hits moved zergling exactly once")
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [0, 0], "health": 4, "max_health": 4, "energy": 4, "max_energy": 4 }
+			]},
+			{ "name": "opponent", "ai": false, "units": [
+				{ "unit_id": 2, "def_path": "res://src/unit/definitions/scout.tres", "cell": [1, 0], "health": 2, "max_health": 2, "energy": 3, "max_energy": 3 },
+				{ "unit_id": 3, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [2, -1], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
+			]}
+		]
+	}
+	var zerg_move_path: Array = []
+	for p in HexGrid.build_path_to(2, -1, 1, -1):
+		zerg_move_path.append([int(p.x), int(p.y)])
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "attack_short", "path": [], "end_point": [1, 0] }
+		],
+		"opponent": [
+			{ "unit_id": 3, "action_key": "move_short", "path": zerg_move_path, "end_point": [1, -1] }
+		]
+	}
+	var recording := TurnExecutionCore.execute_turn(game_state, player_actions)
+	var moved_zerg := TurnExecutionCore.find_unit_by_id(game_state, 3)
+	if moved_zerg.is_empty():
+		tests._fail("moved zergling should remain alive after one AoE hit")
+		return false
+	if moved_zerg.unit.get("cell", [0, 0]) != [1, -1]:
+		tests._fail("zergling should move onto AoE tile [1,-1], got %s" % moved_zerg.unit.get("cell", []))
+		return false
+	if moved_zerg.unit.get("health", 0) != 2:
+		tests._fail("zergling on AoE tile should take exactly 1 damage (3 -> 2), got health %s" % moved_zerg.unit.get("health", 0))
+		return false
+	if 3 in recording.get("died_ids", []):
+		tests._fail("zergling should not die from a single marine AoE hit")
+		return false
+	var direct_target := TurnExecutionCore.find_unit_by_id(game_state, 2)
+	if direct_target.is_empty() or direct_target.unit.get("health", 0) != 1:
+		tests._fail("marine direct target at [1,0] should take exactly 1 damage")
+		return false
+	tests._pass("marine attack_short AoE hits moved zergling exactly once")
+	return true
+
+static func _test_execute_turn_marine_attack_short_aoe_dedupes_duplicate_cells(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: marine attack_short duplicate AoE cell in path should not double-hit")
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [0, 0], "health": 4, "max_health": 4, "energy": 4, "max_energy": 4 }
+			]},
+			{ "name": "opponent", "ai": false, "units": [
+				{ "unit_id": 2, "def_path": "res://src/unit/definitions/scout.tres", "cell": [1, 0], "health": 2, "max_health": 2, "energy": 3, "max_energy": 3 },
+				{ "unit_id": 3, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [2, -1], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
+			]}
+		]
+	}
+	var zerg_move_path: Array = []
+	for p in HexGrid.build_path_to(2, -1, 1, -1):
+		zerg_move_path.append([int(p.x), int(p.y)])
+	var player_actions := {
+		"player": [
+			# Simulates malformed path data that already includes an AoE cell.
+			{ "unit_id": 1, "action_key": "attack_short", "path": [[1, -1]], "end_point": [1, 0] }
+		],
+		"opponent": [
+			{ "unit_id": 3, "action_key": "move_short", "path": zerg_move_path, "end_point": [1, -1] }
+		]
+	}
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var moved_zerg := TurnExecutionCore.find_unit_by_id(game_state, 3)
+	if moved_zerg.is_empty():
+		tests._fail("moved zergling should remain alive after one AoE hit")
+		return false
+	if moved_zerg.unit.get("health", 0) != 2:
+		tests._fail("duplicate target cells should not stack damage on same unit; expected zergling health 2 got %s" % moved_zerg.unit.get("health", 0))
+		return false
+	tests._pass("marine attack_short duplicate AoE cell does not double-hit")
 	return true
 
 static func _test_check_win_condition_one_alive(tests: Node) -> bool:

@@ -251,6 +251,11 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 		var damage_amount: int = int(config["damage"]) if config.has("damage") else 1
 		var dealt_damage := false
 		var stun_duration: int = int(config["stun_duration"]) if config.has("stun_duration") else 0
+		var aoe: Dictionary = config["area_of_effect"] if config.has("area_of_effect") else {}
+		var aoe_cells: Array = []
+		if not aoe.is_empty():
+			aoe_cells = HexGrid.get_aoe_tiles(attacker.cell, ac.end_point, aoe)
+		var hit_uids_for_attack: Dictionary = {}
 		print("[DAMAGE] attacker=%s at %s action_key=%s full_path=%s (pattern_self=%s) damage_amount=%d" % [attacker.def.name, attacker.cell, action_key, full_path, pattern_self, damage_amount])
 		for cell in full_path:
 			if DEBUG_DAMAGE_VERBOSE:
@@ -268,25 +273,27 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 							print("[DAMAGE]     candidate %s same_group=%s -> %s" % [child.def.name if child.def else "?", same_group, "skip (ally)" if same_group else "HIT"])
 						if same_group:
 							continue
-						dealt_damage = true
 						var uid: int = child.get_instance_id()
+						if hit_uids_for_attack.get(uid, false):
+							continue
+						hit_uids_for_attack[uid] = true
+						dealt_damage = true
 						ctx.damage_by_id[uid] = (ctx.damage_by_id[uid] if ctx.damage_by_id.has(uid) else 0) + damage_amount
 						print("[DAMAGE] hit %s at %s for %d (uid %d)" % [child.def.name, cell, damage_amount, uid])
 						if stun_duration > 0:
 							_apply_stun_effect(ctx, child, stun_duration)
-		var aoe: Dictionary = config["area_of_effect"] if config.has("area_of_effect") else {}
 		if not aoe.is_empty():
-			var from_cell: Vector2 = attacker.cell
-			var target_cell: Vector2 = ac.end_point
-			var aoe_cells: Array = HexGrid.get_aoe_tiles(from_cell, target_cell, aoe)
 			for aoe_cell in aoe_cells:
 				for group in ctx.groups:
 					for child in group.get_children():
 						if child is Unit and HexGrid.cell_equal(child.cell, aoe_cell) and child != attacker:
 							if child.get_parent() == attacker_group:
 								continue
-							dealt_damage = true
 							var uid: int = child.get_instance_id()
+							if hit_uids_for_attack.get(uid, false):
+								continue
+							hit_uids_for_attack[uid] = true
+							dealt_damage = true
 							ctx.damage_by_id[uid] = (ctx.damage_by_id[uid] if ctx.damage_by_id.has(uid) else 0) + damage_amount
 							print("[DAMAGE] AoE hit %s at %s for %d (uid %d)" % [child.def.name, aoe_cell, damage_amount, uid])
 							if stun_duration > 0:

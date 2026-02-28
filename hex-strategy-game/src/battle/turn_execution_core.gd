@@ -7,7 +7,6 @@ const MOVE_TYPES: Array[String] = ["fast move", "move", "slow move"]
 const ABILITY_TYPES: Array[String] = ["fast ability", "ability", "slow ability"]
 const SPAWN_TYPES: Array[String] = ["spawn"]
 
-
 static func find_unit_by_id(game_state: Dictionary, unit_id: int) -> Dictionary:
 	for group in game_state.get("groups", []):
 		for u in group.get("units", []):
@@ -63,6 +62,19 @@ static func _cell_r(v: Variant) -> int:
 	if v is Vector2 or v is Vector2i:
 		return int(v.y)
 	return 0
+
+static func _dedupe_cells(cells: Array) -> Array:
+	var out: Array = []
+	var seen: Dictionary = {}
+	for c in cells:
+		var q: int = _cell_q(c)
+		var r: int = _cell_r(c)
+		var key := "%d,%d" % [q, r]
+		if seen.get(key, false):
+			continue
+		seen[key] = true
+		out.append(Vector2i(q, r))
+	return out
 
 
 ## Returns list of cells (Vector2i) that an ability affects for damage. Shared by server and client.
@@ -327,8 +339,9 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 						var aoe_cells: Array = HexGrid.get_aoe_tiles(Vector2(uq, ur), Vector2(_cell_q(end_pt), _cell_r(end_pt)), config.area_of_effect)
 						for c in aoe_cells:
 							target_cells.append(Vector2i(int(c.x), int(c.y)))
+					var deduped_target_cells: Array = _dedupe_cells(target_cells)
 					var damage_amount: int = int(config.get("damage", 1))
-					for cell in target_cells:
+					for cell in deduped_target_cells:
 						for o in get_units_at_cell(game_state, cell):
 							if o.unit == unit:
 								continue
