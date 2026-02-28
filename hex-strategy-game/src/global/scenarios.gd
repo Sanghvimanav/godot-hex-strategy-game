@@ -173,7 +173,7 @@ func get_selected_scenario() -> Dictionary:
 func _default_tile_resources() -> Dictionary:
 	return {
 		HexGrid.get_cell_key(0, 0): { amount = 5, max_amount = 5, resource_type = "ore" },
-		HexGrid.get_cell_key(2, 0): { amount = 4, max_amount = 4, resource_type = "crystal" },
+		HexGrid.get_cell_key(2, 0): { amount = 1, max_amount = 1, resource_type = "crystal" },
 		HexGrid.get_cell_key(-2, 1): { amount = 3, max_amount = 3, resource_type = "gas" },
 	}
 
