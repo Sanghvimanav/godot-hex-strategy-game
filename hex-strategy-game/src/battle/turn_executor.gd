@@ -39,8 +39,6 @@ class ExecutionContext:
 static func run_pipeline(actions_by_type: Dictionary, ctx: ExecutionContext) -> void:
 	for action_type in Actions.ACTION_ORDER:
 		var entries: Array = actions_by_type[action_type] if actions_by_type.has(action_type) else []
-		if not entries.is_empty():
-			print("[EXEC] pipeline processing: ", action_type, " count=", entries.size())
 		var filtered: Array = []
 		for entry in entries:
 			if not _valid_unit(entry.unit):
@@ -53,10 +51,8 @@ static func run_pipeline(actions_by_type: Dictionary, ctx: ExecutionContext) -> 
 		var handler := _get_handler_for_type(action_type)
 		if handler.is_valid():
 			await handler.call(action_type, filtered, ctx)
-			print("[EXEC] pipeline done with ", action_type)
 			# Apply damage after each ability phase so units that die are skipped in later phases
 			if action_type in ABILITY_TYPES and ctx.apply_damage:
-				print("[DAMAGE] before _apply_accumulated_damage, damage_by_id size=%d keys=%s" % [ctx.damage_by_id.size(), ctx.damage_by_id.keys()])
 				_apply_accumulated_damage(ctx)
 			if ctx.phase_callback.is_valid():
 				ctx.phase_callback.call()
@@ -205,10 +201,8 @@ static func _handle_moves(action_type: String, entries: Array, ctx: ExecutionCon
 	for entry in entries:
 		var u = entry.unit
 		if not _valid_unit(u) or not entry.is_move:
-			print("[EXEC] _handle_moves skip unit or not move")
 			continue
 		var ac: ActionInstance = entry.ac
-		print("[EXEC] _handle_moves moving ", u.def.name)
 		var from_cell: Vector2 = u.cell
 		u.move_along_path(ac.path + [ac.end_point])
 		await u.movement_complete
@@ -227,16 +221,6 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 			entry.ac = ac.definition.to_action_instance(attacker)
 	# Run damage phase FIRST (before any await) so positions are from current phase only (e.g. after fast move, before move phase).
 	# Otherwise the attack animation's await can let the scene advance and the move phase run, changing target positions.
-	const DEBUG_DAMAGE_VERBOSE := true
-	if DEBUG_DAMAGE_VERBOSE:
-		for gi in ctx.groups.size():
-			var g: Node = ctx.groups[gi]
-			var names: Array = []
-			for c in g.get_children():
-				if c is Unit:
-					names.append("%s@%s" % [c.def.name if c.def else "?", c.cell])
-			print("[DAMAGE] group[%d] name=%s units=%s" % [gi, g.name, names])
-	print("[DAMAGE] damage phase: apply_damage=%s entries=%d (before animations)" % [ctx.apply_damage, entries.size()])
 	for entry in entries:
 		if not ctx.apply_damage:
 			continue
@@ -251,27 +235,16 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 		var damage_amount: int = int(config["damage"]) if config.has("damage") else 1
 		var dealt_damage := false
 		var stun_duration: int = int(config["stun_duration"]) if config.has("stun_duration") else 0
-		print("[DAMAGE] attacker=%s at %s action_key=%s full_path=%s (pattern_self=%s) damage_amount=%d" % [attacker.def.name, attacker.cell, action_key, full_path, pattern_self, damage_amount])
 		for cell in full_path:
-			if DEBUG_DAMAGE_VERBOSE:
-				var at_cell: Array = []
-				for group in ctx.groups:
-					for child in group.get_children():
-						if child is Unit and HexGrid.cell_equal(child.cell, cell):
-							at_cell.append("%s(cell=%s)" % [child.def.name if child.def else "?", child.cell])
-				print("[DAMAGE]   cell %s -> units at cell: %s" % [cell, at_cell])
 			for group in ctx.groups:
 				for child in group.get_children():
 					if child is Unit and HexGrid.cell_equal(child.cell, cell) and child != attacker:
 						var same_group: bool = child.get_parent() == attacker_group
-						if DEBUG_DAMAGE_VERBOSE:
-							print("[DAMAGE]     candidate %s same_group=%s -> %s" % [child.def.name if child.def else "?", same_group, "skip (ally)" if same_group else "HIT"])
 						if same_group:
 							continue
 						dealt_damage = true
 						var uid: int = child.get_instance_id()
 						ctx.damage_by_id[uid] = (ctx.damage_by_id[uid] if ctx.damage_by_id.has(uid) else 0) + damage_amount
-						print("[DAMAGE] hit %s at %s for %d (uid %d)" % [child.def.name, cell, damage_amount, uid])
 						if stun_duration > 0:
 							_apply_stun_effect(ctx, child, stun_duration)
 		var aoe: Dictionary = config["area_of_effect"] if config.has("area_of_effect") else {}
@@ -280,6 +253,13 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 			var target_cell: Vector2 = ac.end_point
 			var aoe_cells: Array = HexGrid.get_aoe_tiles(from_cell, target_cell, aoe)
 			for aoe_cell in aoe_cells:
+				var already_in_path := false
+				for fp in full_path:
+					if HexGrid.cell_equal(fp, aoe_cell):
+						already_in_path = true
+						break
+				if already_in_path:
+					continue
 				for group in ctx.groups:
 					for child in group.get_children():
 						if child is Unit and HexGrid.cell_equal(child.cell, aoe_cell) and child != attacker:
@@ -288,7 +268,6 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 							dealt_damage = true
 							var uid: int = child.get_instance_id()
 							ctx.damage_by_id[uid] = (ctx.damage_by_id[uid] if ctx.damage_by_id.has(uid) else 0) + damage_amount
-							print("[DAMAGE] AoE hit %s at %s for %d (uid %d)" % [child.def.name, aoe_cell, damage_amount, uid])
 							if stun_duration > 0:
 								_apply_stun_effect(ctx, child, stun_duration)
 		if config.has("self_damage") and config["self_damage"]:
@@ -305,9 +284,7 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 				var key := "%d_%s" % [_recording_unit_id(attacker), action_key]
 				causers[key] = true
 				ctx.recording["damage_causers"] = causers
-	print("[DAMAGE] damage phase done, damage_by_id size=%d" % ctx.damage_by_id.size())
 	if ctx.apply_damage and ctx.damage_by_id.size() > 0:
-		print("[DAMAGE] applying from _handle_attacks (apply_damage=%s)" % ctx.apply_damage)
 		_apply_accumulated_damage(ctx)
 	# Then play attack animations (after damage so positions are correct)
 	for entry in entries:
@@ -320,7 +297,6 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 		var play_animation: bool = true
 		if is_passive and not _would_attack_deal_damage(attacker, ac, ctx):
 			play_animation = false
-		print("[EXEC] _handle_attacks calling attack for ", attacker.def.name)
 		attacker.attack(ac, play_animation)
 		if play_animation:
 			var done_flag: Array = [false]
@@ -329,7 +305,6 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 			timeout.timeout.connect(func(): done_flag[0] = true, CONNECT_ONE_SHOT)
 			while not done_flag[0]:
 				await ctx.tree.process_frame
-		print("[EXEC] _handle_attacks attack complete for ", attacker.def.name)
 
 static func _apply_stun_effect(ctx: ExecutionContext, target_unit: Unit, duration: int) -> void:
 	var effect := UnitEffect.new(UnitEffect.Kind.Stun, duration, {})
@@ -350,7 +325,6 @@ static func _recording_unit_id(unit: Unit) -> int:
 ## Applies accumulated damage (since last call) to units. Call after each attack phase.
 ## Updates ctx.applied_damage_by_id and ctx.recording.died_ids when units die.
 static func _apply_accumulated_damage(ctx: ExecutionContext) -> void:
-	print("[DAMAGE] _apply_accumulated_damage called, damage_by_id size=%d" % ctx.damage_by_id.size())
 	for uid in ctx.damage_by_id:
 		var already_applied: int = ctx.applied_damage_by_id[uid] if ctx.applied_damage_by_id.has(uid) else 0
 		var total_damage: int = ctx.damage_by_id[uid]
@@ -359,11 +333,8 @@ static func _apply_accumulated_damage(ctx: ExecutionContext) -> void:
 			continue
 		var unit = instance_from_id(uid)
 		if not is_instance_valid(unit) or not unit is Unit:
-			print("[DAMAGE] skip uid %d (invalid or not Unit)" % uid)
 			continue
-		var old_health: int = unit.health
 		unit.health = unit.health - to_apply  # Explicit assign so setter runs
-		print("[DAMAGE] applied %d to %s (uid %d) health %d -> %d" % [to_apply, unit.def.name if unit.def else "?", uid, old_health, unit.health])
 		if unit.health_bar:
 			unit.health_bar.update_value(unit.health)
 		ctx.applied_damage_by_id[uid] = total_damage
