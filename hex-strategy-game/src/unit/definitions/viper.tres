@@ -11,5 +11,6 @@ faction = 1
 frames = ExtResource("2_frames")
 sprite_scale = Vector2(0.08, 0.08)
 sprite_offset = Vector2(0, 1)
+sight_range = 2
 move_action_keys = Array[String](["move_short", "reload"])
 ability_action_keys = Array[String](["attack_viper"])
