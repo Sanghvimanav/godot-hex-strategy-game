@@ -108,7 +108,7 @@ static func _handle_reload(_action_type: String, entries: Array, ctx: ExecutionC
 		if not _valid_unit(u):
 			continue
 		if ctx.apply_damage:
-			ctx.recording.actions.append({ "type": _action_type, "unit": u, "ac": entry.ac })
+			ctx.recording.actions.append({ "type": _action_type, "unit": u, "unit_id": _recording_unit_id(u), "ac": entry.ac })
 			var ac: ActionInstance = entry.ac
 			if ac != null and ac.definition != null and u.max_energy > 0:
 				var config: Dictionary = Actions.get_action_config(ac.definition.action_key)
@@ -161,7 +161,7 @@ static func _handle_support(_action_type: String, entries: Array, ctx: Execution
 				var effect: Node2D = HEAL_EFFECT_SCENE.instantiate()
 				target.add_child(effect)
 		if ctx.apply_damage:
-			ctx.recording.actions.append({ "type": _action_type, "unit": supporter, "ac": ac })
+			ctx.recording.actions.append({ "type": _action_type, "unit": supporter, "unit_id": _recording_unit_id(supporter), "ac": ac })
 
 static func _handle_spawn(action_type: String, entries: Array, ctx: ExecutionContext) -> void:
 	for entry in entries:
@@ -199,7 +199,7 @@ static func _handle_spawn(action_type: String, entries: Array, ctx: ExecutionCon
 		if group_node != null:
 			group_node.add_child(new_unit)
 		if ctx.apply_damage:
-			ctx.recording.actions.append({ "type": action_type, "unit": spawner, "ac": entry.get("ac"), "spawned_unit_id": spawned_unit_id, "spawn_path": spawn_path, "cell": spawn_cell })
+			ctx.recording.actions.append({ "type": action_type, "unit": spawner, "unit_id": _recording_unit_id(spawner), "ac": entry.get("ac"), "spawned_unit_id": spawned_unit_id, "spawn_path": spawn_path, "cell": spawn_cell })
 
 static func _handle_moves(action_type: String, entries: Array, ctx: ExecutionContext) -> void:
 	for entry in entries:
@@ -213,7 +213,7 @@ static func _handle_moves(action_type: String, entries: Array, ctx: ExecutionCon
 		u.move_along_path(ac.path + [ac.end_point])
 		await u.movement_complete
 		if ctx.apply_damage:
-			ctx.recording.actions.append({ "type": "move", "unit": u, "from_cell": from_cell, "path": ac.path + [ac.end_point] })
+			ctx.recording.actions.append({ "type": "move", "unit": u, "unit_id": _recording_unit_id(u), "from_cell": from_cell, "path": ac.path + [ac.end_point] })
 
 static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionContext) -> void:
 	# Resolve "self" pattern so ac has current cell for damage
@@ -299,10 +299,10 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 		if ctx.apply_damage:
 			var should_record := not is_passive or dealt_damage
 			if should_record:
-				ctx.recording.actions.append({ "type": action_type, "unit": attacker, "ac": ac })
+				ctx.recording.actions.append({ "type": action_type, "unit": attacker, "unit_id": _recording_unit_id(attacker), "ac": ac })
 			if dealt_damage and is_passive:
 				var causers: Dictionary = ctx.recording["damage_causers"] if ctx.recording.has("damage_causers") else {}
-				var key := "%d_%s" % [attacker.get_instance_id(), action_key]
+				var key := "%d_%s" % [_recording_unit_id(attacker), action_key]
 				causers[key] = true
 				ctx.recording["damage_causers"] = causers
 	print("[DAMAGE] damage phase done, damage_by_id size=%d" % ctx.damage_by_id.size())
@@ -336,11 +336,16 @@ static func _apply_stun_effect(ctx: ExecutionContext, target_unit: Unit, duratio
 	target_unit.add_effect(effect)
 	if ctx.apply_damage:
 		var applied: Array = ctx.recording["applied_effects"] if ctx.recording.has("applied_effects") else []
-		applied.append({ "unit_id": target_unit.get_instance_id(), "effect": effect.to_dict() })
+		applied.append({ "unit_id": _recording_unit_id(target_unit), "effect": effect.to_dict() })
 		ctx.recording["applied_effects"] = applied
 
 static func _valid_unit(u) -> bool:
 	return is_instance_valid(u) and u.is_active
+
+static func _recording_unit_id(unit: Unit) -> int:
+	if is_instance_valid(unit) and unit.has_meta("unit_id"):
+		return int(unit.get_meta("unit_id"))
+	return unit.get_instance_id()
 
 ## Applies accumulated damage (since last call) to units. Call after each attack phase.
 ## Updates ctx.applied_damage_by_id and ctx.recording.died_ids when units die.
