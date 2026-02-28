@@ -262,6 +262,78 @@ func get_all_units() -> Array[Unit]:
 				units.append(child)
 	return units
 
+func _get_unit_stable_id(u: Unit) -> int:
+	if not (is_instance_valid(u) and u is Unit):
+		return 0
+	if u.has_meta("unit_id"):
+		return int(u.get_meta("unit_id"))
+	return u.get_instance_id()
+
+func _find_unit_by_stable_id(unit_id: int) -> Unit:
+	if unit_id <= 0:
+		return null
+	for u in get_all_units():
+		if not (is_instance_valid(u) and u is Unit):
+			continue
+		if _get_unit_stable_id(u) == unit_id:
+			return u
+	return null
+
+func _build_unit_snapshot(u: Unit) -> Dictionary:
+	var snapshot: Dictionary = {
+		"unit_id": _get_unit_stable_id(u),
+		"cell": u.cell,
+		"health": u.health,
+		"group_name": u.get_parent().name if u.get_parent() else "",
+		"def_path": u.def.resource_path if u.def else "",
+		"max_health": u.max_health,
+		"max_energy": u.max_energy,
+		"unit_name": u.def.name if u.def else "Unit",
+	}
+	if u.max_energy > 0:
+		snapshot["energy"] = u.energy
+	var effects_data: Array = []
+	for e in u.active_effects:
+		if e is UnitEffect:
+			effects_data.append(e.to_dict())
+	snapshot["effects"] = effects_data
+	return snapshot
+
+func _normalize_recording_actions_with_unit_ids(recording_actions: Array) -> void:
+	for i in recording_actions.size():
+		var action = recording_actions[i]
+		if not (action is Dictionary):
+			continue
+		if int(action.get("unit_id", -1)) > 0:
+			continue
+		var unit = action.get("unit")
+		if is_instance_valid(unit) and unit is Unit:
+			action["unit_id"] = _get_unit_stable_id(unit)
+			recording_actions[i] = action
+
+func _convert_damage_by_instance_to_stable(damage_by_instance: Dictionary) -> Dictionary:
+	var converted: Dictionary = {}
+	for id_key in damage_by_instance:
+		var instance_id: int = int(id_key)
+		var stable_id: int = instance_id
+		var unit = instance_from_id(instance_id)
+		if is_instance_valid(unit) and unit is Unit:
+			stable_id = _get_unit_stable_id(unit)
+		converted[stable_id] = int(converted.get(stable_id, 0)) + int(damage_by_instance[id_key])
+	return converted
+
+func _convert_instance_ids_to_stable_ids(ids: Array) -> Array:
+	var converted: Array = []
+	for raw_id in ids:
+		var instance_id: int = int(raw_id)
+		var stable_id: int = instance_id
+		var unit = instance_from_id(instance_id)
+		if is_instance_valid(unit) and unit is Unit:
+			stable_id = _get_unit_stable_id(unit)
+		if stable_id not in converted:
+			converted.append(stable_id)
+	return converted
+
 func _clear_all_planned_actions() -> void:
 	for u in get_active_units():
 		u.planned_action = null
@@ -553,15 +625,8 @@ func _record_turn_before_execution() -> void:
 	last_turn_recording = { "actions": [], "died_ids": [], "summary": [], "before_state": {}, "damage_causers": {}, "applied_effects": [] }
 	var active = get_active_units()
 	for u in active:
-		var s: Dictionary = { "cell": u.cell, "health": u.health }
-		if u.max_energy > 0:
-			s["energy"] = u.energy
-		var effects_data: Array = []
-		for e in u.active_effects:
-			if e is UnitEffect:
-				effects_data.append(e.to_dict())
-		s["effects"] = effects_data
-		last_turn_recording.before_state[u.get_instance_id()] = s
+		var snapshot: Dictionary = _build_unit_snapshot(u)
+		last_turn_recording.before_state[int(snapshot.get("unit_id", _get_unit_stable_id(u)))] = snapshot
 	for u in active:
 		if not u.is_active:
 			continue
@@ -569,19 +634,36 @@ func _record_turn_before_execution() -> void:
 			var ac: ActionInstance = u.planned_action
 			var action_name: String = ac.definition.display_name if ac.definition.display_name else "Action"
 			var atype: String = Actions.get_action_type(ac.definition.action_key) if ac.definition else ""
-			last_turn_recording.summary.append({ "unit_name": u.def.name, "action_name": action_name, "instance_id": u.get_instance_id(), "action_type": atype })
+			last_turn_recording.summary.append({
+				"unit_name": u.def.name,
+				"action_name": action_name,
+				"instance_id": u.get_instance_id(),
+				"unit_id": _get_unit_stable_id(u),
+				"action_type": atype
+			})
 		for def in u.def.get_passive_ability_definitions_resolved():
 			var action_name: String = def.display_name if def.display_name else "Passive"
 			var atype: String = Actions.get_action_type(def.action_key)
-			last_turn_recording.summary.append({ "unit_name": u.def.name, "action_name": action_name, "instance_id": u.get_instance_id(), "action_key": def.action_key, "is_passive": true, "action_type": atype })
+			last_turn_recording.summary.append({
+				"unit_name": u.def.name,
+				"action_name": action_name,
+				"instance_id": u.get_instance_id(),
+				"unit_id": _get_unit_stable_id(u),
+				"action_key": def.action_key,
+				"is_passive": true,
+				"action_type": atype
+			})
 
 func _filter_passive_summary_entries() -> void:
 	var causers: Dictionary = last_turn_recording.get("damage_causers", {})
 	var filtered: Array = []
 	for entry in last_turn_recording.summary:
 		if entry.get("is_passive", false):
-			var key := "%d_%s" % [entry.instance_id, entry.get("action_key", "")]
-			if not causers.get(key, false):
+			var stable_id: int = int(entry.get("unit_id", entry.get("instance_id", 0)))
+			var legacy_id: int = int(entry.get("instance_id", stable_id))
+			var stable_key := "%d_%s" % [stable_id, entry.get("action_key", "")]
+			var legacy_key := "%d_%s" % [legacy_id, entry.get("action_key", "")]
+			if not causers.get(stable_key, false) and not causers.get(legacy_key, false):
 				continue
 		filtered.append(entry)
 	last_turn_recording.summary = filtered
@@ -608,7 +690,8 @@ func _on_replay_turn_requested() -> void:
 		summary_lines.append("")
 		summary_lines.append(_phase_display_name(action_type))
 		for entry in entries_in_phase:
-			var suffix := " (eliminated)" if entry.instance_id in died_ids else ""
+			var entry_id: int = int(entry.get("unit_id", entry.get("instance_id", -1)))
+			var suffix := " (eliminated)" if entry_id in died_ids else ""
 			summary_lines.append("  %s: %s%s" % [entry.unit_name, entry.action_name, suffix])
 
 	summary_lines.append("")
@@ -620,8 +703,8 @@ func _on_replay_turn_requested() -> void:
 			var start_hp: int = before_state.get(uid, {}).get("health", 0)
 			var damage: int = damage_by_id[uid]
 			var end_hp: int = mini(maxi(start_hp - damage, 0), 999)
-			var unit_name: String = "Unit"
-			var unit = instance_from_id(uid as int)
+			var unit_name: String = str(before_state.get(uid, {}).get("unit_name", "Unit"))
+			var unit = _find_unit_by_stable_id(int(uid))
 			if is_instance_valid(unit) and unit is Unit:
 				unit_name = unit.def.name
 			var elim := " (eliminated)" if end_hp <= 0 else ""
@@ -662,8 +745,7 @@ func _replay_last_turn() -> void:
 	await TurnExecutor.run_pipeline(actions_by_type, ctx)
 	var damage_by_id: Dictionary = last_turn_recording.get("damage_by_id", {})
 	for uid_key in damage_by_id:
-		var uid: int = int(uid_key)
-		var unit = instance_from_id(uid)
+		var unit = _find_unit_by_stable_id(int(uid_key))
 		if is_instance_valid(unit):
 			var dmg: int = int(damage_by_id[uid_key])
 			unit.health -= dmg
@@ -677,7 +759,7 @@ func _replay_last_turn() -> void:
 			unit.add_effect(eff, false)
 	var units_that_will_die: Array = []
 	for uid in damage_by_id:
-		var unit = instance_from_id(uid as int)
+		var unit = _find_unit_by_stable_id(int(uid))
 		if is_instance_valid(unit) and unit.health <= 0:
 			units_that_will_die.append(unit)
 	var to_await := units_that_will_die.filter(func(u): return is_instance_valid(u))
@@ -762,7 +844,10 @@ func _build_replay_actions_by_type(recording_actions: Array) -> Dictionary:
 			atype = "slow ability"
 		elif atype == "reload":
 			atype = "slow ability"
+		var unit_id: int = int(action.get("unit_id", -1))
 		var u = action.get("unit")
+		if (not is_instance_valid(u) or not u is Unit) and unit_id > 0:
+			u = _find_unit_by_stable_id(unit_id)
 		if not is_instance_valid(u) or not u is Unit:
 			continue
 		var entry: Dictionary = { "unit": u, "is_move": (atype == "move") }
@@ -789,10 +874,23 @@ func _build_replay_actions_by_type(recording_actions: Array) -> Dictionary:
 
 func _restore_before_state(before_state: Dictionary) -> void:
 	for uid in before_state:
-		var unit = instance_from_id(uid as int)
-		if is_instance_valid(unit) and unit is Unit:
-			var s: Dictionary = before_state[uid]
-			var energy_val: int = s.get("energy", -1)
+		var unit_id: int = int(uid)
+		var s: Dictionary = before_state[uid]
+		var unit: Unit = _find_unit_by_stable_id(unit_id)
+		if unit == null:
+			var group_name: String = str(s.get("group_name", ""))
+			var def_path: String = str(s.get("def_path", ""))
+			var group_node = get_node_or_null(group_name)
+			var def: UnitDefinition = load(def_path) as UnitDefinition
+			if group_node != null and def != null:
+				unit = UNIT_SCENE.instantiate() as Unit
+				unit.def = def
+				var start_cell: Vector2 = s.get("cell", Vector2.ZERO)
+				unit.starting_cell = Vector2i(int(start_cell.x), int(start_cell.y))
+				unit.set_meta("unit_id", unit_id)
+				group_node.add_child(unit)
+		if is_instance_valid(unit):
+			var energy_val: int = int(s.get("energy", -1))
 			var effects_data: Array = s.get("effects", [])
 			unit.restore_state(s.cell, s.health, energy_val, effects_data)
 
@@ -818,7 +916,9 @@ func _run_planned_actions_phase3() -> void:
 	print("[EXEC] pipeline DONE")
 
 	# Damage was already applied after each attack phase in the pipeline; died_ids populated there
-	last_turn_recording["damage_by_id"] = ctx.damage_by_id.duplicate()
+	_normalize_recording_actions_with_unit_ids(last_turn_recording.get("actions", []))
+	last_turn_recording["damage_by_id"] = _convert_damage_by_instance_to_stable(ctx.damage_by_id)
+	last_turn_recording["died_ids"] = _convert_instance_ids_to_stable_ids(last_turn_recording.get("died_ids", []))
 	_filter_passive_summary_entries()
 	var units_that_will_die: Array = []
 	for u in get_all_units():
@@ -854,9 +954,14 @@ func _build_summary_from_recording_actions(recording_actions: Array) -> Array:
 	for action in recording_actions:
 		if not action is Dictionary:
 			continue
+		var unit_id: int = int(action.get("unit_id", -1))
 		var u = action.get("unit")
+		if (not is_instance_valid(u) or not u is Unit) and unit_id > 0:
+			u = _find_unit_by_stable_id(unit_id)
 		if not is_instance_valid(u) or not u is Unit:
 			continue
+		if unit_id <= 0:
+			unit_id = _get_unit_stable_id(u)
 		var atype: String = str(action.get("type", ""))
 		var action_name: String = "Action"
 		var action_key: String = ""
@@ -876,6 +981,7 @@ func _build_summary_from_recording_actions(recording_actions: Array) -> Array:
 			"unit_name": u.def.name if u.def else "Unit",
 			"action_name": action_name,
 			"instance_id": u.get_instance_id(),
+			"unit_id": unit_id,
 			"action_type": atype
 		}
 		if is_passive:
@@ -978,15 +1084,8 @@ func play_resolved_turn(turn_result: Dictionary, final_state: Dictionary) -> voi
 	for u in get_all_units():
 		if not (is_instance_valid(u) and u is Unit):
 			continue
-		var s: Dictionary = { "cell": u.cell, "health": u.health }
-		if u.max_energy > 0:
-			s["energy"] = u.energy
-		var effects_data: Array = []
-		for e in u.active_effects:
-			if e is UnitEffect:
-				effects_data.append(e.to_dict())
-		s["effects"] = effects_data
-		before_state[u.get_instance_id()] = s
+		var snapshot: Dictionary = _build_unit_snapshot(u)
+		before_state[int(snapshot.get("unit_id", _get_unit_stable_id(u)))] = snapshot
 
 	var actions_by_type := _build_actions_by_type_from_server(turn_result)
 	var recording := { "actions": [], "died_ids": [], "summary": [], "damage_causers": {}, "applied_effects": [] }
@@ -1011,8 +1110,10 @@ func play_resolved_turn(turn_result: Dictionary, final_state: Dictionary) -> voi
 	print("[EXEC] pipeline DONE")
 
 	# Store recording for replay: add before_state, damage_by_id, and summary.
+	_normalize_recording_actions_with_unit_ids(recording["actions"])
 	recording["before_state"] = before_state
-	recording["damage_by_id"] = ctx.damage_by_id.duplicate()
+	recording["damage_by_id"] = _convert_damage_by_instance_to_stable(ctx.damage_by_id)
+	recording["died_ids"] = _convert_instance_ids_to_stable_ids(recording.get("died_ids", []))
 	recording["summary"] = _build_summary_from_recording_actions(recording["actions"])
 	last_turn_recording = recording
 	_filter_passive_summary_entries()

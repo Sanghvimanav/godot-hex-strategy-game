@@ -15,6 +15,7 @@ func _ready() -> void:
 	var TestServerTurnExecutor = load("res://tests/test_server_turn_executor.gd") as GDScript
 	var TestUnifiedPipeline = load("res://tests/test_unified_pipeline.gd") as GDScript
 	var TestStunEffects = load("res://tests/test_stun_effects.gd") as GDScript
+	var TestReplayRestore = load("res://tests/test_replay_restore.gd") as GDScript
 
 	if not TestActions.run_all(self):
 		_fail_count += 1
@@ -45,6 +46,10 @@ func _ready() -> void:
 	else:
 		_pass_count += 1
 	if not TestStunEffects.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestReplayRestore.run_all(self):
 		_fail_count += 1
 	else:
 		_pass_count += 1
