@@ -673,7 +673,7 @@ func _replay_last_turn() -> void:
 		var unit = instance_from_id(entry.get("unit_id", 0) as int)
 		if is_instance_valid(unit) and unit is Unit:
 			var eff := UnitEffect.from_dict(entry.get("effect", {}))
-			unit.add_effect(eff)
+			unit.add_effect(eff, false)
 	var units_that_will_die: Array = []
 	for uid in damage_by_id:
 		var unit = instance_from_id(uid as int)

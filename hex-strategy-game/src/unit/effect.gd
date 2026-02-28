@@ -12,6 +12,9 @@ enum Kind {
 var kind: Kind
 var duration: int
 var params: Dictionary
+## True when applied during the current execution turn.
+## End-of-turn ticking consumes this flag first so duration starts next turn.
+var pending_first_tick: bool = false
 
 func _init(p_kind: Kind = Kind.Stun, p_duration: int = 1, p_params: Dictionary = {}) -> void:
 	kind = p_kind

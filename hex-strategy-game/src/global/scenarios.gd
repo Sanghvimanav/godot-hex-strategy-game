@@ -120,6 +120,19 @@ func _build_scenarios() -> void:
 			Vector2i(-1, 1),
 		], 5),
 	})
+	# Stun debug: verify stun is shown on the next planning turn and after replay.
+	available_scenarios.append({
+		"id": "stun_replay_debug",
+		"display_name": "Stun Replay Debug (Base vs Viper)",
+		"groups": [
+			{"name": "player", "units": [
+				{"def_path": "res://src/unit/definitions/terran_base.tres", "cell": Vector2i(0, 0)},
+			]},
+			{"name": "opponent", "ai": true, "units": [
+				{"def_path": "res://src/unit/definitions/viper.tres", "cell": Vector2i(2, 0)},
+			]},
+		]
+	})
 	# Zerg vs Terran: Base + 2 Marines + Scout vs 5 Zerglings + Baneling (randomized positions)
 	available_scenarios.append({
 		"id": "zerg_vs_terran",

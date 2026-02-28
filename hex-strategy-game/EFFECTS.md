@@ -10,8 +10,8 @@ Effects are single-turn or multi-turn statuses on a unit (stun, heal over time, 
 
 ## Lifecycle
 
-- **Applied** – When an action applies an effect (e.g. Viper attack applies Stun), the effect is added to the unit and, when `apply_damage` is true, appended to `recording.applied_effects` for replay.
-- **Tick** – In `_finish_turn_after_execution`, every active unit has `tick_effects()` called: duration is decremented, expired effects removed, and HealOverTime applies its heal.
+- **Applied** – When an action applies an effect (e.g. Viper attack applies Stun), the effect is added to the unit and, when `apply_damage` is true, appended to `recording.applied_effects` for replay. Newly applied effects skip the same-turn end tick once.
+- **Tick** – In `_finish_turn_after_execution`, every active unit has `tick_effects()` called: duration is decremented, expired effects removed, and HealOverTime applies its heal. Effects applied during that execution consume a one-time "pending first tick" flag instead of decrementing immediately.
 - **Save/restore** – `before_state[uid].effects` is an array of effect dicts (`to_dict()`). Restore uses `UnitEffect.from_dict()` and `restore_state(..., effects_data)`. Replay reapplies `applied_effects` after applying damage so stun/effects match the executed turn.
 
 ## Adding new effect types
