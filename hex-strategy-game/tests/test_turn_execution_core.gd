@@ -16,6 +16,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_get_damage_cells_target(tests) and ok
 	ok = _test_get_damage_cells_area_adjacent(tests) and ok
 	ok = _test_execute_turn_move_and_attack(tests) and ok
+	ok = _test_execute_turn_stunned_unit_cannot_move(tests) and ok
 	ok = _test_execute_turn_move_does_not_deplete_tile_resource(tests) and ok
 	ok = _test_execute_turn_extract_depletes_and_accumulates_group_resource(tests) and ok
 	ok = _test_execute_turn_recruit_people_only_extracts_people(tests) and ok
@@ -220,6 +221,51 @@ static func _test_execute_turn_move_and_attack(tests: Node) -> bool:
 		tests._fail("opponent should have 0 units after zergling dies, got %d" % opponent_units.size())
 		return false
 	tests._pass("execute_turn move and attack")
+	return true
+
+static func _test_execute_turn_stunned_unit_cannot_move(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: stunned unit cannot execute move phase actions")
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "units": [
+				{
+					"unit_id": 1,
+					"def_path": "res://src/unit/definitions/marine.tres",
+					"cell": [1, 0],
+					"health": 3,
+					"max_health": 3,
+					"energy": 2,
+					"max_energy": 4,
+					"effects": [{ "kind": "Stun", "duration": 1, "params": {} }]
+				}
+			]},
+			{ "name": "opponent", "ai": false, "units": [] }
+		]
+	}
+	var expected_path := HexGrid.build_path_to(1, 0, 2, 0)
+	var path_arr: Array = []
+	for p in expected_path:
+		path_arr.append([int(p.x), int(p.y)])
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "move_short", "path": path_arr, "end_point": [2, 0] }
+		],
+		"opponent": []
+	}
+	var recording := TurnExecutionCore.execute_turn(game_state, player_actions)
+	var found := TurnExecutionCore.find_unit_by_id(game_state, 1)
+	if found.is_empty():
+		tests._fail("stunned marine should still exist after skipped move")
+		return false
+	var cell: Array = found.unit.get("cell", [0, 0])
+	if cell != [1, 0]:
+		tests._fail("stunned marine should not move; expected [1,0] got %s" % cell)
+		return false
+	for a in recording.get("actions", []):
+		if a.get("unit_id", -1) == 1 and a.get("type", "") == "move":
+			tests._fail("stunned marine move should not be recorded")
+			return false
+	tests._pass("stunned unit cannot execute move phase actions")
 	return true
 
 static func _test_execute_turn_move_does_not_deplete_tile_resource(tests: Node) -> bool:

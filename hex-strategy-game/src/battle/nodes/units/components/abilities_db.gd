@@ -16,6 +16,9 @@ func get_move_paths() -> Array:
 ## Returns Array of {ac: ActionInstance, is_move: bool} for a single action key.
 func get_options_for_action_key(action_key: String) -> Array:
 	var result: Array = []
+	var atype: String = Actions.get_action_type(action_key)
+	if atype in unit.get_disabled_action_types():
+		return []
 	if action_key in unit.def.move_action_keys:
 		var defs_arr: Array = Actions.get_move_definitions_for_action(action_key)
 		for def in defs_arr:

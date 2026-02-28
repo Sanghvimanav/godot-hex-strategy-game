@@ -67,6 +67,9 @@ static func validate_action(game_state: Dictionary, action: Dictionary, group_na
 	var config: Dictionary = Actions.get_action_config(action_key)
 	if config.is_empty():
 		return { valid = false, error = "Unknown action %s" % action_key }
+	var atype: String = config.get("type", "")
+	if atype in TurnExecutionCore.get_disabled_action_types_for_unit(unit):
+		return { valid = false, error = "Unit is stunned" }
 
 	var uc: Array = unit.get("cell", [0, 0])
 	var uq: int = int(uc[0])
@@ -82,7 +85,6 @@ static func validate_action(game_state: Dictionary, action: Dictionary, group_na
 		if unit.get("energy", 0) < int(config.energy_consumption):
 			return { valid = false, error = "Not enough energy" }
 
-	var atype: String = config.get("type", "")
 	if atype == "extract":
 		var tile_resources = game_state.get("tile_resources", {})
 		var key := HexGrid.get_cell_key(uq, ur)

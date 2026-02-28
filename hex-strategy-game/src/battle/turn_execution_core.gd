@@ -100,6 +100,21 @@ static func get_damage_cells_for_config(attacker_q: int, attacker_r: int, path_a
 static func get_action_type(action_key: String) -> String:
 	return Actions.get_action_type(action_key)
 
+
+## Returns phase types disabled by unit effects stored in dictionary game state.
+## Unit shape: { effects: [{kind: "Stun", duration: 1, ...}, ...], ... }
+static func get_disabled_action_types_for_unit(unit: Dictionary) -> Array:
+	var effects = unit.get("effects", [])
+	if effects is Array:
+		for e in effects:
+			if not (e is Dictionary):
+				continue
+			if str(e.get("kind", "")) != "Stun":
+				continue
+			if int(e.get("duration", 0)) > 0:
+				return Actions.ACTION_ORDER.duplicate()
+	return []
+
 ## Depletes finite resource at cell if game_state has tile_resources.
 ## Supports value form: key -> int, and dictionary form: key -> { amount = int, ... }.
 static func _deplete_tile_resource(game_state: Dictionary, cell: Variant, amount: int) -> int:
@@ -208,6 +223,8 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 					continue
 				if get_action_type(str(action.get("action_key", ""))) != action_type:
 					continue
+				if action_type in get_disabled_action_types_for_unit(found.unit):
+					continue
 				entries.append({ "unit": found.unit, "action": action, "group": group })
 
 		# Add passive abilities (e.g. attack_passive) so server matches single-player TurnExecutor:
@@ -217,6 +234,8 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				# Include AI groups for passive abilities (SP)
 				for unit in group.get("units", []):
 					if unit.get("health", 0) <= 0:
+						continue
+					if action_type in get_disabled_action_types_for_unit(unit):
 						continue
 					var def_path: String = unit.get("def_path", "")
 					if def_path.is_empty():

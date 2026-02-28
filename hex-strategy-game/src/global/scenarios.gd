@@ -133,6 +133,19 @@ func _build_scenarios() -> void:
 			]},
 		]
 	})
+	# Stun move-lock debug: viper stuns a movable unit; next turn unit should have no move options.
+	available_scenarios.append({
+		"id": "stun_move_lock_debug",
+		"display_name": "Stun Move Lock Debug (Marine vs Viper)",
+		"groups": [
+			{"name": "player", "units": [
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(0, 0)},
+			]},
+			{"name": "opponent", "ai": true, "units": [
+				{"def_path": "res://src/unit/definitions/viper.tres", "cell": Vector2i(2, 0)},
+			]},
+		]
+	})
 	# Zerg vs Terran: Base + 2 Marines + Scout vs 5 Zerglings + Baneling (randomized positions)
 	available_scenarios.append({
 		"id": "zerg_vs_terran",

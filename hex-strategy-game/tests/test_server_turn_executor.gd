@@ -10,6 +10,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_validate_action_invalid_path(tests) and ok
 	ok = _test_validate_action_unit_not_found(tests) and ok
 	ok = _test_validate_action_dead_unit(tests) and ok
+	ok = _test_validate_action_stunned_unit(tests) and ok
 	ok = _test_validate_action_target_out_of_range(tests) and ok
 	ok = _test_validate_action_scout_attack_ray_range_window(tests) and ok
 	ok = _test_validate_action_extract_requires_resource(tests) and ok
@@ -117,6 +118,30 @@ static func _test_validate_action_dead_unit(tests: Node) -> bool:
 		tests._fail("dead unit should return dead-related error, got %s" % result.get("error", ""))
 		return false
 	tests._pass("validate_action dead unit")
+	return true
+
+static func _test_validate_action_stunned_unit(tests: Node) -> bool:
+	tests._log("test_server_turn_executor: validate_action stunned unit")
+	var game_state := _make_game_state()
+	game_state["groups"][0]["units"][0]["effects"] = [{ "kind": "Stun", "duration": 1, "params": {} }]
+	var expected_path := HexGrid.build_path_to(1, 0, 2, 0)
+	var path_arr: Array = []
+	for p in expected_path:
+		path_arr.append([int(p.x), int(p.y)])
+	var action := {
+		"unit_id": 1,
+		"action_key": "move_short",
+		"path": path_arr,
+		"end_point": [2, 0]
+	}
+	var result := ServerTurnExecutor.validate_action(game_state, action, "player")
+	if result.get("valid", false):
+		tests._fail("stunned unit should fail validation")
+		return false
+	if "stunned" not in str(result.get("error", "")).to_lower():
+		tests._fail("stunned unit should return stunned-related error, got %s" % result.get("error", ""))
+		return false
+	tests._pass("validate_action stunned unit")
 	return true
 
 static func _test_validate_action_target_out_of_range(tests: Node) -> bool:

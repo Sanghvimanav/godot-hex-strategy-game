@@ -315,9 +315,22 @@ func _all_units_have_planned_action() -> bool:
 	if active.is_empty():
 		return false
 	for u in active:
+		if not _unit_has_plannable_actions(u):
+			continue
 		if u.planned_action == null:
 			return false
 	return true
+
+func _unit_has_plannable_actions(unit: Unit) -> bool:
+	if unit == null or not unit.is_active:
+		return false
+	for key in unit.def.move_action_keys:
+		if not unit.abilities_db.get_options_for_action_key(key).is_empty():
+			return true
+	for key in unit.def.ability_action_keys:
+		if not unit.abilities_db.get_options_for_action_key(key).is_empty():
+			return true
+	return false
 
 func _begin_planning() -> void:
 	battle_phase = BattlePhase.Phase.PLANNING
@@ -364,17 +377,19 @@ func _advance_planning() -> void:
 	var start_idx := planning_unit_index + 1
 	for i in active.size():
 		var idx := (start_idx + i) % active.size()
+		if not _unit_has_plannable_actions(active[idx]):
+			continue
 		if active[idx].planned_action == null:
 			planning_unit_index = idx
 			_select_planning_unit()
 			return
-		# All units have planned actions - clear highlights before completing
-		current_unit = null
-		current_acs = []
-		selected_action_key = ""
-		EventBus.unit_selected_for_planning.emit(null)
-		_update_highlights()
-		EventBus.planning_complete.emit()
+	# All units that can act have planned actions - clear highlights before completing
+	current_unit = null
+	current_acs = []
+	selected_action_key = ""
+	EventBus.unit_selected_for_planning.emit(null)
+	_update_highlights()
+	EventBus.planning_complete.emit()
 
 func _select_planning_unit() -> void:
 	var active = get_active_units()
@@ -389,6 +404,9 @@ func _select_planning_unit() -> void:
 	var unit_group_name: String = current_unit.get_parent().name if current_unit.get_parent() else ""
 	if unit_group_name in ai_group_names:
 		_run_ai_planning()
+		return
+	if not _unit_has_plannable_actions(current_unit):
+		_advance_planning()
 		return
 	selected_action_key = ""
 	EventBus.unit_selected_for_planning.emit(current_unit)
@@ -482,6 +500,10 @@ func _build_game_state_from_scene() -> Dictionary:
 				u.set_meta("unit_id", u.get_instance_id())
 			var unit_id: int = u.get_meta("unit_id")
 			var cell_arr: Array = [u.cell.x, u.cell.y]
+			var effects_data: Array = []
+			for e in u.active_effects:
+				if e is UnitEffect:
+					effects_data.append(e.to_dict())
 			g_dict.units.append({
 				"unit_id": unit_id,
 				"def_path": u.def.resource_path if u.def else "",
@@ -490,7 +512,8 @@ func _build_game_state_from_scene() -> Dictionary:
 				"max_health": u.max_health,
 				"energy": u.energy,
 				"max_energy": u.max_energy,
-				"is_active": u.is_active
+				"is_active": u.is_active,
+				"effects": effects_data
 			})
 		groups_arr.append(g_dict)
 	var out_state: Dictionary = { "groups": groups_arr }
@@ -520,6 +543,8 @@ func _build_player_actions_from_units(game_state: Dictionary) -> Dictionary:
 					path_arr.append([int(p.x), int(p.y)])
 				var end_arr: Array = [int(ac.end_point.x), int(ac.end_point.y)]
 				var atype: String = Actions.get_action_type(action_key) if action_key else ""
+				if atype in u.get_disabled_action_types():
+					continue
 				if atype in ["fast move", "move", "slow move"]:
 					path_arr.append(end_arr)
 				player_actions[gname].append({
