@@ -38,6 +38,7 @@ Or use the script: `hex-strategy-game/tests/run_tests.sh`
 - **TurnExecutionCore** – `find_unit_by_id`, `get_units_at_cell`, `get_unit_def`, `get_damage_cells_for_config` (self, ray, target, area_adjacent), `execute_turn` (move + attack, recording structure, died_ids), `check_win_condition`.
 - **ServerTurnExecutor** – `validate_action` (valid move, invalid path, unit not found, dead unit, target out of range), `execute_turn` delegates to core.
 - **Unified pipeline** – TurnExecutor.get_damage_cells matches TurnExecutionCore.get_damage_cells_for_config for self/ray/target; execute_turn produces valid recording structure.
+- **Stun effects** – stun application is recorded during execution, persists through immediate end-turn tick to the next planning turn, and replays back to the same stunned next-turn state.
 
 The tests use the real autoloads and scripts: **EventBus**, **TurnExecutor**, **Actions**, **HexGrid**, **TurnExecutionCore**, **ServerTurnExecutor**.
 

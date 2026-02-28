@@ -136,8 +136,11 @@ func get_disabled_action_types() -> Array:
 			return Actions.ACTION_ORDER.duplicate()
 	return []
 
-func add_effect(effect: UnitEffect) -> void:
+## Adds an effect. Newly applied effects skip the current end-of-turn decrement once.
+func add_effect(effect: UnitEffect, mark_as_new: bool = true) -> void:
 	if effect != null and effect.duration > 0:
+		if mark_as_new:
+			effect.pending_first_tick = true
 		active_effects.append(effect)
 
 ## Returns a short string for UI: e.g. "Stun (1), HealOverTime (2)" or "None".
@@ -158,10 +161,14 @@ func get_effects_display_text() -> String:
 	return ", ".join(parts)
 
 ## Call at end of turn: decrement duration, remove expired, apply HealOverTime etc.
+## Newly applied effects skip this first tick so they are active next turn.
 func tick_effects() -> void:
 	var to_remove: Array = []
 	for e in active_effects:
 		if not e is UnitEffect:
+			continue
+		if e.pending_first_tick:
+			e.pending_first_tick = false
 			continue
 		if e.kind == UnitEffect.Kind.HealOverTime:
 			var heal_per_turn: int = int(e.params.get("heal_per_turn", 0))
