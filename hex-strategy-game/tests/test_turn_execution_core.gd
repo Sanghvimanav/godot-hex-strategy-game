@@ -420,6 +420,13 @@ static func _test_execute_turn_scout_attack_ray_damages_only_target_tile(tests: 
 	if target_enemy.unit.get("health", 0) != 2:
 		tests._fail("target enemy at [2,0] should take exactly 1 damage, got health %s" % target_enemy.unit.get("health", 0))
 		return false
+	var scout := TurnExecutionCore.find_unit_by_id(game_state, 1)
+	if scout.is_empty():
+		tests._fail("scout should still exist after attacking")
+		return false
+	if int(scout.unit.get("energy", -1)) != 2:
+		tests._fail("scout attack_ray should consume exactly 1 energy (3 -> 2), got %s" % scout.unit.get("energy", -1))
+		return false
 	tests._pass("scout attack_ray damages only target tile")
 	return true
 

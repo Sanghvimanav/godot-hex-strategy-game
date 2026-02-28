@@ -93,7 +93,7 @@ const ACTION_CONFIGS: Dictionary = {
 		min_range = 2,
 		max_range = 3,
 		color = "#FF0000",
-		energy_consumption = 2,
+		energy_consumption = 1,
 	},
 	"attack_area_adjacent": {
 		key = "attack_area_adjacent",

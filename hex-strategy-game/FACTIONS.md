@@ -26,7 +26,7 @@ Units belong to a **faction** (see `UnitDefinition.Faction`). Faction is used fo
 ### Style of play
 
 - **Range and sight:** Marine has **Attack** (1 range, AoE in one direction) and **Rest** to regen **energy**; **sight_range 2** for fog. Scout has **Shoot** (ray 2–3 range), **Recruit**, **Rest**, and **sight_range 3**. Terran can see and shoot from a distance.
-- **Resource management:** Both use **energy** for main attacks (marine 1 per Attack, scout 2 per Shoot). **Rest** (reload) gives energy back. Decisions are move vs shoot vs rest to keep pressure or save for key shots.
+- **Resource management:** Both use **energy** for main attacks (marine 1 per Attack, scout 1 per Shoot). **Rest** (reload) gives energy back. Decisions are move vs shoot vs rest to keep pressure or save for key shots.
 - **Phased pressure:** Marine’s passive is **normal attack phase** (attack_passive_normal), so it shoots in the main attack phase after moves. Scout has no passive—only planned actions. Terran controls when to commit attacks and when to reposition or rest.
 - **Summary:** Ranged, vision-based, energy-limited. Hold sight lines, manage energy with Rest, and use range to punish Zerg that overextends. Marine for front-line AoE and vision; Scout for long-range picks plus village recruitment.
 
