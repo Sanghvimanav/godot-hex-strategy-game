@@ -262,6 +262,198 @@ func get_all_units() -> Array[Unit]:
 				units.append(child)
 	return units
 
+func _get_unit_stable_id(u: Unit) -> int:
+	if not (is_instance_valid(u) and u is Unit):
+		return 0
+	if u.has_meta("unit_id"):
+		return int(u.get_meta("unit_id"))
+	return u.get_instance_id()
+
+func _find_unit_by_stable_id(unit_id: int) -> Unit:
+	if unit_id <= 0:
+		return null
+	for u in get_all_units():
+		if not (is_instance_valid(u) and u is Unit):
+			continue
+		if _get_unit_stable_id(u) == unit_id:
+			return u
+	return null
+
+func _build_unit_snapshot(u: Unit) -> Dictionary:
+	var snapshot: Dictionary = {
+		"unit_id": _get_unit_stable_id(u),
+		"cell": u.cell,
+		"health": u.health,
+		"group_name": u.get_parent().name if u.get_parent() else "",
+		"def_path": u.def.resource_path if u.def else "",
+		"max_health": u.max_health,
+		"max_energy": u.max_energy,
+		"unit_name": u.def.name if u.def else "Unit",
+	}
+	if u.max_energy > 0:
+		snapshot["energy"] = u.energy
+	var effects_data: Array = []
+	for e in u.active_effects:
+		if e is UnitEffect:
+			effects_data.append(e.to_dict())
+	snapshot["effects"] = effects_data
+	return snapshot
+
+func _resolve_unit_for_replay_id(raw_id: int) -> Unit:
+	var stable_match: Unit = _find_unit_by_stable_id(raw_id)
+	if stable_match != null:
+		return stable_match
+	var legacy = instance_from_id(raw_id)
+	if is_instance_valid(legacy) and legacy is Unit:
+		return legacy
+	return null
+
+func _cell_to_array(value: Variant, fallback: Vector2 = Vector2.ZERO) -> Array:
+	if value is Vector2:
+		return [int(value.x), int(value.y)]
+	if value is Vector2i:
+		return [int(value.x), int(value.y)]
+	if value is Array and value.size() >= 2:
+		return [int(value[0]), int(value[1])]
+	return [int(fallback.x), int(fallback.y)]
+
+func _cell_to_vector2(value: Variant, fallback: Vector2 = Vector2.ZERO) -> Vector2:
+	var arr: Array = _cell_to_array(value, fallback)
+	return Vector2(int(arr[0]), int(arr[1]))
+
+func _path_to_cell_arrays(path_spec: Array) -> Array:
+	var out: Array = []
+	for p in path_spec:
+		out.append(_cell_to_array(p))
+	return out
+
+func _path_to_vector2(path_spec: Array) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	for p in path_spec:
+		out.append(_cell_to_vector2(p))
+	return out
+
+func _serialize_recording_actions(recording_actions: Array) -> Array:
+	var serialized: Array = []
+	for action in recording_actions:
+		if not (action is Dictionary):
+			continue
+		var atype: String = str(action.get("type", ""))
+		if atype.is_empty():
+			continue
+		var unit_id: int = int(action.get("unit_id", -1))
+		var unit = action.get("unit")
+		if unit_id <= 0 and is_instance_valid(unit) and unit is Unit:
+			unit_id = _get_unit_stable_id(unit)
+		if unit_id <= 0:
+			continue
+		var unit_for_meta: Unit = unit if (is_instance_valid(unit) and unit is Unit) else _resolve_unit_for_replay_id(unit_id)
+		var out: Dictionary = {
+			"type": atype,
+			"unit_id": unit_id,
+		}
+		if is_instance_valid(unit_for_meta) and unit_for_meta is Unit and unit_for_meta.def:
+			out["unit_name"] = unit_for_meta.def.name
+		var ac = action.get("ac")
+		var action_key: String = str(action.get("action_key", ""))
+		var action_name: String = str(action.get("action_name", ""))
+		if ac is ActionInstance:
+			if ac.definition:
+				action_key = ac.definition.action_key
+				action_name = ac.definition.display_name if ac.definition.display_name else action_name
+			out["path"] = _path_to_cell_arrays(ac.path)
+			out["end_point"] = _cell_to_array(ac.end_point)
+		if atype == "move":
+			var move_path: Array = action.get("path", [])
+			if move_path.is_empty() and out.has("path") and out.has("end_point"):
+				var fallback_path: Array = (out["path"] as Array).duplicate()
+				fallback_path.append(out["end_point"])
+				move_path = fallback_path
+			out["path"] = _path_to_cell_arrays(move_path)
+			if out["path"].is_empty():
+				continue
+		else:
+			if not action_key.is_empty():
+				out["action_key"] = action_key
+			if action_name.is_empty() and not action_key.is_empty():
+				var cfg: Dictionary = Actions.get_action_config(action_key)
+				action_name = str(cfg.get("name", "Action"))
+			if not action_name.is_empty():
+				out["action_name"] = action_name
+			if not out.has("path") and action.has("path"):
+				out["path"] = _path_to_cell_arrays(action.get("path", []))
+			if not out.has("end_point") and action.has("end_point"):
+				out["end_point"] = _cell_to_array(action.get("end_point"))
+		if action.has("is_passive"):
+			out["is_passive"] = bool(action.get("is_passive", false))
+		elif is_instance_valid(unit_for_meta) and unit_for_meta is Unit and not action_key.is_empty() and unit_for_meta.def:
+			out["is_passive"] = action_key in unit_for_meta.def.passive_action_keys
+		if atype == "spawn":
+			out["spawned_unit_id"] = int(action.get("spawned_unit_id", 0))
+			out["spawn_path"] = str(action.get("spawn_path", ""))
+			if action.has("cell"):
+				out["cell"] = _cell_to_array(action.get("cell"))
+			elif out.has("end_point"):
+				out["cell"] = out["end_point"]
+		serialized.append(out)
+	return serialized
+
+func _convert_damage_by_instance_to_stable(damage_by_instance: Dictionary) -> Dictionary:
+	var converted: Dictionary = {}
+	for id_key in damage_by_instance:
+		var instance_id: int = int(id_key)
+		var stable_id: int = instance_id
+		var unit = instance_from_id(instance_id)
+		if is_instance_valid(unit) and unit is Unit:
+			stable_id = _get_unit_stable_id(unit)
+		converted[stable_id] = int(converted.get(stable_id, 0)) + int(damage_by_instance[id_key])
+	return converted
+
+func _convert_instance_ids_to_stable_ids(ids: Array) -> Array:
+	var converted: Array = []
+	for raw_id in ids:
+		var instance_id: int = int(raw_id)
+		var stable_id: int = instance_id
+		var unit = instance_from_id(instance_id)
+		if is_instance_valid(unit) and unit is Unit:
+			stable_id = _get_unit_stable_id(unit)
+		if stable_id not in converted:
+			converted.append(stable_id)
+	return converted
+
+func _convert_damage_causers_to_stable(causers: Dictionary) -> Dictionary:
+	var converted: Dictionary = {}
+	for raw_key in causers:
+		var key_str: String = str(raw_key)
+		var sep_idx: int = key_str.find("_")
+		if sep_idx <= 0:
+			converted[key_str] = bool(causers[raw_key])
+			continue
+		var raw_id: int = int(key_str.substr(0, sep_idx))
+		var action_key: String = key_str.substr(sep_idx + 1)
+		var stable_id: int = raw_id
+		var unit = instance_from_id(raw_id)
+		if is_instance_valid(unit) and unit is Unit:
+			stable_id = _get_unit_stable_id(unit)
+		converted["%d_%s" % [stable_id, action_key]] = bool(causers[raw_key])
+	return converted
+
+func _convert_applied_effects_to_stable(applied_effects: Array) -> Array:
+	var converted: Array = []
+	for raw_entry in applied_effects:
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry.duplicate(true)
+		var raw_id: int = int(entry.get("unit_id", 0))
+		if raw_id > 0:
+			var stable_id: int = raw_id
+			var unit = instance_from_id(raw_id)
+			if is_instance_valid(unit) and unit is Unit:
+				stable_id = _get_unit_stable_id(unit)
+			entry["unit_id"] = stable_id
+		converted.append(entry)
+	return converted
+
 func _clear_all_planned_actions() -> void:
 	for u in get_active_units():
 		u.planned_action = null
@@ -553,15 +745,8 @@ func _record_turn_before_execution() -> void:
 	last_turn_recording = { "actions": [], "died_ids": [], "summary": [], "before_state": {}, "damage_causers": {}, "applied_effects": [] }
 	var active = get_active_units()
 	for u in active:
-		var s: Dictionary = { "cell": u.cell, "health": u.health }
-		if u.max_energy > 0:
-			s["energy"] = u.energy
-		var effects_data: Array = []
-		for e in u.active_effects:
-			if e is UnitEffect:
-				effects_data.append(e.to_dict())
-		s["effects"] = effects_data
-		last_turn_recording.before_state[u.get_instance_id()] = s
+		var snapshot: Dictionary = _build_unit_snapshot(u)
+		last_turn_recording.before_state[int(snapshot.get("unit_id", _get_unit_stable_id(u)))] = snapshot
 	for u in active:
 		if not u.is_active:
 			continue
@@ -569,19 +754,36 @@ func _record_turn_before_execution() -> void:
 			var ac: ActionInstance = u.planned_action
 			var action_name: String = ac.definition.display_name if ac.definition.display_name else "Action"
 			var atype: String = Actions.get_action_type(ac.definition.action_key) if ac.definition else ""
-			last_turn_recording.summary.append({ "unit_name": u.def.name, "action_name": action_name, "instance_id": u.get_instance_id(), "action_type": atype })
+			last_turn_recording.summary.append({
+				"unit_name": u.def.name,
+				"action_name": action_name,
+				"instance_id": u.get_instance_id(),
+				"unit_id": _get_unit_stable_id(u),
+				"action_type": atype
+			})
 		for def in u.def.get_passive_ability_definitions_resolved():
 			var action_name: String = def.display_name if def.display_name else "Passive"
 			var atype: String = Actions.get_action_type(def.action_key)
-			last_turn_recording.summary.append({ "unit_name": u.def.name, "action_name": action_name, "instance_id": u.get_instance_id(), "action_key": def.action_key, "is_passive": true, "action_type": atype })
+			last_turn_recording.summary.append({
+				"unit_name": u.def.name,
+				"action_name": action_name,
+				"instance_id": u.get_instance_id(),
+				"unit_id": _get_unit_stable_id(u),
+				"action_key": def.action_key,
+				"is_passive": true,
+				"action_type": atype
+			})
 
 func _filter_passive_summary_entries() -> void:
 	var causers: Dictionary = last_turn_recording.get("damage_causers", {})
 	var filtered: Array = []
 	for entry in last_turn_recording.summary:
 		if entry.get("is_passive", false):
-			var key := "%d_%s" % [entry.instance_id, entry.get("action_key", "")]
-			if not causers.get(key, false):
+			var stable_id: int = int(entry.get("unit_id", entry.get("instance_id", 0)))
+			var legacy_id: int = int(entry.get("instance_id", stable_id))
+			var stable_key := "%d_%s" % [stable_id, entry.get("action_key", "")]
+			var legacy_key := "%d_%s" % [legacy_id, entry.get("action_key", "")]
+			if not causers.get(stable_key, false) and not causers.get(legacy_key, false):
 				continue
 		filtered.append(entry)
 	last_turn_recording.summary = filtered
@@ -608,7 +810,8 @@ func _on_replay_turn_requested() -> void:
 		summary_lines.append("")
 		summary_lines.append(_phase_display_name(action_type))
 		for entry in entries_in_phase:
-			var suffix := " (eliminated)" if entry.instance_id in died_ids else ""
+			var entry_id: int = int(entry.get("unit_id", entry.get("instance_id", -1)))
+			var suffix := " (eliminated)" if entry_id in died_ids else ""
 			summary_lines.append("  %s: %s%s" % [entry.unit_name, entry.action_name, suffix])
 
 	summary_lines.append("")
@@ -620,8 +823,8 @@ func _on_replay_turn_requested() -> void:
 			var start_hp: int = before_state.get(uid, {}).get("health", 0)
 			var damage: int = damage_by_id[uid]
 			var end_hp: int = mini(maxi(start_hp - damage, 0), 999)
-			var unit_name: String = "Unit"
-			var unit = instance_from_id(uid as int)
+			var unit_name: String = str(before_state.get(uid, {}).get("unit_name", "Unit"))
+			var unit = _resolve_unit_for_replay_id(int(uid))
 			if is_instance_valid(unit) and unit is Unit:
 				unit_name = unit.def.name
 			var elim := " (eliminated)" if end_hp <= 0 else ""
@@ -662,8 +865,7 @@ func _replay_last_turn() -> void:
 	await TurnExecutor.run_pipeline(actions_by_type, ctx)
 	var damage_by_id: Dictionary = last_turn_recording.get("damage_by_id", {})
 	for uid_key in damage_by_id:
-		var uid: int = int(uid_key)
-		var unit = instance_from_id(uid)
+		var unit = _resolve_unit_for_replay_id(int(uid_key))
 		if is_instance_valid(unit):
 			var dmg: int = int(damage_by_id[uid_key])
 			unit.health -= dmg
@@ -671,13 +873,13 @@ func _replay_last_turn() -> void:
 				unit.health_bar.update_value(unit.health)
 	var applied_effects: Array = last_turn_recording.get("applied_effects", [])
 	for entry in applied_effects:
-		var unit = instance_from_id(entry.get("unit_id", 0) as int)
+		var unit = _resolve_unit_for_replay_id(int(entry.get("unit_id", 0)))
 		if is_instance_valid(unit) and unit is Unit:
 			var eff := UnitEffect.from_dict(entry.get("effect", {}))
 			unit.add_effect(eff, false)
 	var units_that_will_die: Array = []
 	for uid in damage_by_id:
-		var unit = instance_from_id(uid as int)
+		var unit = _resolve_unit_for_replay_id(int(uid))
 		if is_instance_valid(unit) and unit.health <= 0:
 			units_that_will_die.append(unit)
 	var to_await := units_that_will_die.filter(func(u): return is_instance_valid(u))
@@ -744,55 +946,114 @@ func _restore_replay_return_state(snapshot: Dictionary) -> void:
 			unit.restore_state(s.cell, s.health, energy_val, effects_data)
 			unit.visible = bool(s.get("visible", true))
 
-## Builds actions_by_type from recorded actions so replay uses the same run_pipeline as live execution.
-func _build_replay_actions_by_type(recording_actions: Array) -> Dictionary:
+func _map_recorded_action_type(action_type: String) -> String:
+	var atype: String = action_type
+	if atype == "attack" or atype == "support":
+		atype = "ability"
+	elif atype == "fast attack":
+		atype = "fast ability"
+	elif atype == "slow attack":
+		atype = "slow ability"
+	elif atype == "reload":
+		atype = "slow ability"
+	return atype
+
+func _build_actions_by_type_from_action_list(action_list: Array) -> Dictionary:
 	var actions_by_type: Dictionary = {}
 	for t in Actions.ACTION_ORDER:
 		actions_by_type[t] = []
-	for action in recording_actions:
-		var atype: String = action.get("type", "")
+	for raw_action in action_list:
+		if not (raw_action is Dictionary):
+			continue
+		var action: Dictionary = raw_action
+		var atype: String = _map_recorded_action_type(str(action.get("type", "")))
 		if atype.is_empty():
 			continue
-		# Map legacy recording types to phase names
-		if atype == "attack" or atype == "support":
-			atype = "ability"
-		elif atype == "fast attack":
-			atype = "fast ability"
-		elif atype == "slow attack":
-			atype = "slow ability"
-		elif atype == "reload":
-			atype = "slow ability"
+		var unit_id: int = int(action.get("unit_id", -1))
 		var u = action.get("unit")
+		if (not is_instance_valid(u) or not u is Unit) and unit_id > 0:
+			u = _resolve_unit_for_replay_id(unit_id)
 		if not is_instance_valid(u) or not u is Unit:
 			continue
 		var entry: Dictionary = { "unit": u, "is_move": (atype == "move") }
 		if atype == "move":
-			var path: Array = action.get("path", [])
-			if path.is_empty():
+			var full_path: Array[Vector2] = _path_to_vector2(action.get("path", []))
+			if full_path.size() < 2:
+				var legacy_ac = action.get("ac")
+				if legacy_ac is ActionInstance:
+					full_path = legacy_ac.path.duplicate()
+					full_path.append(legacy_ac.end_point)
+			if full_path.size() < 2:
 				continue
-			var ac := ActionInstance.new(null, u)
-			ac.path = path.slice(0, path.size() - 1)
-			ac.end_point = path[path.size() - 1]
-			entry["ac"] = ac
+			var move_ac := ActionInstance.new(null, u)
+			move_ac.path = full_path.slice(0, full_path.size() - 1)
+			move_ac.end_point = full_path[full_path.size() - 1]
+			entry["ac"] = move_ac
 		else:
-			entry["ac"] = action.get("ac")
-			if entry["ac"] == null and action.get("type", "") == "reload":
-				var defs: Array = Actions.get_ability_definitions_for_action("reload")
-				if not defs.is_empty():
-					entry["ac"] = defs[0].to_action_instance(u)
-			if entry["ac"] == null:
+			var action_key: String = str(action.get("action_key", ""))
+			var legacy_ac = action.get("ac")
+			if action_key.is_empty() and legacy_ac is ActionInstance and legacy_ac.definition:
+				action_key = legacy_ac.definition.action_key
+			if action_key.is_empty():
 				continue
+			var ability_ac := ActionInstance.new(null, u)
+			var defs: Array = Actions.get_ability_definitions_for_action(action_key)
+			if not defs.is_empty():
+				ability_ac.definition = defs[0]
+			var src_dict: Dictionary = legacy_ac if legacy_ac is Dictionary else {}
+			var path_raw: Array = action.get("path", src_dict.get("path", []))
+			var ability_path: Array[Vector2] = _path_to_vector2(path_raw)
+			if ability_path.is_empty() and legacy_ac is ActionInstance:
+				ability_path = legacy_ac.path.duplicate()
+			ability_ac.path = ability_path
+			var end_raw = action.get("end_point", src_dict.get("end_point", null))
+			if end_raw != null:
+				ability_ac.end_point = _cell_to_vector2(end_raw, u.cell)
+			elif legacy_ac is ActionInstance:
+				ability_ac.end_point = legacy_ac.end_point
+			else:
+				ability_ac.end_point = u.cell
+			entry["ac"] = ability_ac
+		if atype == "spawn":
+			var spawn_path: String = str(action.get("spawn_path", ""))
+			if spawn_path.is_empty():
+				var spawn_cfg: Dictionary = Actions.get_action_config(str(action.get("action_key", "")))
+				spawn_path = str(spawn_cfg.get("spawn_unit", ""))
+			var spawn_cell_raw = action.get("cell", action.get("end_point", u.cell))
+			var spawn_cell: Vector2 = _cell_to_vector2(spawn_cell_raw, u.cell)
+			entry["spawn_data"] = {
+				"spawned_unit_id": int(action.get("spawned_unit_id", 0)),
+				"spawn_path": spawn_path,
+				"cell": spawn_cell
+			}
 		if not actions_by_type.has(atype):
 			actions_by_type[atype] = []
 		actions_by_type[atype].append(entry)
 	return actions_by_type
 
+## Builds actions_by_type from recorded actions so replay uses the same run_pipeline as live execution.
+func _build_replay_actions_by_type(recording_actions: Array) -> Dictionary:
+	return _build_actions_by_type_from_action_list(recording_actions)
+
 func _restore_before_state(before_state: Dictionary) -> void:
 	for uid in before_state:
-		var unit = instance_from_id(uid as int)
-		if is_instance_valid(unit) and unit is Unit:
-			var s: Dictionary = before_state[uid]
-			var energy_val: int = s.get("energy", -1)
+		var unit_id: int = int(uid)
+		var s: Dictionary = before_state[uid]
+		var unit: Unit = _find_unit_by_stable_id(unit_id)
+		if unit == null:
+			var group_name: String = str(s.get("group_name", ""))
+			var def_path: String = str(s.get("def_path", ""))
+			var group_node = get_node_or_null(group_name)
+			var def: UnitDefinition = load(def_path) as UnitDefinition
+			if group_node != null and def != null:
+				unit = UNIT_SCENE.instantiate() as Unit
+				unit.def = def
+				var start_cell: Vector2 = s.get("cell", Vector2.ZERO)
+				unit.starting_cell = Vector2i(int(start_cell.x), int(start_cell.y))
+				unit.set_meta("unit_id", unit_id)
+				group_node.add_child(unit)
+		if is_instance_valid(unit):
+			var energy_val: int = int(s.get("energy", -1))
 			var effects_data: Array = s.get("effects", [])
 			unit.restore_state(s.cell, s.health, energy_val, effects_data)
 
@@ -818,7 +1079,11 @@ func _run_planned_actions_phase3() -> void:
 	print("[EXEC] pipeline DONE")
 
 	# Damage was already applied after each attack phase in the pipeline; died_ids populated there
-	last_turn_recording["damage_by_id"] = ctx.damage_by_id.duplicate()
+	last_turn_recording["actions"] = _serialize_recording_actions(last_turn_recording.get("actions", []))
+	last_turn_recording["damage_by_id"] = _convert_damage_by_instance_to_stable(ctx.damage_by_id)
+	last_turn_recording["died_ids"] = _convert_instance_ids_to_stable_ids(last_turn_recording.get("died_ids", []))
+	last_turn_recording["damage_causers"] = _convert_damage_causers_to_stable(last_turn_recording.get("damage_causers", {}))
+	last_turn_recording["applied_effects"] = _convert_applied_effects_to_stable(last_turn_recording.get("applied_effects", []))
 	_filter_passive_summary_entries()
 	var units_that_will_die: Array = []
 	for u in get_all_units():
@@ -854,28 +1119,32 @@ func _build_summary_from_recording_actions(recording_actions: Array) -> Array:
 	for action in recording_actions:
 		if not action is Dictionary:
 			continue
-		var u = action.get("unit")
-		if not is_instance_valid(u) or not u is Unit:
+		var unit_id: int = int(action.get("unit_id", -1))
+		if unit_id <= 0:
 			continue
-		var atype: String = str(action.get("type", ""))
-		var action_name: String = "Action"
-		var action_key: String = ""
-		var is_passive: bool = false
-		var ac = action.get("ac")
-		if ac is ActionInstance and ac.definition:
-			action_name = ac.definition.display_name if ac.definition.display_name else "Action"
-			action_key = ac.definition.action_key
-			is_passive = action_key in u.def.passive_action_keys if u.def else false
-		elif action.has("action_key"):
-			action_key = str(action.get("action_key", ""))
-			var cfg: Dictionary = Actions.get_action_config(action_key)
-			action_name = cfg.get("name", "Action")
-		elif atype == "move":
-			action_name = "Move"
+		var u: Unit = _resolve_unit_for_replay_id(unit_id)
+		var atype: String = _map_recorded_action_type(str(action.get("type", "")))
+		var action_name: String = str(action.get("action_name", ""))
+		var action_key: String = str(action.get("action_key", ""))
+		if action_name.is_empty():
+			if atype == "move":
+				action_name = "Move"
+			elif not action_key.is_empty():
+				var cfg: Dictionary = Actions.get_action_config(action_key)
+				action_name = str(cfg.get("name", "Action"))
+			else:
+				action_name = "Action"
+		var unit_name: String = str(action.get("unit_name", "Unit"))
+		if is_instance_valid(u) and u is Unit and u.def:
+			unit_name = u.def.name
+		var is_passive: bool = bool(action.get("is_passive", false))
+		if not is_passive and is_instance_valid(u) and u is Unit and u.def and not action_key.is_empty():
+			is_passive = action_key in u.def.passive_action_keys
 		var entry: Dictionary = {
-			"unit_name": u.def.name if u.def else "Unit",
+			"unit_name": unit_name,
 			"action_name": action_name,
-			"instance_id": u.get_instance_id(),
+			"instance_id": u.get_instance_id() if is_instance_valid(u) and u is Unit else unit_id,
+			"unit_id": unit_id,
 			"action_type": atype
 		}
 		if is_passive:
@@ -886,82 +1155,10 @@ func _build_summary_from_recording_actions(recording_actions: Array) -> Array:
 
 ## Build actions_by_type directly from server turn_result (dictionary recording) for multiplayer animation.
 func _build_actions_by_type_from_server(turn_result: Dictionary) -> Dictionary:
-	var actions_by_type: Dictionary = {}
-	for t in Actions.ACTION_ORDER:
-		actions_by_type[t] = []
-	# Map unit_id -> Unit node using multiplayer unit_id meta set in apply_multiplayer_state
-	var id_to_unit: Dictionary = {}
-	for u in get_all_units():
-		if u.has_meta("unit_id"):
-			id_to_unit[int(u.get_meta("unit_id"))] = u
 	var server_actions: Array = []
 	if turn_result.has("actions"):
 		server_actions = turn_result["actions"]
-	for a in server_actions:
-		if not (a is Dictionary):
-			continue
-		var atype: String = str(a.get("type", ""))
-		if atype.is_empty():
-			continue
-		var uid: int = int(a.get("unit_id", -1))
-		var unit = id_to_unit.get(uid)
-		if unit == null:
-			continue
-		var entry: Dictionary = { "unit": unit, "is_move": (atype == "move") }
-		if atype == "move":
-			var path_spec: Array = a.get("path", [])
-			var cells: Array[Vector2] = []
-			for c in path_spec:
-				if c is Array and c.size() >= 2:
-					cells.append(Vector2(int(c[0]), int(c[1])))
-			if cells.size() < 2:
-				continue
-			var ac := ActionInstance.new(null, unit)
-			ac.path = cells.slice(0, cells.size() - 1)
-			ac.end_point = cells[cells.size() - 1]
-			entry["ac"] = ac
-		else:
-			var action_key: String = str(a.get("action_key", ""))
-			if action_key.is_empty():
-				continue
-			var src = a.get("ac", {})
-			var path_spec: Array = []
-			var end_spec = null
-			if src is Dictionary:
-				if src.has("path"):
-					path_spec = src["path"]
-				if src.has("end_point"):
-					end_spec = src["end_point"]
-			if end_spec == null:
-				end_spec = a.get("end_point", [0, 0])
-			if path_spec.is_empty():
-				path_spec = a.get("path", [])
-			var ac_inst := ActionInstance.new(null, unit)
-			var defs: Array = Actions.get_ability_definitions_for_action(action_key)
-			if not defs.is_empty():
-				ac_inst.definition = defs[0]
-			var cells: Array[Vector2] = []
-			for c in path_spec:
-				if c is Array and c.size() >= 2:
-					cells.append(Vector2(int(c[0]), int(c[1])))
-			ac_inst.path = cells
-			if end_spec is Array and end_spec.size() >= 2:
-				ac_inst.end_point = Vector2(int(end_spec[0]), int(end_spec[1]))
-			else:
-				ac_inst.end_point = unit.cell
-			entry["ac"] = ac_inst
-		if atype == "spawn":
-			var cell_arr: Array = a.get("cell", [0, 0])
-			var spawn_cell: Vector2 = Vector2(int(cell_arr[0]), int(cell_arr[1])) if cell_arr.size() >= 2 else unit.cell
-			entry["spawn_data"] = {
-				"spawned_unit_id": int(a.get("spawned_unit_id", 0)),
-				"spawn_path": str(a.get("spawn_path", "")),
-				"cell": spawn_cell
-			}
-		if not actions_by_type.has(atype):
-			actions_by_type[atype] = []
-		actions_by_type[atype].append(entry)
-	return actions_by_type
+	return _build_actions_by_type_from_action_list(server_actions)
 
 ## Animate a resolved turn using TurnExecutor and store recording for replay.
 ## Used by both single-player (core-produced recording) and multiplayer (server turn_result).
@@ -978,15 +1175,8 @@ func play_resolved_turn(turn_result: Dictionary, final_state: Dictionary) -> voi
 	for u in get_all_units():
 		if not (is_instance_valid(u) and u is Unit):
 			continue
-		var s: Dictionary = { "cell": u.cell, "health": u.health }
-		if u.max_energy > 0:
-			s["energy"] = u.energy
-		var effects_data: Array = []
-		for e in u.active_effects:
-			if e is UnitEffect:
-				effects_data.append(e.to_dict())
-		s["effects"] = effects_data
-		before_state[u.get_instance_id()] = s
+		var snapshot: Dictionary = _build_unit_snapshot(u)
+		before_state[int(snapshot.get("unit_id", _get_unit_stable_id(u)))] = snapshot
 
 	var actions_by_type := _build_actions_by_type_from_server(turn_result)
 	var recording := { "actions": [], "died_ids": [], "summary": [], "damage_causers": {}, "applied_effects": [] }
@@ -1011,8 +1201,12 @@ func play_resolved_turn(turn_result: Dictionary, final_state: Dictionary) -> voi
 	print("[EXEC] pipeline DONE")
 
 	# Store recording for replay: add before_state, damage_by_id, and summary.
+	recording["actions"] = _serialize_recording_actions(recording["actions"])
 	recording["before_state"] = before_state
-	recording["damage_by_id"] = ctx.damage_by_id.duplicate()
+	recording["damage_by_id"] = _convert_damage_by_instance_to_stable(ctx.damage_by_id)
+	recording["died_ids"] = _convert_instance_ids_to_stable_ids(recording.get("died_ids", []))
+	recording["damage_causers"] = _convert_damage_causers_to_stable(recording.get("damage_causers", {}))
+	recording["applied_effects"] = _convert_applied_effects_to_stable(recording.get("applied_effects", []))
 	recording["summary"] = _build_summary_from_recording_actions(recording["actions"])
 	last_turn_recording = recording
 	_filter_passive_summary_entries()
