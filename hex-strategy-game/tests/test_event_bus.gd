@@ -5,6 +5,7 @@ static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_show_units_panel_signal_exists(tests) and ok
 	ok = _test_show_units_panel_connect_and_emit(tests) and ok
+	ok = _test_tile_resource_deplete_requested_signal_exists(tests) and ok
 	return ok
 
 static func _test_show_units_panel_signal_exists(tests: Node) -> bool:
@@ -35,4 +36,18 @@ static func _test_show_units_panel_connect_and_emit(tests: Node) -> bool:
 		tests._fail("emit should have been received once with [], got %s" % received)
 		return false
 	tests._pass("show_units_panel connect and emit")
+	return true
+
+static func _test_tile_resource_deplete_requested_signal_exists(tests: Node) -> bool:
+	tests._log("test_event_bus: tile_resource_deplete_requested signal exists")
+	var list: Array = EventBus.get_signal_list()
+	var found := false
+	for sig in list:
+		if sig["name"] == "tile_resource_deplete_requested":
+			found = true
+			break
+	if not found:
+		tests._fail("EventBus should have signal tile_resource_deplete_requested")
+		return false
+	tests._pass("tile_resource_deplete_requested signal exists")
 	return true

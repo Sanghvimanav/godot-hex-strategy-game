@@ -177,6 +177,18 @@ const ACTION_CONFIGS: Dictionary = {
 		color = "#9C27B0",
 		energy_consumption = -1,
 	},
+	"mine_tile": {
+		key = "mine_tile",
+		type = "slow ability",
+		name = "Mine",
+		pattern = "self",
+		min_range = 0,
+		max_range = 0,
+		color = "#FBC02D",
+		energy_consumption = 0,
+		damage = 0,
+		tile_resource_depletion = 2,
+	},
 }
 
 ## Processing order: moves, then abilities by speed (fast / normal / slow), then spawn/extract.

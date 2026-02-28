@@ -16,6 +16,8 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_get_damage_cells_target(tests) and ok
 	ok = _test_get_damage_cells_area_adjacent(tests) and ok
 	ok = _test_execute_turn_move_and_attack(tests) and ok
+	ok = _test_execute_turn_move_depletes_tile_resource(tests) and ok
+	ok = _test_execute_turn_mine_tile_depletes_and_clamps_zero(tests) and ok
 	ok = _test_execute_turn_ghost_attack_ray_damages_only_target_tile(tests) and ok
 	ok = _test_execute_turn_zergling_fast_move_hits_ghost_before_ghost_move(tests) and ok
 	ok = _test_check_win_condition_one_alive(tests) and ok
@@ -216,6 +218,67 @@ static func _test_execute_turn_move_and_attack(tests: Node) -> bool:
 		tests._fail("opponent should have 0 units after zergling dies, got %d" % opponent_units.size())
 		return false
 	tests._pass("execute_turn move and attack")
+	return true
+
+static func _test_execute_turn_move_depletes_tile_resource(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: move depletes tile resource")
+	var target_key := HexGrid.get_cell_key(1, 0)
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [0, 0], "health": 3, "max_health": 3, "energy": 2, "max_energy": 4 }
+			]},
+			{ "name": "opponent", "ai": false, "units": [] }
+		],
+		"tile_resources": {
+			target_key: { "amount": 2, "max_amount": 2, "resource_type": "ore" }
+		}
+	}
+	var move_path: Array = []
+	for p in HexGrid.build_path_to(0, 0, 1, 0):
+		move_path.append([int(p.x), int(p.y)])
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "move_short", "path": move_path, "end_point": [1, 0] }
+		],
+		"opponent": []
+	}
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var resources: Dictionary = game_state.get("tile_resources", {})
+	var entry: Dictionary = resources.get(target_key, {})
+	if int(entry.get("amount", -1)) != 1:
+		tests._fail("moving onto resource tile should deplete amount from 2 to 1, got %s" % entry)
+		return false
+	tests._pass("move depletes tile resource")
+	return true
+
+static func _test_execute_turn_mine_tile_depletes_and_clamps_zero(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: mine_tile depletes and clamps at zero")
+	var target_key := HexGrid.get_cell_key(0, 0)
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [0, 0], "health": 3, "max_health": 3, "energy": 2, "max_energy": 4 }
+			]},
+			{ "name": "opponent", "ai": false, "units": [] }
+		],
+		"tile_resources": {
+			target_key: { "amount": 1, "max_amount": 1, "resource_type": "ore" }
+		}
+	}
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "mine_tile", "path": [], "end_point": [0, 0] }
+		],
+		"opponent": []
+	}
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var resources: Dictionary = game_state.get("tile_resources", {})
+	var entry: Dictionary = resources.get(target_key, {})
+	if int(entry.get("amount", -1)) != 0:
+		tests._fail("mine_tile should clamp amount to 0 (not negative), got %s" % entry)
+		return false
+	tests._pass("mine_tile depletes and clamps at zero")
 	return true
 
 static func _test_execute_turn_ghost_attack_ray_damages_only_target_tile(tests: Node) -> bool:

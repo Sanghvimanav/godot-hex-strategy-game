@@ -170,11 +170,26 @@ func select_scenario(id: String) -> void:
 func get_selected_scenario() -> Dictionary:
 	return get_scenario_by_id(selected_scenario_id)
 
+func _default_tile_resources() -> Dictionary:
+	return {
+		HexGrid.get_cell_key(0, 0): { amount = 5, max_amount = 5, resource_type = "ore" },
+		HexGrid.get_cell_key(2, 0): { amount = 4, max_amount = 4, resource_type = "crystal" },
+		HexGrid.get_cell_key(-2, 1): { amount = 3, max_amount = 3, resource_type = "gas" },
+	}
+
+func _with_tile_resources(s: Dictionary) -> Dictionary:
+	var decorated: Dictionary = s.duplicate(true)
+	if not decorated.has("tile_resources"):
+		decorated["tile_resources"] = _default_tile_resources()
+	return decorated
+
 func get_scenario_by_id(id: String) -> Dictionary:
 	for s in available_scenarios:
 		if s.id == id:
-			return s
-	return available_scenarios[0] if available_scenarios.size() > 0 else {}
+			return _with_tile_resources(s)
+	if available_scenarios.size() > 0:
+		return _with_tile_resources(available_scenarios[0])
+	return {}
 
 ## Returns scenarios suitable for multiplayer (2+ groups).
 func get_multiplayer_scenarios() -> Array[Dictionary]:
@@ -183,5 +198,5 @@ func get_multiplayer_scenarios() -> Array[Dictionary]:
 		var groups: Array = s.get("groups", [])
 		if groups.size() < 2:
 			continue
-		out.append(s)
+		out.append(_with_tile_resources(s))
 	return out

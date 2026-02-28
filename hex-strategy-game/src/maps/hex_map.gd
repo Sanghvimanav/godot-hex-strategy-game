@@ -2,6 +2,8 @@ extends Node2D
 ## Hex map: defines walkable hex grid and draws hex tiles.
 ## Replaces square TileMap for hexagonal gameplay.
 
+const TileResourceConfig = preload("res://src/maps/resources/tile_resource_config.gd")
+
 @export_range(8, 96, 2) var spacing: int = 24  ## Distance between hex centers
 @export_range(4, 64, 1) var tile_radius: float = 12  ## Visual size of each hex (radius from center to corner)
 ## Hexagon radius: board includes all hexes within this distance from center (0,0). 5 = 5 tiles across.
@@ -9,8 +11,12 @@ extends Node2D
 @export var hex_color: Color = Color(0.2, 0.5, 0.2)
 @export var hex_color_alt: Color = Color(0.25, 0.55, 0.25)
 @export var color_variation: float = 0.12  ## Random hue/sat offset per tile
+## Finite resources configured per tile. These tiles are color-tinted and can be depleted.
+@export var resource_tiles: Array[TileResourceConfig] = []
+@export_range(0.0, 1.0, 0.05) var resource_tint_strength: float = 0.75
+@export var default_depleted_resource_color: Color = Color(0.35, 0.35, 0.35)
 
-var grid: Dictionary = {}  # "q,r" -> { q, r, is_solid }
+var grid: Dictionary = {}  # "q,r" -> { q, r, is_solid, resource_type, resource_amount, resource_max_amount, resource_color, resource_depleted_color }
 var _hex_nodes: Dictionary = {}
 var _hex_base_colors: Dictionary = {}  # "q,r" -> Color, for fog dimming
 var _bounds: Dictionary = {}
@@ -20,6 +26,8 @@ func _ready() -> void:
 	HexGrid.tile_radius = tile_radius
 	_build_grid()
 	_draw_hexes()
+	if not EventBus.tile_resource_deplete_requested.is_connected(_on_tile_resource_deplete_requested):
+		EventBus.tile_resource_deplete_requested.connect(_on_tile_resource_deplete_requested)
 	# Init Navigation before units run (hex_map is first child, units later)
 	var units_node = get_parent().get_node_or_null("units")
 	if units_node and units_node.has_method("get_active_units"):
@@ -27,19 +35,34 @@ func _ready() -> void:
 	# Fog of war: refresh once units are in place (deferred)
 	call_deferred("_refresh_fog")
 
+func _exit_tree() -> void:
+	if EventBus.tile_resource_deplete_requested.is_connected(_on_tile_resource_deplete_requested):
+		EventBus.tile_resource_deplete_requested.disconnect(_on_tile_resource_deplete_requested)
+
 func _build_grid() -> void:
 	grid.clear()
 	for q in range(-hex_radius, hex_radius + 1):
 		for r in range(-hex_radius, hex_radius + 1):
 			if HexGrid.hex_distance(0, 0, q, r) <= hex_radius:
 				var key := HexGrid.get_cell_key(q, r)
-				grid[key] = { q = q, r = r, is_solid = false }
+				grid[key] = {
+					q = q,
+					r = r,
+					is_solid = false,
+					resource_type = "",
+					resource_amount = 0,
+					resource_max_amount = 0,
+					resource_color = Color(0.92, 0.74, 0.2),
+					resource_depleted_color = default_depleted_resource_color
+				}
+	_apply_resource_tiles()
 	_bounds = HexGrid.calculate_map_bounds(grid)
 
 func _draw_hexes() -> void:
 	for c in get_children():
 		c.queue_free()
 	_hex_nodes.clear()
+	_hex_base_colors.clear()
 	
 	z_index = -2  ## Tiles draw below highlights
 	var min_x: float = _bounds.min_x
@@ -49,19 +72,140 @@ func _draw_hexes() -> void:
 		var pos := HexGrid.hex_to_pixel(tile.q, tile.r, min_x, min_y, 0.0)
 		var poly := Polygon2D.new()
 		poly.polygon = HexGrid.polygon_points_hex(pos.x, pos.y, tile_radius, 0.0)
-		var is_alt: bool = (int(tile.q) + int(tile.r)) % 2 == 0
-		var base: Color = hex_color if is_alt else hex_color_alt
-		var seed_val: int = int(tile.q) * 7919 + int(tile.r) * 7877
-		var rng := RandomNumberGenerator.new()
-		rng.seed = seed_val
-		var r := clampf(base.r + (rng.randf() - 0.5) * color_variation, 0.0, 1.0)
-		var g := clampf(base.g + (rng.randf() - 0.5) * color_variation, 0.0, 1.0)
-		var b := clampf(base.b + (rng.randf() - 0.5) * color_variation, 0.0, 1.0)
-		var tile_color := Color(r, g, b)
+		var tile_color := _compute_tile_color(tile)
 		poly.color = tile_color
 		_hex_base_colors[key] = tile_color
 		add_child(poly)
 		_hex_nodes[key] = poly
+
+func _apply_resource_tiles() -> void:
+	for cfg in resource_tiles:
+		if cfg == null:
+			continue
+		var key := HexGrid.get_cell_key(int(cfg.cell.x), int(cfg.cell.y))
+		if not grid.has(key):
+			continue
+		var tile: Dictionary = grid[key]
+		var max_amount := maxi(0, int(cfg.amount))
+		tile.resource_type = cfg.resource_type
+		tile.resource_amount = max_amount
+		tile.resource_max_amount = max_amount
+		tile.resource_color = cfg.resource_color
+		tile.resource_depleted_color = cfg.depleted_color
+		grid[key] = tile
+
+func _compute_terrain_color(tile: Dictionary) -> Color:
+	var is_alt: bool = (int(tile.q) + int(tile.r)) % 2 == 0
+	var base: Color = hex_color if is_alt else hex_color_alt
+	var seed_val: int = int(tile.q) * 7919 + int(tile.r) * 7877
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_val
+	var r := clampf(base.r + (rng.randf() - 0.5) * color_variation, 0.0, 1.0)
+	var g := clampf(base.g + (rng.randf() - 0.5) * color_variation, 0.0, 1.0)
+	var b := clampf(base.b + (rng.randf() - 0.5) * color_variation, 0.0, 1.0)
+	return Color(r, g, b)
+
+func _compute_tile_color(tile: Dictionary) -> Color:
+	var terrain: Color = _compute_terrain_color(tile)
+	var max_amount: int = int(tile.get("resource_max_amount", 0))
+	if max_amount <= 0:
+		return terrain
+	var amount: int = clampi(int(tile.get("resource_amount", 0)), 0, max_amount)
+	var resource_color: Color = tile.get("resource_color", Color(0.92, 0.74, 0.2))
+	var depleted_color: Color = tile.get("resource_depleted_color", default_depleted_resource_color)
+	var rich_color: Color = terrain.lerp(resource_color, resource_tint_strength)
+	var fill_ratio: float = float(amount) / float(max_amount)
+	return depleted_color.lerp(rich_color, fill_ratio)
+
+func _refresh_tile_visual(key: String) -> void:
+	if not grid.has(key):
+		return
+	var tile: Dictionary = grid[key]
+	var tile_color: Color = _compute_tile_color(tile)
+	_hex_base_colors[key] = tile_color
+	if _hex_nodes.has(key):
+		var poly: Polygon2D = _hex_nodes[key]
+		poly.color = tile_color
+
+func has_resource_at_cell(cell: Vector2i) -> bool:
+	var key := HexGrid.get_cell_key(int(cell.x), int(cell.y))
+	if not grid.has(key):
+		return false
+	return int(grid[key].get("resource_max_amount", 0)) > 0
+
+func get_resource_amount_at_cell(cell: Vector2i) -> int:
+	var key := HexGrid.get_cell_key(int(cell.x), int(cell.y))
+	if not grid.has(key):
+		return 0
+	return int(grid[key].get("resource_amount", 0))
+
+func deplete_resource_at(q: int, r: int, amount: int = 1, reason: String = "event") -> int:
+	return deplete_resource_at_cell(Vector2i(q, r), amount, reason)
+
+## Depletes a tile's finite resource and updates visuals. Returns amount actually consumed.
+func deplete_resource_at_cell(cell: Vector2i, amount: int = 1, reason: String = "event") -> int:
+	if amount <= 0:
+		return 0
+	var key := HexGrid.get_cell_key(int(cell.x), int(cell.y))
+	if not grid.has(key):
+		return 0
+	var tile: Dictionary = grid[key]
+	var max_amount: int = int(tile.get("resource_max_amount", 0))
+	if max_amount <= 0:
+		return 0
+	var current_amount: int = clampi(int(tile.get("resource_amount", 0)), 0, max_amount)
+	if current_amount <= 0:
+		return 0
+	var consumed: int = mini(current_amount, amount)
+	tile.resource_amount = current_amount - consumed
+	grid[key] = tile
+	_refresh_tile_visual(key)
+	EventBus.tile_resource_changed.emit(int(tile.q), int(tile.r), str(tile.resource_type), int(tile.resource_amount), max_amount, reason)
+	if current_amount > 0 and int(tile.resource_amount) <= 0:
+		EventBus.tile_resource_depleted.emit(int(tile.q), int(tile.r), str(tile.resource_type), reason)
+	return consumed
+
+## Serializes finite tile resources as "q,r" -> { amount, max_amount, resource_type }.
+func get_tile_resource_state() -> Dictionary:
+	var state: Dictionary = {}
+	for key in grid:
+		var tile: Dictionary = grid[key]
+		var max_amount: int = int(tile.get("resource_max_amount", 0))
+		if max_amount <= 0:
+			continue
+		state[key] = {
+			amount = clampi(int(tile.get("resource_amount", 0)), 0, max_amount),
+			max_amount = max_amount,
+			resource_type = str(tile.get("resource_type", ""))
+		}
+	return state
+
+## Applies serialized tile resource state (from server/core turn resolution) to current map.
+func apply_tile_resource_state(state: Dictionary) -> void:
+	if state.is_empty():
+		return
+	for key in state:
+		if not grid.has(key):
+			continue
+		var tile: Dictionary = grid[key]
+		var entry = state[key]
+		var amount: int = int(entry) if not (entry is Dictionary) else int(entry.get("amount", tile.get("resource_amount", 0)))
+		var max_amount: int = int(tile.get("resource_max_amount", 0))
+		if entry is Dictionary and int(entry.get("max_amount", max_amount)) > 0:
+			max_amount = int(entry.get("max_amount", max_amount))
+		if max_amount <= 0:
+			continue
+		tile.resource_max_amount = max_amount
+		tile.resource_amount = clampi(amount, 0, max_amount)
+		if entry is Dictionary:
+			var resource_type: String = str(entry.get("resource_type", tile.get("resource_type", "")))
+			if not resource_type.is_empty():
+				tile.resource_type = resource_type
+		grid[key] = tile
+		_refresh_tile_visual(key)
+
+func _on_tile_resource_deplete_requested(q: int, r: int, amount: int, reason: String = "event") -> void:
+	deplete_resource_at(q, r, amount, reason)
 
 ## Fog of war: visible_cell_keys is a Dictionary of "q,r" -> true for hexes visible to player.
 ## Empty = show entire map (no fog). Call after unit placement or movement.

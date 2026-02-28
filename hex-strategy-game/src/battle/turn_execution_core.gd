@@ -99,6 +99,39 @@ static func get_damage_cells_for_config(attacker_q: int, attacker_r: int, path_a
 static func get_action_type(action_key: String) -> String:
 	return Actions.get_action_type(action_key)
 
+## Depletes finite resource at cell if game_state has tile_resources.
+## Supports value form: key -> int, and dictionary form: key -> { amount = int, ... }.
+static func _deplete_tile_resource(game_state: Dictionary, cell: Variant, amount: int) -> int:
+	if amount <= 0:
+		return 0
+	var tile_resources = game_state.get("tile_resources")
+	if not (tile_resources is Dictionary):
+		return 0
+	var q: int = _cell_q(cell)
+	var r: int = _cell_r(cell)
+	var key := HexGrid.get_cell_key(q, r)
+	if not tile_resources.has(key):
+		return 0
+	var entry = tile_resources[key]
+	var current_amount: int = 0
+	if entry is Dictionary:
+		current_amount = int(entry.get("amount", entry.get("resource_amount", 0)))
+	else:
+		current_amount = int(entry)
+	if current_amount <= 0:
+		return 0
+	var consumed: int = mini(current_amount, amount)
+	var next_amount: int = current_amount - consumed
+	if entry is Dictionary:
+		entry["amount"] = next_amount
+		if entry.has("resource_amount"):
+			entry["resource_amount"] = next_amount
+		tile_resources[key] = entry
+	else:
+		tile_resources[key] = next_amount
+	game_state["tile_resources"] = tile_resources
+	return consumed
+
 
 static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> Dictionary:
 	var recording: Dictionary = { actions = [], died_ids = [], summary = [] }
@@ -149,12 +182,15 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				if unit.get("health", 0) <= 0:
 					continue
 				var action: Dictionary = entry.action
+				var move_config: Dictionary = Actions.get_action_config(str(action.get("action_key", "")))
+				var move_resource_depletion: int = int(move_config.get("tile_resource_depletion", 1))
 				var path: Array = action.get("path", []).duplicate()
 				path.append(action.get("end_point", [0, 0]))
 				if path.size() >= 2:
 					var from_cell: Array = unit.get("cell", [0, 0]).duplicate()
 					var target: Array = path[path.size() - 1]
 					unit["cell"] = [int(target[0]), int(target[1])]
+					_deplete_tile_resource(game_state, target, move_resource_depletion)
 					recording.actions.append({
 						type = "move",
 						unit_id = unit.get("unit_id", -1),
@@ -182,6 +218,10 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				var path_arr: Array = action.get("path", [])
 				var end_pt = action.get("end_point", [0, 0])
 				var target_cells: Array = get_damage_cells_for_config(uq, ur, path_arr, end_pt, config)
+				var tile_resource_depletion: int = int(config.get("tile_resource_depletion", 0))
+				if tile_resource_depletion > 0:
+					for cell in target_cells:
+						_deplete_tile_resource(game_state, cell, tile_resource_depletion)
 				var attacker_group_name: String = entry.group.get("name", "")
 				if action_key in ["heal_adjacent", "support_adjacent", "resupply_adjacent"]:
 					var heal_amount: int = int(config.get("heal_amount", 0))

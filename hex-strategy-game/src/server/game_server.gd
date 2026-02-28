@@ -125,7 +125,12 @@ func _scenario_to_server_format(s: Dictionary) -> Dictionary:
 			ai = false,
 			units = units_ser
 		})
-	return { id = s.id, display_name = s.display_name, groups = groups_ser }
+	return {
+		id = s.id,
+		display_name = s.display_name,
+		groups = groups_ser,
+		tile_resources = s.get("tile_resources", {}).duplicate(true)
+	}
 
 func _get_scenario_for_multiplayer(scenario_id: String) -> Dictionary:
 	var s: Dictionary = Scenarios.get_scenario_by_id(scenario_id)
@@ -158,6 +163,7 @@ func _serialize_game_state(game: Dictionary) -> Dictionary:
 		phase = game.phase,
 		turn = game.turn,
 		groups = groups_ser,
+		tile_resources = game.get("tile_resources", {}).duplicate(true),
 		player_actions = game.player_actions.duplicate(true),
 		roster = _build_roster(game)
 	}
@@ -459,6 +465,7 @@ func _handle_message_dict(player_id: int, msg: Dictionary) -> void:
 			game.phase = "planning"
 			game.turn = 1
 			game.player_actions = {}
+			game.tile_resources = scenario.get("tile_resources", {}).duplicate(true)
 			var uid := 1
 			for gi in game.groups.size():
 				var g = game.groups[gi]
@@ -544,6 +551,7 @@ func _create_game(scenario_id: String, host_player_id: int) -> Dictionary:
 		phase = "planning",
 		turn = 1,
 		groups = groups,
+		tile_resources = scenario.get("tile_resources", {}).duplicate(true),
 		player_actions = {},
 		status = "waiting"
 	}

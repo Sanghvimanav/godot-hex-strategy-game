@@ -17,4 +17,8 @@ signal action_key_selected(action_key)
 signal turn_changed(turn_number)
 signal replay_available_changed(available: bool)
 signal replay_finished
+## Resource events: supports unit-driven and scripted/environmental depletion.
+signal tile_resource_deplete_requested(q: int, r: int, amount: int, reason: String)
+signal tile_resource_changed(q: int, r: int, resource_type: String, amount: int, max_amount: int, reason: String)
+signal tile_resource_depleted(q: int, r: int, resource_type: String, reason: String)
 @warning_ignore_restore("unused_signal")

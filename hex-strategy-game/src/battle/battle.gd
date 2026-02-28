@@ -14,6 +14,9 @@ var _panning := false
 func _ready() -> void:
 	# Navigation is initialized by hex_map._ready() (runs before units)
 	if MultiplayerState.is_multiplayer and not MultiplayerState.pending_battle_state.is_empty():
+		var pending_resources = MultiplayerState.pending_battle_state.get("tile_resources", {})
+		if pending_resources is Dictionary and not pending_resources.is_empty() and hex_map and hex_map.has_method("apply_tile_resource_state"):
+			hex_map.apply_tile_resource_state(pending_resources)
 		units.apply_multiplayer_state(MultiplayerState.pending_battle_state)
 		units.multiplayer_my_group = MultiplayerState.my_group
 		units.start_battle()
@@ -26,6 +29,9 @@ func _ready() -> void:
 	else:
 		var scenario := Scenarios.get_selected_scenario()
 		if not scenario.is_empty():
+			var scenario_resources = scenario.get("tile_resources", {})
+			if scenario_resources is Dictionary and not scenario_resources.is_empty() and hex_map and hex_map.has_method("apply_tile_resource_state"):
+				hex_map.apply_tile_resource_state(scenario_resources)
 			units.apply_scenario(scenario)
 		units.start_battle()
 
