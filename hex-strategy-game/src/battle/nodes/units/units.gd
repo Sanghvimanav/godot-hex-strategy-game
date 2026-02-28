@@ -52,6 +52,12 @@ func _refresh_groups() -> void:
 	for child in get_children():
 		groups.append(child)
 
+func _apply_effects_from_state(unit: Unit, effects_data: Array) -> void:
+	unit.active_effects.clear()
+	for effect_dict in effects_data:
+		if effect_dict is Dictionary:
+			unit.active_effects.append(UnitEffect.from_dict(effect_dict))
+
 ## Apply a scenario: clear group children and spawn units from scenario spec.
 func apply_scenario(scenario: Dictionary) -> void:
 	if scenario.is_empty():
@@ -134,6 +140,7 @@ func apply_multiplayer_state(state: Dictionary) -> void:
 			unit.max_energy = int(u_spec.get("max_energy", def.max_energy))
 			unit.energy = int(u_spec.get("energy", unit.max_energy))
 			unit.set_meta("unit_id", int(u_spec.get("unit_id", 0)))
+			_apply_effects_from_state(unit, u_spec.get("effects", []))
 			group_node.add_child(unit)
 	_refresh_groups()
 
@@ -154,6 +161,7 @@ func apply_server_state(state: Dictionary) -> void:
 			var cell: Vector2i = Vector2i(int(cell_arr[0]), int(cell_arr[1])) if cell_arr.size() >= 2 else Vector2i.ZERO
 			var health: int = int(u_spec.get("health", 0))
 			var energy: int = int(u_spec.get("energy", 0))
+			var effects_data: Array = u_spec.get("effects", [])
 			var found: bool = false
 			for child in group_node.get_children():
 				if not child is Unit:
@@ -165,6 +173,7 @@ func apply_server_state(state: Dictionary) -> void:
 				child.energy = energy
 				if child.energy_bar and child.max_energy > 0:
 					child.energy_bar.update_value(energy)
+				_apply_effects_from_state(child, effects_data)
 				found = true
 				break
 			if not found:
@@ -180,6 +189,7 @@ func apply_server_state(state: Dictionary) -> void:
 						unit.energy = int(u_spec.get("energy", 0))
 						unit.max_energy = int(u_spec.get("max_energy", def.max_energy))
 						unit.set_meta("unit_id", unit_id)
+						_apply_effects_from_state(unit, effects_data)
 						group_node.add_child(unit)
 		# Remove units no longer in server state (dead)
 		var to_remove: Array[Node] = []
@@ -674,6 +684,10 @@ func _build_game_state_from_scene() -> Dictionary:
 				u.set_meta("unit_id", u.get_instance_id())
 			var unit_id: int = u.get_meta("unit_id")
 			var cell_arr: Array = [u.cell.x, u.cell.y]
+			var effects_data: Array = []
+			for e in u.active_effects:
+				if e is UnitEffect:
+					effects_data.append(e.to_dict())
 			g_dict.units.append({
 				"unit_id": unit_id,
 				"def_path": u.def.resource_path if u.def else "",
@@ -682,7 +696,8 @@ func _build_game_state_from_scene() -> Dictionary:
 				"max_health": u.max_health,
 				"energy": u.energy,
 				"max_energy": u.max_energy,
-				"is_active": u.is_active
+				"is_active": u.is_active,
+				"effects": effects_data
 			})
 		groups_arr.append(g_dict)
 	var out_state: Dictionary = { "groups": groups_arr }

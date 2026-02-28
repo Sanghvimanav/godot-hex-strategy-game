@@ -25,6 +25,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_check_win_condition_one_alive(tests) and ok
 	ok = _test_check_win_condition_both_alive(tests) and ok
 	ok = _test_check_win_condition_both_dead(tests) and ok
+	ok = _test_stunned_unit_cannot_move(tests) and ok
 	return ok
 
 static func _test_find_unit_by_id_found(tests: Node) -> bool:
@@ -517,4 +518,55 @@ static func _test_check_win_condition_both_dead(tests: Node) -> bool:
 		tests._fail("check_win_condition should return empty when both dead, got %s" % winner)
 		return false
 	tests._pass("check_win_condition both dead")
+	return true
+
+## Regression: stunned unit is blocked for one turn, then stun expires.
+static func _test_stunned_unit_cannot_move(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: stunned unit cannot move and stun expires after turn")
+	var target_cell: Array = [1, 0]
+	var move_path: Array = []
+	for p in HexGrid.build_path_to(1, 0, 2, 0):
+		move_path.append([int(p.x), int(p.y)])
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [0, 0], "health": 3, "max_health": 3, "energy": 4, "max_energy": 4 }
+			]},
+			{ "name": "opponent", "ai": false, "units": [
+				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": target_cell.duplicate(), "health": 3, "max_health": 3, "energy": 4, "max_energy": 4,
+					"effects": [{ "kind": "Stun", "duration": 1, "params": {} }] }
+			]}
+		]
+	}
+	var player_actions := {
+		"player": [],
+		"opponent": [
+			{ "unit_id": 2, "action_key": "move_short", "path": move_path, "end_point": [2, 0] }
+		]
+	}
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var found := TurnExecutionCore.find_unit_by_id(game_state, 2)
+	if found.is_empty():
+		tests._fail("stunned unit should still exist")
+		return false
+	var cell_after: Array = found.unit.get("cell", [])
+	if cell_after != target_cell:
+		tests._fail("stunned unit must not move; expected cell %s, got %s" % [target_cell, cell_after])
+		return false
+	var effects_after_block: Array = found.unit.get("effects", [])
+	if not effects_after_block.is_empty():
+		tests._fail("stun should expire at end of the blocked turn, got effects %s" % effects_after_block)
+		return false
+
+	# Next turn: same move should now be allowed because stun expired.
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var found_after_expire := TurnExecutionCore.find_unit_by_id(game_state, 2)
+	if found_after_expire.is_empty():
+		tests._fail("unit should still exist after stun expiration turn")
+		return false
+	var cell_after_expire: Array = found_after_expire.unit.get("cell", [])
+	if cell_after_expire != [2, 0]:
+		tests._fail("unit should move once stun expires; expected [2,0], got %s" % cell_after_expire)
+		return false
+	tests._pass("stunned unit cannot move and stun expires after turn")
 	return true

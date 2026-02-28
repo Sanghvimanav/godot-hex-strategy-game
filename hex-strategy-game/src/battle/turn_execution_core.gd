@@ -100,6 +100,70 @@ static func get_damage_cells_for_config(attacker_q: int, attacker_r: int, path_a
 static func get_action_type(action_key: String) -> String:
 	return Actions.get_action_type(action_key)
 
+## Returns true if unit dict has an active Stun effect (duration > 0).
+static func _unit_has_stun(unit_dict: Dictionary) -> bool:
+	var effects: Array = unit_dict.get("effects", [])
+	for e in effects:
+		if not (e is Dictionary):
+			continue
+		if str(e.get("kind", "")) != "Stun":
+			continue
+		if int(e.get("duration", 0)) > 0:
+			return true
+	return false
+
+## Adds a stun effect to a unit dict. pending_first_tick mirrors Unit.add_effect()
+## so newly-applied effects remain active for the following full turn.
+static func _apply_stun_effect(unit_dict: Dictionary, duration: int) -> void:
+	if duration <= 0:
+		return
+	var effects: Array = unit_dict.get("effects", [])
+	effects.append({
+		"kind": "Stun",
+		"duration": duration,
+		"params": {},
+		"pending_first_tick": true,
+	})
+	unit_dict["effects"] = effects
+
+## End-of-turn effect ticking for dictionary state (server/core parity with Unit.tick_effects()).
+static func _tick_unit_effects(unit_dict: Dictionary) -> void:
+	var effects: Array = unit_dict.get("effects", [])
+	if effects.is_empty():
+		return
+	var next_effects: Array = []
+	for raw_effect in effects:
+		if not (raw_effect is Dictionary):
+			continue
+		var effect: Dictionary = raw_effect.duplicate(true)
+		var duration: int = int(effect.get("duration", 0))
+		if duration <= 0:
+			continue
+		if bool(effect.get("pending_first_tick", false)):
+			effect["pending_first_tick"] = false
+			next_effects.append(effect)
+			continue
+		var kind: String = str(effect.get("kind", ""))
+		if kind == "HealOverTime":
+			var params: Dictionary = effect.get("params", {})
+			var heal_per_turn: int = int(params.get("heal_per_turn", 0))
+			if heal_per_turn > 0:
+				var max_health: int = int(unit_dict.get("max_health", 2))
+				var health_now: int = int(unit_dict.get("health", max_health))
+				unit_dict["health"] = mini(health_now + heal_per_turn, max_health)
+		duration -= 1
+		if duration > 0:
+			effect["duration"] = duration
+			next_effects.append(effect)
+	unit_dict["effects"] = next_effects
+
+static func _tick_all_effects(game_state: Dictionary) -> void:
+	for group in game_state.get("groups", []):
+		for unit in group.get("units", []):
+			if int(unit.get("health", 0)) <= 0:
+				continue
+			_tick_unit_effects(unit)
+
 ## Depletes finite resource at cell if game_state has tile_resources.
 ## Supports value form: key -> int, and dictionary form: key -> { amount = int, ... }.
 static func _deplete_tile_resource(game_state: Dictionary, cell: Variant, amount: int) -> int:
@@ -218,6 +282,8 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				for unit in group.get("units", []):
 					if unit.get("health", 0) <= 0:
 						continue
+					if _unit_has_stun(unit):
+						continue
 					var def_path: String = unit.get("def_path", "")
 					if def_path.is_empty():
 						continue
@@ -240,6 +306,8 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				var unit: Dictionary = entry.unit
 				if unit.get("health", 0) <= 0:
 					continue
+				if _unit_has_stun(unit):
+					continue
 				var action: Dictionary = entry.action
 				var path: Array = action.get("path", []).duplicate()
 				path.append(action.get("end_point", [0, 0]))
@@ -257,6 +325,8 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 			for entry in entries:
 				var unit: Dictionary = entry.unit
 				if unit.get("health", 0) <= 0:
+					continue
+				if _unit_has_stun(unit):
 					continue
 				var action: Dictionary = entry.action
 				var action_key: String = str(action.get("action_key", ""))
@@ -285,6 +355,8 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 			for entry in entries:
 				var unit: Dictionary = entry.unit
 				if unit.get("health", 0) <= 0:
+					continue
+				if _unit_has_stun(unit):
 					continue
 				var action: Dictionary = entry.action
 				var config: Dictionary = Actions.get_action_config(str(action.get("action_key", "")))
@@ -328,6 +400,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 						for c in aoe_cells:
 							target_cells.append(Vector2i(int(c.x), int(c.y)))
 					var damage_amount: int = int(config.get("damage", 1))
+					var stun_duration: int = int(config.get("stun_duration", 0))
 					for cell in target_cells:
 						for o in get_units_at_cell(game_state, cell):
 							if o.unit == unit:
@@ -336,6 +409,8 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 								continue
 							var uid: int = o.unit.get("unit_id", -1)
 							damage_by_id[uid] = damage_by_id.get(uid, 0) + damage_amount
+							if stun_duration > 0:
+								_apply_stun_effect(o.unit, stun_duration)
 					if config.get("self_damage", false):
 						var uid: int = unit.get("unit_id", -1)
 						damage_by_id[uid] = damage_by_id.get(uid, 0) + int(config.get("self_damage_amount", 999))
@@ -364,6 +439,8 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 			for entry in entries:
 				var unit: Dictionary = entry.unit
 				if unit.get("health", 0) <= 0:
+					continue
+				if _unit_has_stun(unit):
 					continue
 				var action: Dictionary = entry.action
 				var config: Dictionary = Actions.get_action_config(str(action.get("action_key", "")))
@@ -412,6 +489,8 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 		var units: Array = group.get("units", [])
 		var died: Array = recording.get("died_ids", [])
 		group["units"] = units.filter(func(u): return u.get("unit_id", -1) not in died)
+
+	_tick_all_effects(game_state)
 
 	return recording
 
