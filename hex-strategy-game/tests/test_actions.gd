@@ -10,6 +10,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_reload_recharge_slow_ability(tests) and ok
 	ok = _test_attack_support_ability_types(tests) and ok
 	ok = _test_ghost_attack_ray_range_and_pattern(tests) and ok
+	ok = _test_extract_tile_action_config(tests) and ok
 	return ok
 
 ## Ensures get_action_type and get_action_config stay static so scripts can call them without preloading (avoids parser error).
@@ -118,4 +119,19 @@ static func _test_ghost_attack_ray_range_and_pattern(tests: Node) -> bool:
 		tests._fail("attack_ray max_range should be 3, got %s" % c.get("max_range", -1))
 		return false
 	tests._pass("ghost attack_ray uses target-only range 2-3")
+	return true
+
+static func _test_extract_tile_action_config(tests: Node) -> bool:
+	tests._log("test_actions: extract_tile action exists and uses extract type")
+	var c: Dictionary = Actions.get_action_config("extract_tile")
+	if c.is_empty():
+		tests._fail("extract_tile config should exist")
+		return false
+	if c.get("type", "") != "extract":
+		tests._fail("extract_tile type should be extract, got %s" % c.get("type", ""))
+		return false
+	if int(c.get("tile_resource_depletion", 0)) != 1:
+		tests._fail("extract_tile should deplete 1 resource per use")
+		return false
+	tests._pass("extract_tile action config")
 	return true

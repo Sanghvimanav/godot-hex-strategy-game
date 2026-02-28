@@ -12,6 +12,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_validate_action_dead_unit(tests) and ok
 	ok = _test_validate_action_target_out_of_range(tests) and ok
 	ok = _test_validate_action_ghost_attack_ray_range_window(tests) and ok
+	ok = _test_validate_action_extract_requires_resource(tests) and ok
 	ok = _test_execute_turn_delegates_to_core(tests) and ok
 	return ok
 
@@ -173,6 +174,37 @@ static func _test_validate_action_ghost_attack_ray_range_window(tests: Node) -> 
 		tests._fail("ghost attack_ray at distance 4 should fail validation")
 		return false
 	tests._pass("validate_action ghost attack_ray range window (2-3)")
+	return true
+
+static func _test_validate_action_extract_requires_resource(tests: Node) -> bool:
+	tests._log("test_server_turn_executor: validate_action extract requires resource on unit tile")
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/knight.tres", "cell": [0, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
+			]},
+			{ "name": "opponent", "ai": false, "units": [] }
+		],
+		"tile_resources": {}
+	}
+	var extract_action := {
+		"unit_id": 1,
+		"action_key": "extract_tile",
+		"path": [],
+		"end_point": [0, 0]
+	}
+	var fail_result := ServerTurnExecutor.validate_action(game_state, extract_action, "player")
+	if fail_result.get("valid", false):
+		tests._fail("extract should fail when tile has no resource")
+		return false
+	game_state["tile_resources"] = {
+		HexGrid.get_cell_key(0, 0): { "amount": 1, "max_amount": 1, "resource_type": "ore" }
+	}
+	var ok_result := ServerTurnExecutor.validate_action(game_state, extract_action, "player")
+	if not ok_result.get("valid", false):
+		tests._fail("extract should pass when tile has resource: %s" % ok_result.get("error", ""))
+		return false
+	tests._pass("validate_action extract requires resource")
 	return true
 
 static func _test_execute_turn_delegates_to_core(tests: Node) -> bool:

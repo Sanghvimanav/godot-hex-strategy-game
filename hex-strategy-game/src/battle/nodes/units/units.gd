@@ -68,6 +68,7 @@ func apply_scenario(scenario: Dictionary) -> void:
 			group_node.name = group_name
 			group_node.y_sort_enabled = true
 			add_child(group_node)
+		group_node.set_meta("resource_inventory", group_spec.get("resources", {}).duplicate(true))
 		for c in group_node.get_children():
 			group_node.remove_child(c)
 			c.queue_free()
@@ -112,6 +113,7 @@ func apply_multiplayer_state(state: Dictionary) -> void:
 			group_node.name = group_name
 			group_node.y_sort_enabled = true
 			add_child(group_node)
+		group_node.set_meta("resource_inventory", g.get("resources", {}).duplicate(true))
 		for c in group_node.get_children():
 			group_node.remove_child(c)
 			c.queue_free()
@@ -143,6 +145,7 @@ func apply_server_state(state: Dictionary) -> void:
 		var group_node = get_node_or_null(group_name)
 		if group_node == null:
 			continue
+		group_node.set_meta("resource_inventory", g.get("resources", {}).duplicate(true))
 		var live_ids: Array[int] = []
 		for u_spec in g.get("units", []):
 			var unit_id: int = int(u_spec.get("unit_id", 0))
@@ -448,8 +451,13 @@ func _build_game_state_from_scene() -> Dictionary:
 		var g_dict: Dictionary = {
 			"name": group.name,
 			"ai": group.name in ai_group_names,
-			"units": []
+			"units": [],
+			"resources": {}
 		}
+		if group.has_meta("resource_inventory"):
+			var inv = group.get_meta("resource_inventory")
+			if inv is Dictionary:
+				g_dict["resources"] = inv.duplicate(true)
 		for child in group.get_children():
 			if not child is Unit:
 				continue

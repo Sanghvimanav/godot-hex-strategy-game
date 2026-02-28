@@ -177,17 +177,16 @@ const ACTION_CONFIGS: Dictionary = {
 		color = "#9C27B0",
 		energy_consumption = -1,
 	},
-	"mine_tile": {
-		key = "mine_tile",
-		type = "slow ability",
-		name = "Mine",
+	"extract_tile": {
+		key = "extract_tile",
+		type = "extract",
+		name = "Extract",
 		pattern = "self",
 		min_range = 0,
 		max_range = 0,
 		color = "#FBC02D",
 		energy_consumption = 0,
-		damage = 0,
-		tile_resource_depletion = 2,
+		tile_resource_depletion = 1,
 	},
 }
 
@@ -269,6 +268,11 @@ func get_ability_definitions_for_action(action_key: String) -> Array[ActionDefin
 		for ad in result:
 			ad.action_key = action_key
 		return result
+	if atype == "extract":
+		var extract_defs: Array[ActionDefinition] = _build_self_definitions(config.get("name", "Extract"))
+		for ad in extract_defs:
+			ad.action_key = action_key
+		return extract_defs
 	if atype not in ["fast ability", "ability", "slow ability"]:
 		push_warning("Action %s is not an ability type (got %s)" % [action_key, atype])
 		return []

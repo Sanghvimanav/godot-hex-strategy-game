@@ -23,6 +23,8 @@ func get_options_for_action_key(action_key: String) -> Array:
 			result.append({"ac": ac, "is_move": true})
 		return _filter_acs_and_wrap(result)
 	if action_key in unit.def.ability_action_keys:
+		if Actions.get_action_type(action_key) == "extract" and not _can_extract_from_current_cell():
+			return []
 		var config: Dictionary = Actions.get_action_config(action_key)
 		var power: int = int(config.get("energy_consumption", 0))
 		if power > 0 and unit.max_energy > 0 and unit.energy <= 0:
@@ -33,6 +35,14 @@ func get_options_for_action_key(action_key: String) -> Array:
 			result.append({"ac": ac, "is_move": false})
 		return _filter_acs_and_wrap(result)
 	return []
+
+func _can_extract_from_current_cell() -> bool:
+	var cell: Vector2 = unit.cell
+	var key := HexGrid.get_cell_key(int(cell.x), int(cell.y))
+	if not Navigation.grid.has(key):
+		return false
+	var tile: Dictionary = Navigation.grid[key]
+	return int(tile.get("resource_amount", 0)) > 0
 
 func _filter_acs_and_wrap(entries: Array) -> Array:
 	var acs: Array = []

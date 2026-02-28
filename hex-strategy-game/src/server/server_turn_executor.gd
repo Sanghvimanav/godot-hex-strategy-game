@@ -6,6 +6,18 @@ class_name ServerTurnExecutor
 ## Use TurnExecutionCore as single source for action type constants.
 const MOVE_TYPES: Array[String] = TurnExecutionCore.MOVE_TYPES
 
+static func _has_extractable_resource(game_state: Dictionary, q: int, r: int) -> bool:
+	var tile_resources = game_state.get("tile_resources", {})
+	if not (tile_resources is Dictionary):
+		return false
+	var key := HexGrid.get_cell_key(q, r)
+	if not tile_resources.has(key):
+		return false
+	var entry = tile_resources[key]
+	if entry is Dictionary:
+		return int(entry.get("amount", entry.get("resource_amount", 0))) > 0
+	return int(entry) > 0
+
 
 static func validate_action(game_state: Dictionary, action: Dictionary, group_name: String) -> Dictionary:
 	var unit_id: int = action.get("unit_id", -1)
@@ -50,6 +62,9 @@ static func validate_action(game_state: Dictionary, action: Dictionary, group_na
 			return { valid = false, error = "Not enough energy" }
 
 	var atype: String = config.get("type", "")
+	if atype == "extract":
+		if not _has_extractable_resource(game_state, uq, ur):
+			return { valid = false, error = "No resource to extract on this tile" }
 	if atype in MOVE_TYPES:
 		var full_path: Array = path.duplicate()
 		full_path.append([end_cell.x, end_cell.y])

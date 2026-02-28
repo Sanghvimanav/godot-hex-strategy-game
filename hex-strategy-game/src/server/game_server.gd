@@ -123,7 +123,8 @@ func _scenario_to_server_format(s: Dictionary) -> Dictionary:
 		groups_ser.append({
 			name = g.name,
 			ai = false,
-			units = units_ser
+			units = units_ser,
+			resources = g.get("resources", {}).duplicate(true)
 		})
 	return {
 		id = s.id,
@@ -154,7 +155,8 @@ func _serialize_game_state(game: Dictionary) -> Dictionary:
 			name = g.name,
 			ai = g.get("ai", false),
 			player_id = g.get("player_id"),
-			units = g.units.duplicate(true)
+			units = g.units.duplicate(true),
+			resources = g.get("resources", {}).duplicate(true)
 		})
 	return {
 		game_id = game.game_id,
@@ -470,6 +472,7 @@ func _handle_message_dict(player_id: int, msg: Dictionary) -> void:
 			for gi in game.groups.size():
 				var g = game.groups[gi]
 				var g_spec = scenario.groups[gi]
+				g.resources = g_spec.get("resources", {}).duplicate(true)
 				g.units.clear()
 				for u_spec in g_spec.units:
 					var def_path: String = u_spec.get("def_path", "")
@@ -521,7 +524,8 @@ func _create_game(scenario_id: String, host_player_id: int) -> Dictionary:
 			name = g_spec.name,
 			ai = g_spec.get("ai", false),
 			player_id = host_player_id if gi == 0 and not g_spec.get("ai", false) else null,
-			units = []
+			units = [],
+			resources = g_spec.get("resources", {}).duplicate(true)
 		}
 		for u_spec in g_spec.get("units", []):
 			var unit_id: int = _next_unit_id

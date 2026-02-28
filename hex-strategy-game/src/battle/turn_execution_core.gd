@@ -132,6 +132,28 @@ static func _deplete_tile_resource(game_state: Dictionary, cell: Variant, amount
 	game_state["tile_resources"] = tile_resources
 	return consumed
 
+static func _extract_tile_resource(game_state: Dictionary, cell: Variant, amount: int) -> Dictionary:
+	var tile_resources = game_state.get("tile_resources")
+	if not (tile_resources is Dictionary):
+		return { consumed = 0, resource_type = "" }
+	var key := HexGrid.get_cell_key(_cell_q(cell), _cell_r(cell))
+	var entry = tile_resources.get(key)
+	var resource_type: String = ""
+	if entry is Dictionary:
+		resource_type = str(entry.get("resource_type", ""))
+	var consumed: int = _deplete_tile_resource(game_state, cell, amount)
+	return { consumed = consumed, resource_type = resource_type }
+
+static func _add_group_resource(group: Dictionary, resource_type: String, amount: int) -> void:
+	if amount <= 0:
+		return
+	var safe_type: String = resource_type if not resource_type.is_empty() else "resource"
+	var resources = group.get("resources", {})
+	if not (resources is Dictionary):
+		resources = {}
+	resources[safe_type] = int(resources.get(safe_type, 0)) + amount
+	group["resources"] = resources
+
 
 static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> Dictionary:
 	var recording: Dictionary = { actions = [], died_ids = [], summary = [] }
@@ -182,21 +204,43 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				if unit.get("health", 0) <= 0:
 					continue
 				var action: Dictionary = entry.action
-				var move_config: Dictionary = Actions.get_action_config(str(action.get("action_key", "")))
-				var move_resource_depletion: int = int(move_config.get("tile_resource_depletion", 1))
 				var path: Array = action.get("path", []).duplicate()
 				path.append(action.get("end_point", [0, 0]))
 				if path.size() >= 2:
 					var from_cell: Array = unit.get("cell", [0, 0]).duplicate()
 					var target: Array = path[path.size() - 1]
 					unit["cell"] = [int(target[0]), int(target[1])]
-					_deplete_tile_resource(game_state, target, move_resource_depletion)
 					recording.actions.append({
 						type = "move",
 						unit_id = unit.get("unit_id", -1),
 						from_cell = from_cell,
 						path = path
 					})
+		elif action_type == "extract":
+			for entry in entries:
+				var unit: Dictionary = entry.unit
+				if unit.get("health", 0) <= 0:
+					continue
+				var action: Dictionary = entry.action
+				var action_key: String = str(action.get("action_key", ""))
+				var config: Dictionary = Actions.get_action_config(action_key)
+				if config.is_empty():
+					continue
+				var extract_amount: int = maxi(1, int(config.get("tile_resource_depletion", 1)))
+				var unit_cell: Array = unit.get("cell", [0, 0])
+				var extraction: Dictionary = _extract_tile_resource(game_state, unit_cell, extract_amount)
+				var consumed: int = int(extraction.get("consumed", 0))
+				var resource_type: String = str(extraction.get("resource_type", ""))
+				if consumed > 0:
+					_add_group_resource(entry.group, resource_type, consumed)
+				recording.actions.append({
+					type = "extract",
+					unit_id = unit.get("unit_id", -1),
+					action_key = action_key,
+					cell = [int(unit_cell[0]), int(unit_cell[1])],
+					resource_type = resource_type,
+					amount = consumed
+				})
 		elif action_type in ABILITY_TYPES:
 			for entry in entries:
 				var unit: Dictionary = entry.unit

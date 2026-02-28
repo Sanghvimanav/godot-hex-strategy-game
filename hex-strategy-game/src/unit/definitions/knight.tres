@@ -8,4 +8,4 @@ script = ExtResource("1_5ng7a")
 name = "Knight"
 frames = ExtResource("1_yne5v")
 move_action_keys = Array[String](["move_short", "move_long"])
-ability_action_keys = Array[String](["attack_short"])
+ability_action_keys = Array[String](["attack_short", "extract_tile"])
