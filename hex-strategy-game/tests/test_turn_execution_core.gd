@@ -18,8 +18,10 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_execute_turn_move_and_attack(tests) and ok
 	ok = _test_execute_turn_move_does_not_deplete_tile_resource(tests) and ok
 	ok = _test_execute_turn_extract_depletes_and_accumulates_group_resource(tests) and ok
-	ok = _test_execute_turn_ghost_attack_ray_damages_only_target_tile(tests) and ok
-	ok = _test_execute_turn_zergling_fast_move_hits_ghost_before_ghost_move(tests) and ok
+	ok = _test_execute_turn_recruit_people_only_extracts_people(tests) and ok
+	ok = _test_execute_turn_spawn_scout_requires_people(tests) and ok
+	ok = _test_execute_turn_scout_attack_ray_damages_only_target_tile(tests) and ok
+	ok = _test_execute_turn_zergling_fast_move_hits_scout_before_scout_move(tests) and ok
 	ok = _test_check_win_condition_one_alive(tests) and ok
 	ok = _test_check_win_condition_both_alive(tests) and ok
 	ok = _test_check_win_condition_both_dead(tests) and ok
@@ -286,12 +288,110 @@ static func _test_execute_turn_extract_depletes_and_accumulates_group_resource(t
 	tests._pass("extract depletes tile and adds to group resources")
 	return true
 
-static func _test_execute_turn_ghost_attack_ray_damages_only_target_tile(tests: Node) -> bool:
-	tests._log("test_turn_execution_core: ghost attack_ray damages only target tile")
+static func _test_execute_turn_recruit_people_only_extracts_people(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: recruit_people extracts only people resource")
+	var target_key := HexGrid.get_cell_key(0, 0)
 	var game_state := {
 		"groups": [
 			{ "name": "player", "ai": false, "units": [
-				{ "unit_id": 1, "def_path": "res://src/unit/definitions/ghost.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 3, "max_energy": 3 }
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/scout.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 3, "max_energy": 3 }
+			]},
+			{ "name": "opponent", "ai": false, "units": [] }
+		],
+		"tile_resources": {
+			target_key: { "amount": 2, "max_amount": 2, "resource_type": "ore" }
+		}
+	}
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "recruit_people", "path": [], "end_point": [0, 0] }
+		],
+		"opponent": []
+	}
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var ore_entry: Dictionary = game_state.get("tile_resources", {}).get(target_key, {})
+	if int(ore_entry.get("amount", -1)) != 2:
+		tests._fail("recruit_people should not deplete non-people resources")
+		return false
+	var inventory_after_ore: Dictionary = game_state.get("groups", [])[0].get("resources", {})
+	if int(inventory_after_ore.get("people", 0)) != 0:
+		tests._fail("recruit_people on ore should not add people resource")
+		return false
+	game_state["tile_resources"][target_key] = { "amount": 2, "max_amount": 2, "resource_type": "people" }
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var people_entry: Dictionary = game_state.get("tile_resources", {}).get(target_key, {})
+	if int(people_entry.get("amount", -1)) != 1:
+		tests._fail("recruit_people should deplete people resource by 1")
+		return false
+	var inventory_after_people: Dictionary = game_state.get("groups", [])[0].get("resources", {})
+	if int(inventory_after_people.get("people", 0)) != 1:
+		tests._fail("recruit_people should add 1 people to group resources, got %s" % inventory_after_people)
+		return false
+	tests._pass("recruit_people extracts only people")
+	return true
+
+static func _test_execute_turn_spawn_scout_requires_people(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: spawn_scout requires 5 people")
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "resources": { "people": 4 }, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/terran_base.tres", "cell": [0, 0], "health": 6, "max_health": 6, "energy": 5, "max_energy": 5 }
+			]},
+			{ "name": "opponent", "ai": false, "units": [] }
+		]
+	}
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "spawn_scout", "path": [], "end_point": [0, 0] }
+		],
+		"opponent": []
+	}
+	var blocked_recording := TurnExecutionCore.execute_turn(game_state, player_actions)
+	if game_state.get("groups", [])[0].get("units", []).size() != 1:
+		tests._fail("spawn_scout should not spawn when people < 5")
+		return false
+	if int(game_state.get("groups", [])[0].get("units", [])[0].get("energy", -1)) != 5:
+		tests._fail("blocked spawn_scout should not consume energy")
+		return false
+	for a in blocked_recording.get("actions", []):
+		if a.get("type", "") == "spawn":
+			tests._fail("blocked spawn_scout should not record a spawn action")
+			return false
+	var groups_after_block: Array = game_state.get("groups", [])
+	var player_group_after_block: Dictionary = groups_after_block[0]
+	var player_resources_after_block: Dictionary = player_group_after_block.get("resources", {})
+	player_resources_after_block["people"] = 5
+	player_group_after_block["resources"] = player_resources_after_block
+	groups_after_block[0] = player_group_after_block
+	game_state["groups"] = groups_after_block
+	var spawn_recording := TurnExecutionCore.execute_turn(game_state, player_actions)
+	var units_after_spawn: Array = game_state.get("groups", [])[0].get("units", [])
+	if units_after_spawn.size() != 2:
+		tests._fail("spawn_scout should spawn a new scout when people >= 5")
+		return false
+	if units_after_spawn[1].get("def_path", "") != "res://src/unit/definitions/scout.tres":
+		tests._fail("spawn_scout should create scout unit, got %s" % units_after_spawn[1].get("def_path", ""))
+		return false
+	if int(units_after_spawn[0].get("energy", -1)) != 0:
+		tests._fail("successful spawn_scout should consume 5 energy")
+		return false
+	var has_spawn_record := false
+	for a in spawn_recording.get("actions", []):
+		if a.get("type", "") == "spawn" and a.get("action_key", "") == "spawn_scout":
+			has_spawn_record = true
+			break
+	if not has_spawn_record:
+		tests._fail("spawn_scout should record a spawn action")
+		return false
+	tests._pass("spawn_scout requires 5 people")
+	return true
+
+static func _test_execute_turn_scout_attack_ray_damages_only_target_tile(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: scout attack_ray damages only target tile")
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/scout.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 3, "max_energy": 3 }
 			]},
 			{ "name": "opponent", "ai": false, "units": [
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 3, "max_health": 3, "energy": 4, "max_energy": 4 },
@@ -320,51 +420,51 @@ static func _test_execute_turn_ghost_attack_ray_damages_only_target_tile(tests: 
 	if target_enemy.unit.get("health", 0) != 2:
 		tests._fail("target enemy at [2,0] should take exactly 1 damage, got health %s" % target_enemy.unit.get("health", 0))
 		return false
-	tests._pass("ghost attack_ray damages only target tile")
+	tests._pass("scout attack_ray damages only target tile")
 	return true
 
-static func _test_execute_turn_zergling_fast_move_hits_ghost_before_ghost_move(tests: Node) -> bool:
-	tests._log("test_turn_execution_core: zergling fast-move onto ghost then ghost moves takes one damage")
+static func _test_execute_turn_zergling_fast_move_hits_scout_before_scout_move(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: zergling fast-move onto scout then scout moves takes one damage")
 	var game_state := {
 		"groups": [
 			{ "name": "player", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [0, 0], "health": 1, "max_health": 1, "energy": 0, "max_energy": 0 }
 			]},
 			{ "name": "opponent", "ai": false, "units": [
-				{ "unit_id": 2, "def_path": "res://src/unit/definitions/ghost.tres", "cell": [1, 0], "health": 2, "max_health": 2, "energy": 3, "max_energy": 3 }
+				{ "unit_id": 2, "def_path": "res://src/unit/definitions/scout.tres", "cell": [1, 0], "health": 2, "max_health": 2, "energy": 3, "max_energy": 3 }
 			]}
 		]
 	}
 	var zerg_path: Array = []
 	for p in HexGrid.build_path_to(0, 0, 1, 0):
 		zerg_path.append([int(p.x), int(p.y)])
-	var ghost_path: Array = []
+	var scout_path: Array = []
 	for p in HexGrid.build_path_to(1, 0, 2, 0):
-		ghost_path.append([int(p.x), int(p.y)])
+		scout_path.append([int(p.x), int(p.y)])
 	var player_actions := {
 		"player": [
 			{ "unit_id": 1, "action_key": "fast_move", "path": zerg_path, "end_point": [1, 0] }
 		],
 		"opponent": [
-			{ "unit_id": 2, "action_key": "move_short", "path": ghost_path, "end_point": [2, 0] }
+			{ "unit_id": 2, "action_key": "move_short", "path": scout_path, "end_point": [2, 0] }
 		]
 	}
 	var recording := TurnExecutionCore.execute_turn(game_state, player_actions)
-	var ghost_found := TurnExecutionCore.find_unit_by_id(game_state, 2)
-	if ghost_found.is_empty():
-		tests._fail("ghost should survive with 1 health after taking passive damage")
+	var scout_found := TurnExecutionCore.find_unit_by_id(game_state, 2)
+	if scout_found.is_empty():
+		tests._fail("scout should survive with 1 health after taking passive damage")
 		return false
-	var ghost: Dictionary = ghost_found.unit
-	if ghost.get("health", 0) != 1:
-		tests._fail("ghost should take exactly 1 damage, expected health 1 got %s" % ghost.get("health", 0))
+	var scout: Dictionary = scout_found.unit
+	if scout.get("health", 0) != 1:
+		tests._fail("scout should take exactly 1 damage, expected health 1 got %s" % scout.get("health", 0))
 		return false
-	if ghost.get("cell", [0, 0]) != [2, 0]:
-		tests._fail("ghost should still complete move to [2,0], got %s" % ghost.get("cell", []))
+	if scout.get("cell", [0, 0]) != [2, 0]:
+		tests._fail("scout should still complete move to [2,0], got %s" % scout.get("cell", []))
 		return false
 	if 2 in recording.get("died_ids", []):
-		tests._fail("ghost should not be in died_ids after taking one damage")
+		tests._fail("scout should not be in died_ids after taking one damage")
 		return false
-	tests._pass("zergling fast-move onto ghost then ghost moves takes one damage")
+	tests._pass("zergling fast-move onto scout then scout moves takes one damage")
 	return true
 
 static func _test_check_win_condition_one_alive(tests: Node) -> bool:

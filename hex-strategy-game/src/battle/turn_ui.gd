@@ -131,4 +131,7 @@ func _update_hovered_tile_resource() -> void:
 	var rtype: String = str(info.get("resource_type", "resource"))
 	var amount: int = int(info.get("amount", 0))
 	var max_amount: int = int(info.get("max_amount", 0))
-	hovered_tile_label.text = "Hover [%d,%d]: %s %d/%d" % [cell_i.x, cell_i.y, rtype, amount, max_amount]
+	if rtype == "people":
+		hovered_tile_label.text = "Hover [%d,%d]: village people %d/%d" % [cell_i.x, cell_i.y, amount, max_amount]
+	else:
+		hovered_tile_label.text = "Hover [%d,%d]: %s %d/%d" % [cell_i.x, cell_i.y, rtype, amount, max_amount]

@@ -11,8 +11,9 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_validate_action_unit_not_found(tests) and ok
 	ok = _test_validate_action_dead_unit(tests) and ok
 	ok = _test_validate_action_target_out_of_range(tests) and ok
-	ok = _test_validate_action_ghost_attack_ray_range_window(tests) and ok
+	ok = _test_validate_action_scout_attack_ray_range_window(tests) and ok
 	ok = _test_validate_action_extract_requires_resource(tests) and ok
+	ok = _test_validate_action_spawn_scout_requires_people(tests) and ok
 	ok = _test_execute_turn_delegates_to_core(tests) and ok
 	return ok
 
@@ -28,11 +29,11 @@ static func _make_game_state() -> Dictionary:
 		]
 	}
 
-static func _make_ghost_game_state() -> Dictionary:
+static func _make_scout_game_state() -> Dictionary:
 	return {
 		"groups": [
 			{ "name": "player", "ai": false, "units": [
-				{ "unit_id": 1, "def_path": "res://src/unit/definitions/ghost.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 3, "max_energy": 3 }
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/scout.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 3, "max_energy": 3 }
 			]},
 			{ "name": "opponent", "ai": false, "units": [
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [3, 0], "health": 3, "max_health": 3, "energy": 4, "max_energy": 4 }
@@ -137,9 +138,9 @@ static func _test_validate_action_target_out_of_range(tests: Node) -> bool:
 	tests._pass("validate_action target out of range")
 	return true
 
-static func _test_validate_action_ghost_attack_ray_range_window(tests: Node) -> bool:
-	tests._log("test_server_turn_executor: validate_action ghost attack_ray range window (2-3)")
-	var game_state := _make_ghost_game_state()
+static func _test_validate_action_scout_attack_ray_range_window(tests: Node) -> bool:
+	tests._log("test_server_turn_executor: validate_action scout attack_ray range window (2-3)")
+	var game_state := _make_scout_game_state()
 
 	var too_close := {
 		"unit_id": 1,
@@ -149,7 +150,7 @@ static func _test_validate_action_ghost_attack_ray_range_window(tests: Node) -> 
 	}
 	var too_close_result := ServerTurnExecutor.validate_action(game_state, too_close, "player")
 	if too_close_result.get("valid", false):
-		tests._fail("ghost attack_ray at distance 1 should fail validation")
+		tests._fail("scout attack_ray at distance 1 should fail validation")
 		return false
 
 	var valid := {
@@ -160,7 +161,7 @@ static func _test_validate_action_ghost_attack_ray_range_window(tests: Node) -> 
 	}
 	var valid_result := ServerTurnExecutor.validate_action(game_state, valid, "player")
 	if not valid_result.get("valid", false):
-		tests._fail("ghost attack_ray at distance 3 should pass validation: %s" % valid_result.get("error", ""))
+		tests._fail("scout attack_ray at distance 3 should pass validation: %s" % valid_result.get("error", ""))
 		return false
 
 	var too_far := {
@@ -171,9 +172,9 @@ static func _test_validate_action_ghost_attack_ray_range_window(tests: Node) -> 
 	}
 	var too_far_result := ServerTurnExecutor.validate_action(game_state, too_far, "player")
 	if too_far_result.get("valid", false):
-		tests._fail("ghost attack_ray at distance 4 should fail validation")
+		tests._fail("scout attack_ray at distance 4 should fail validation")
 		return false
-	tests._pass("validate_action ghost attack_ray range window (2-3)")
+	tests._pass("validate_action scout attack_ray range window (2-3)")
 	return true
 
 static func _test_validate_action_extract_requires_resource(tests: Node) -> bool:
@@ -205,6 +206,40 @@ static func _test_validate_action_extract_requires_resource(tests: Node) -> bool
 		tests._fail("extract should pass when tile has resource: %s" % ok_result.get("error", ""))
 		return false
 	tests._pass("validate_action extract requires resource")
+	return true
+
+static func _test_validate_action_spawn_scout_requires_people(tests: Node) -> bool:
+	tests._log("test_server_turn_executor: validate_action spawn_scout requires 5 people")
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "resources": { "people": 4 }, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/terran_base.tres", "cell": [0, 0], "health": 6, "max_health": 6, "energy": 5, "max_energy": 5 }
+			]},
+			{ "name": "opponent", "ai": false, "units": [] }
+		]
+	}
+	var spawn_action := {
+		"unit_id": 1,
+		"action_key": "spawn_scout",
+		"path": [],
+		"end_point": [0, 0]
+	}
+	var fail_result := ServerTurnExecutor.validate_action(game_state, spawn_action, "player")
+	if fail_result.get("valid", false):
+		tests._fail("spawn_scout should fail when people < 5")
+		return false
+	var groups_after_fail: Array = game_state.get("groups", [])
+	var player_group_after_fail: Dictionary = groups_after_fail[0]
+	var resources_after_fail: Dictionary = player_group_after_fail.get("resources", {})
+	resources_after_fail["people"] = 5
+	player_group_after_fail["resources"] = resources_after_fail
+	groups_after_fail[0] = player_group_after_fail
+	game_state["groups"] = groups_after_fail
+	var ok_result := ServerTurnExecutor.validate_action(game_state, spawn_action, "player")
+	if not ok_result.get("valid", false):
+		tests._fail("spawn_scout should pass when people >= 5: %s" % ok_result.get("error", ""))
+		return false
+	tests._pass("validate_action spawn_scout requires 5 people")
 	return true
 
 static func _test_execute_turn_delegates_to_core(tests: Node) -> bool:

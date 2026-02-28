@@ -145,6 +145,27 @@ static func _extract_tile_resource(game_state: Dictionary, cell: Variant, amount
 	var consumed: int = _deplete_tile_resource(game_state, cell, amount)
 	return { consumed = consumed, resource_type = resource_type }
 
+static func _get_tile_resource_entry(game_state: Dictionary, cell: Variant) -> Variant:
+	var tile_resources = game_state.get("tile_resources", {})
+	if not (tile_resources is Dictionary):
+		return null
+	var key := HexGrid.get_cell_key(_cell_q(cell), _cell_r(cell))
+	if not tile_resources.has(key):
+		return null
+	return tile_resources[key]
+
+static func _get_tile_resource_type(game_state: Dictionary, cell: Variant) -> String:
+	var entry = _get_tile_resource_entry(game_state, cell)
+	if entry is Dictionary:
+		return str(entry.get("resource_type", ""))
+	return ""
+
+static func _resource_type_allowed(config: Dictionary, resource_type: String) -> bool:
+	var allowed = config.get("allowed_resource_types", [])
+	if not (allowed is Array) or allowed.is_empty():
+		return true
+	return resource_type in allowed
+
 static func _add_group_resource(group: Dictionary, resource_type: String, amount: int) -> void:
 	if amount <= 0:
 		return
@@ -154,6 +175,21 @@ static func _add_group_resource(group: Dictionary, resource_type: String, amount
 		resources = {}
 	resources[safe_type] = int(resources.get(safe_type, 0)) + amount
 	group["resources"] = resources
+
+static func get_group_resource_amount(group: Dictionary, resource_type: String) -> int:
+	if resource_type.is_empty():
+		return 0
+	var resources = group.get("resources", {})
+	if not (resources is Dictionary):
+		return 0
+	return int(resources.get(resource_type, 0))
+
+static func has_required_group_resources(group: Dictionary, config: Dictionary) -> bool:
+	var required_type: String = str(config.get("required_group_resource_type", ""))
+	var required_amount: int = int(config.get("required_group_resource_amount", 0))
+	if required_type.is_empty() or required_amount <= 0:
+		return true
+	return get_group_resource_amount(group, required_type) >= required_amount
 
 
 static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> Dictionary:
@@ -229,6 +265,9 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 					continue
 				var extract_amount: int = maxi(1, int(config.get("tile_resource_depletion", 1)))
 				var unit_cell: Array = unit.get("cell", [0, 0])
+				var tile_resource_type: String = _get_tile_resource_type(game_state, unit_cell)
+				if not _resource_type_allowed(config, tile_resource_type):
+					continue
 				var extraction: Dictionary = _extract_tile_resource(game_state, unit_cell, extract_amount)
 				var consumed: int = int(extraction.get("consumed", 0))
 				var resource_type: String = str(extraction.get("resource_type", ""))
@@ -329,6 +368,8 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				var action: Dictionary = entry.action
 				var config: Dictionary = Actions.get_action_config(str(action.get("action_key", "")))
 				if config.is_empty():
+					continue
+				if not has_required_group_resources(entry.group, config):
 					continue
 				var spawn_path: String = str(config.get("spawn_unit", ""))
 				if spawn_path.is_empty():

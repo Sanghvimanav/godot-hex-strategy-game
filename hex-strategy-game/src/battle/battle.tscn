@@ -5,7 +5,7 @@
 [ext_resource type="Script" uid="uid://63cpfytfswqo" path="res://src/maps/hex_map.gd" id="2_hexmap"]
 [ext_resource type="PackedScene" uid="uid://0r543lk32lwo" path="res://src/maps/highlights/cell_highlights.tscn" id="3_b2wmv"]
 [ext_resource type="PackedScene" uid="uid://bvh861ymx55wu" path="res://src/unit/unit.tscn" id="3_qxq8g"]
-[ext_resource type="Resource" path="res://src/unit/definitions/ghost.tres" id="6_bcf76"]
+[ext_resource type="Resource" path="res://src/unit/definitions/scout.tres" id="6_bcf76"]
 [ext_resource type="Resource" uid="uid://di37b3hbh35g7" path="res://src/unit/definitions/mage.tres" id="6_hpbej"]
 [ext_resource type="Resource" uid="uid://cgkxdpau8vmsu" path="res://src/unit/definitions/peasant.tres" id="6_r3dr5"]
 [ext_resource type="Resource" uid="uid://da4gxe2vdp43a" path="res://src/unit/definitions/knight.tres" id="7_u5ntj"]
