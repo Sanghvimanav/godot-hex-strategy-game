@@ -3,6 +3,7 @@ extends Node2D
 ## Replaces square TileMap for hexagonal gameplay.
 
 const TileResourceConfig = preload("res://src/maps/resources/tile_resource_config.gd")
+const VILLAGE_OVERLAY_TEXTURE = preload("res://src/maps/resources/village_overlay.svg")
 
 @export_range(8, 96, 2) var spacing: int = 24  ## Distance between hex centers
 @export_range(4, 64, 1) var tile_radius: float = 12  ## Visual size of each hex (radius from center to corner)
@@ -18,6 +19,7 @@ const TileResourceConfig = preload("res://src/maps/resources/tile_resource_confi
 
 var grid: Dictionary = {}  # "q,r" -> { q, r, is_solid, resource_type, resource_amount, resource_max_amount, resource_color, resource_depleted_color }
 var _hex_nodes: Dictionary = {}
+var _resource_overlay_nodes: Dictionary = {}  # "q,r" -> Sprite2D (village artwork)
 var _hex_base_colors: Dictionary = {}  # "q,r" -> Color, for fog dimming
 var _bounds: Dictionary = {}
 
@@ -62,6 +64,7 @@ func _draw_hexes() -> void:
 	for c in get_children():
 		c.queue_free()
 	_hex_nodes.clear()
+	_resource_overlay_nodes.clear()
 	_hex_base_colors.clear()
 	
 	z_index = -2  ## Tiles draw below highlights
@@ -77,6 +80,7 @@ func _draw_hexes() -> void:
 		_hex_base_colors[key] = tile_color
 		add_child(poly)
 		_hex_nodes[key] = poly
+		_refresh_tile_overlay(key)
 
 func _apply_resource_tiles() -> void:
 	for cfg in resource_tiles:
@@ -107,6 +111,8 @@ func _compute_terrain_color(tile: Dictionary) -> Color:
 
 func _compute_tile_color(tile: Dictionary) -> Color:
 	var terrain: Color = _compute_terrain_color(tile)
+	if _is_village_tile(tile):
+		return terrain
 	var max_amount: int = int(tile.get("resource_max_amount", 0))
 	if max_amount <= 0:
 		return terrain
@@ -126,6 +132,36 @@ func _refresh_tile_visual(key: String) -> void:
 	if _hex_nodes.has(key):
 		var poly: Polygon2D = _hex_nodes[key]
 		poly.color = tile_color
+	_refresh_tile_overlay(key)
+
+func _is_village_tile(tile: Dictionary) -> bool:
+	return int(tile.get("resource_max_amount", 0)) > 0 and str(tile.get("resource_type", "")) == "people"
+
+func _refresh_tile_overlay(key: String) -> void:
+	if not grid.has(key):
+		return
+	var tile: Dictionary = grid[key]
+	var has_village_overlay: bool = _is_village_tile(tile)
+	var existing: Sprite2D = _resource_overlay_nodes[key] if _resource_overlay_nodes.has(key) else null
+	if not has_village_overlay:
+		if existing != null:
+			existing.queue_free()
+			_resource_overlay_nodes.erase(key)
+		return
+	var pos := HexGrid.hex_to_pixel(int(tile.q), int(tile.r), _bounds.min_x, _bounds.min_y, 0.0)
+	if existing == null:
+		existing = Sprite2D.new()
+		existing.texture = VILLAGE_OVERLAY_TEXTURE
+		existing.centered = true
+		existing.z_index = 1  ## Above tile fill, below units.
+		add_child(existing)
+		_resource_overlay_nodes[key] = existing
+	existing.position = pos + Vector2(0, tile_radius * 0.35)
+	var tex_size: Vector2 = existing.texture.get_size() if existing.texture else Vector2.ONE
+	if tex_size.x > 0.0:
+		var desired_width: float = tile_radius * 2.25
+		var scale_factor: float = desired_width / tex_size.x
+		existing.scale = Vector2(scale_factor, scale_factor)
 
 func has_resource_at_cell(cell: Vector2i) -> bool:
 	var key := HexGrid.get_cell_key(int(cell.x), int(cell.y))
@@ -235,12 +271,20 @@ func update_fog(visible_cell_keys: Dictionary) -> void:
 		if no_fog or (visible_cell_keys[key] if visible_cell_keys.has(key) else false):
 			poly.color = base_color
 			poly.visible = true
+			if _resource_overlay_nodes.has(key):
+				var overlay_visible: Sprite2D = _resource_overlay_nodes[key]
+				overlay_visible.modulate = Color.WHITE
+				overlay_visible.visible = true
 		else:
 			# Dim tile in fog (darken and reduce saturation)
 			var dimmed := base_color.darkened(0.55)
 			dimmed.s = dimmed.s * 0.4
 			poly.color = dimmed
 			poly.visible = true
+			if _resource_overlay_nodes.has(key):
+				var overlay_fogged: Sprite2D = _resource_overlay_nodes[key]
+				overlay_fogged.modulate = Color(0.45, 0.45, 0.45, 0.9)
+				overlay_fogged.visible = true
 	_update_enemy_visibility(visible_cell_keys)
 
 ## Recomputes visible hexes from observer units (e.g. player marines with sight_range=2) and applies fog.

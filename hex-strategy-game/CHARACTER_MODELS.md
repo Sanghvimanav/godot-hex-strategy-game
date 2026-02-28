@@ -1,6 +1,6 @@
 # Creating Simple Character Sprites (Like Existing Units)
 
-The existing units (peasant, knight, ghost, mage) use a simple 2D sprite workflow. Here's how to create similar characters:
+The existing units (peasant, knight, scout, mage) use a simple 2D sprite workflow. Here's how to create similar characters:
 
 ## Asset Format
 

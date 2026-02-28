@@ -188,6 +188,18 @@ const ACTION_CONFIGS: Dictionary = {
 		energy_consumption = 0,
 		tile_resource_depletion = 1,
 	},
+	"recruit_people": {
+		key = "recruit_people",
+		type = "extract",
+		name = "Recruit",
+		pattern = "self",
+		min_range = 0,
+		max_range = 0,
+		color = "#FBC02D",
+		energy_consumption = 0,
+		tile_resource_depletion = 1,
+		allowed_resource_types = ["people"],
+	},
 	"spawn_zergling": {
 		key = "spawn_zergling",
 		type = "spawn",
@@ -196,6 +208,17 @@ const ACTION_CONFIGS: Dictionary = {
 		color = "#8B4513",
 		energy_consumption = 5,
 		spawn_unit = "res://src/unit/definitions/zergling.tres",
+	},
+	"spawn_scout": {
+		key = "spawn_scout",
+		type = "spawn",
+		name = "Spawn Scout",
+		pattern = "self",
+		color = "#8B4513",
+		energy_consumption = 5,
+		spawn_unit = "res://src/unit/definitions/scout.tres",
+		required_group_resource_type = "people",
+		required_group_resource_amount = 5,
 	},
 }
 
@@ -267,7 +290,7 @@ func get_ability_definitions_for_action(action_key: String) -> Array[ActionDefin
 		for ad in result:
 			ad.action_key = action_key
 		return result
-	if action_key in ["spawn_zergling"]:
+	if action_key in ["spawn_zergling", "spawn_scout"]:
 		var result: Array[ActionDefinition] = _build_self_definitions(config.get("name", "Spawn"))
 		for ad in result:
 			ad.action_key = action_key

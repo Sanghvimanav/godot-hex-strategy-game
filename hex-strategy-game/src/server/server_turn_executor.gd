@@ -14,9 +14,28 @@ static func _has_extractable_resource(game_state: Dictionary, q: int, r: int) ->
 	if not tile_resources.has(key):
 		return false
 	var entry = tile_resources[key]
+	return _has_extractable_resource_for_config(entry, {})
+
+static func _has_extractable_resource_for_config(entry: Variant, action_config: Dictionary) -> bool:
+	var allowed_types = action_config.get("allowed_resource_types", [])
 	if entry is Dictionary:
-		return int(entry.get("amount", entry.get("resource_amount", 0))) > 0
+		var amount: int = int(entry.get("amount", entry.get("resource_amount", 0)))
+		if amount <= 0:
+			return false
+		if allowed_types is Array and not allowed_types.is_empty():
+			var resource_type: String = str(entry.get("resource_type", ""))
+			return resource_type in allowed_types
+		return true
+	if allowed_types is Array and not allowed_types.is_empty():
+		return false
 	return int(entry) > 0
+
+static func _required_resource_error(config: Dictionary) -> String:
+	var required_type: String = str(config.get("required_group_resource_type", ""))
+	var required_amount: int = int(config.get("required_group_resource_amount", 0))
+	if required_type.is_empty() or required_amount <= 0:
+		return "Missing required resources"
+	return "Requires %d %s" % [required_amount, required_type]
 
 
 static func validate_action(game_state: Dictionary, action: Dictionary, group_name: String) -> Dictionary:
@@ -63,8 +82,14 @@ static func validate_action(game_state: Dictionary, action: Dictionary, group_na
 
 	var atype: String = config.get("type", "")
 	if atype == "extract":
-		if not _has_extractable_resource(game_state, uq, ur):
+		var tile_resources = game_state.get("tile_resources", {})
+		var key := HexGrid.get_cell_key(uq, ur)
+		var entry = tile_resources.get(key) if tile_resources is Dictionary else null
+		if not _has_extractable_resource_for_config(entry, config):
 			return { valid = false, error = "No resource to extract on this tile" }
+	if atype == "spawn":
+		if not TurnExecutionCore.has_required_group_resources(group, config):
+			return { valid = false, error = _required_resource_error(config) }
 	if atype in MOVE_TYPES:
 		var full_path: Array = path.duplicate()
 		full_path.append([end_cell.x, end_cell.y])

@@ -20,15 +20,15 @@ Units belong to a **faction** (see `UnitDefinition.Faction`). Faction is used fo
 
 ## Terran
 
-**Units:** Marine, Ghost  
+**Units:** Marine, Scout  
 **Faction value:** `UnitDefinition.Faction.Terran` (2)
 
 ### Style of play
 
-- **Range and sight:** Marine has **Attack** (1 range, AoE in one direction) and **Rest** to regen **energy**; **sight_range 2** for fog. Ghost has **Shoot** (ray 1–4 range), **Rest**, and **sight_range 1**. Terran can see and shoot from a distance.
-- **Resource management:** Both use **energy** for main attacks (marine 1 per Attack, ghost 2 per Shoot). **Rest** (reload) gives energy back. Decisions are move vs shoot vs rest to keep pressure or save for key shots.
-- **Phased pressure:** Marine’s passive is **normal attack phase** (attack_passive_normal), so it shoots in the main attack phase after moves. Ghost has no passive—only planned **Shoot**. Terran controls when to commit attacks and when to reposition or rest.
-- **Summary:** Ranged, vision-based, energy-limited. Hold sight lines, manage energy with Rest, and use range to punish Zerg that overextends. Marine for front-line AoE and vision; Ghost for long-range picks and flexibility.
+- **Range and sight:** Marine has **Attack** (1 range, AoE in one direction) and **Rest** to regen **energy**; **sight_range 2** for fog. Scout has **Shoot** (ray 2–3 range), **Recruit**, **Rest**, and **sight_range 3**. Terran can see and shoot from a distance.
+- **Resource management:** Both use **energy** for main attacks (marine 1 per Attack, scout 2 per Shoot). **Rest** (reload) gives energy back. Decisions are move vs shoot vs rest to keep pressure or save for key shots.
+- **Phased pressure:** Marine’s passive is **normal attack phase** (attack_passive_normal), so it shoots in the main attack phase after moves. Scout has no passive—only planned actions. Terran controls when to commit attacks and when to reposition or rest.
+- **Summary:** Ranged, vision-based, energy-limited. Hold sight lines, manage energy with Rest, and use range to punish Zerg that overextends. Marine for front-line AoE and vision; Scout for long-range picks plus village recruitment.
 
 ---
 
@@ -50,7 +50,7 @@ Units belong to a **faction** (see `UnitDefinition.Faction`). Faction is used fo
 
 | Unit | Role | Why it fits |
 |------|------|-------------|
-| **Medic** or **SCV** | Heals adjacent friendly units (energy or cooldown). | Keeps Marines/Ghost alive during pokes so Terran doesn’t lose the attrition war. Enables “poke, take a hit, back off, heal.” |
+| **Medic** or **SCV** | Heals adjacent friendly units (energy or cooldown). | Keeps Marines/Scouts alive during pokes so Terran doesn’t lose the attrition war. Enables “poke, take a hit, back off, heal.” |
 | **Siege Tank** or **Widow Mine** | Long range and/or area damage; punishes clumped Zerg. | “Don’t ball up or you get sieged.” Makes Zerg spread or commit, and gives Terran a way to threaten the backline (Overlords, Queen) without walking into the swarm. |
 | **Reaper** or **Hellion** | Fast move, good vs light (Zerglings). Can poke and retreat. | Harass: kill Overlords or stray Zerglings to delay Zerg’s swell. Fits “poke and prevent snowball” directly. |
 
@@ -65,7 +65,7 @@ So Zerg can have more units than Terran, but planning doesn’t scale with 15 cl
 ### 1. Supply cap (recommended)
 
 - Each faction has a **supply limit** (e.g. 12 or 16).
-- Every unit costs supply (Zergling 1, Baneling 1, Roach 2, Overlord 0 or 1, Marine 1, Ghost 2, etc.).
+- Every unit costs supply (Zergling 1, Baneling 1, Roach 2, Overlord 0 or 1, Marine 1, Scout 2, etc.).
 - **Overlords** increase Zerg’s *max* supply (e.g. +4 per Overlord). No Overlord = low cap = can’t snowball.
 - Terran’s cap can be lower or same; they have fewer, heavier units.
 - **Effect:** Zerg’s *total* unit count is capped by supply; killing Overlords keeps that cap low so “large enough to attack” is a real threshold Terran can delay.
