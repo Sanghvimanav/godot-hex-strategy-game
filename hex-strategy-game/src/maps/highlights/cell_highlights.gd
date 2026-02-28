@@ -33,24 +33,35 @@ func _process(_delta: float) -> void:
 	mouse_highlight.polygon = HexGrid.polygon_points_hex(0, 0, radius, 0.0)
 
 func _on_show_attack_acs(acs: Array, _from_cell: Vector2 = Vector2.ZERO) -> void:
-	for child in attacks_highlights.get_children():
-		child.queue_free()
-	
-	for ac in acs:
-		for cell in ac.path:
-			if Navigation.is_valid_cell(cell):
-				add_hex_highlight(Color(1.0, 0.5, 0.0, 0.5), Navigation.cell_to_world(cell), attacks_highlights, HIGHLIGHT_FILL)
-		if Navigation.is_valid_cell(ac.end_point):
-			add_hex_highlight(Color(1.0, 0.5, 0.0, 0.5), Navigation.cell_to_world(ac.end_point), attacks_highlights, HIGHLIGHT_FILL)
-			add_hex_highlight(Color(1.0, 0.5, 0.0, 1.0), Navigation.cell_to_world(ac.end_point), attacks_highlights, HIGHLIGHT_STROKE_ONLY)
+	_clear_highlight_children(attacks_highlights)
+	_draw_selectable_endpoints(acs, attacks_highlights, Color(1.0, 0.5, 0.0, 0.5), Color(1.0, 0.5, 0.0, 1.0), true, true)
 
 func _on_show_move_acs(acs: Array) -> void:
-	for child in paths_highlights.get_children():
+	_clear_highlight_children(paths_highlights)
+	_draw_selectable_endpoints(acs, paths_highlights, Color(0.0, 0.75, 1.0, 0.35), Color(0.0, 0.75, 1.0, 1.0), false, true)
+
+func _clear_highlight_children(parent: Node2D) -> void:
+	for child in parent.get_children():
 		child.queue_free()
-	
+
+## Shared selectable-tile renderer for both move and attack options.
+func _draw_selectable_endpoints(acs: Array, parent: Node2D, fill_color: Color, stroke_color: Color, draw_fill: bool, draw_stroke: bool) -> void:
+	var seen_cells: Dictionary = {}
 	for ac in acs:
-		if Navigation.is_valid_cell(ac.end_point):
-			add_hex_highlight(Color(0.0, 0.75, 1.0, 1.0), Navigation.cell_to_world(ac.end_point), paths_highlights, HIGHLIGHT_STROKE_ONLY)
+		if ac == null:
+			continue
+		var cell: Vector2 = ac.end_point
+		if not Navigation.is_valid_cell(cell):
+			continue
+		var cell_key := HexGrid.get_cell_key(int(cell.x), int(cell.y))
+		if seen_cells.has(cell_key):
+			continue
+		seen_cells[cell_key] = true
+		var world_pos: Vector2 = Navigation.cell_to_world(cell)
+		if draw_fill:
+			add_hex_highlight(fill_color, world_pos, parent, HIGHLIGHT_FILL)
+		if draw_stroke:
+			add_hex_highlight(stroke_color, world_pos, parent, HIGHLIGHT_STROKE_ONLY)
 
 func _on_show_selected_unit_cell(cell: Variant) -> void:
 	for child in selected_unit_highlight.get_children():

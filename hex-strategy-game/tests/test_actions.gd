@@ -10,6 +10,8 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_reload_recharge_slow_ability(tests) and ok
 	ok = _test_attack_support_ability_types(tests) and ok
 	ok = _test_scout_attack_ray_range_and_pattern(tests) and ok
+	ok = _test_scout_attack_ray_energy_cost(tests) and ok
+	ok = _test_scout_visibility_range(tests) and ok
 	ok = _test_extract_tile_action_config(tests) and ok
 	ok = _test_recruit_people_action_config(tests) and ok
 	ok = _test_spawn_scout_action_config(tests) and ok
@@ -121,6 +123,28 @@ static func _test_scout_attack_ray_range_and_pattern(tests: Node) -> bool:
 		tests._fail("attack_ray max_range should be 3, got %s" % c.get("max_range", -1))
 		return false
 	tests._pass("scout attack_ray uses target-only range 2-3")
+	return true
+
+static func _test_scout_attack_ray_energy_cost(tests: Node) -> bool:
+	tests._log("test_actions: scout attack_ray costs 1 energy")
+	var c: Dictionary = Actions.get_action_config("attack_ray")
+	if int(c.get("energy_consumption", -1)) != 1:
+		tests._fail("attack_ray energy_consumption should be 1, got %s" % c.get("energy_consumption", -1))
+		return false
+	tests._pass("scout attack_ray costs 1 energy")
+	return true
+
+static func _test_scout_visibility_range(tests: Node) -> bool:
+	tests._log("test_actions: scout has sight_range 3")
+	var scout_def := load("res://src/unit/definitions/scout.tres")
+	if scout_def == null:
+		tests._fail("scout.tres should load")
+		return false
+	var scout_sight_range: int = int(scout_def.get("sight_range"))
+	if scout_sight_range != 3:
+		tests._fail("scout sight_range should be 3, got %s" % scout_sight_range)
+		return false
+	tests._pass("scout has sight_range 3")
 	return true
 
 static func _test_extract_tile_action_config(tests: Node) -> bool:
