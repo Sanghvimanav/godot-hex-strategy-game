@@ -646,6 +646,7 @@ func _replay_last_turn() -> void:
 	EventBus.unit_selected_for_planning.emit(null)
 	EventBus.show_selected_unit_cell.emit(null)
 	EventBus.show_move_path.emit(null, Vector2.ZERO)
+	var replay_return_state: Dictionary = _capture_replay_return_state()
 	_restore_before_state(last_turn_recording.get("before_state", {}))
 	var hex_map_node = get_parent().get_node_or_null("hex_map")
 	var actions_by_type := _build_replay_actions_by_type(last_turn_recording.get("actions", []))
@@ -693,11 +694,55 @@ func _replay_last_turn() -> void:
 					if is_instance_valid(u):
 						u.visible = false
 				break
+	_restore_replay_return_state(replay_return_state)
 	await get_tree().process_frame
 	battle_phase = BattlePhase.Phase.PLANNING
 	if hex_map_node and hex_map_node.has_method("refresh_fog"):
 		hex_map_node.refresh_fog()
 	EventBus.replay_finished.emit()
+
+## Snapshot of current board state so replay can return exactly to it.
+func _capture_replay_return_state() -> Dictionary:
+	var snapshot: Dictionary = {}
+	for u in get_all_units():
+		if not (is_instance_valid(u) and u is Unit):
+			continue
+		var s: Dictionary = {
+			"cell": u.cell,
+			"health": u.health,
+			"visible": u.visible,
+		}
+		if u.max_energy > 0:
+			s["energy"] = u.energy
+		var effects_data: Array = []
+		for e in u.active_effects:
+			if e is UnitEffect:
+				effects_data.append(e.to_dict())
+		s["effects"] = effects_data
+		snapshot[u.get_instance_id()] = s
+	return snapshot
+
+## Restores board state captured before replay and removes replay-only spawned units.
+func _restore_replay_return_state(snapshot: Dictionary) -> void:
+	if snapshot.is_empty():
+		return
+	var to_remove: Array[Node] = []
+	for u in get_all_units():
+		if not snapshot.has(u.get_instance_id()):
+			to_remove.append(u)
+	for node in to_remove:
+		var parent := node.get_parent()
+		if parent != null:
+			parent.remove_child(node)
+		node.queue_free()
+	for uid in snapshot:
+		var unit = instance_from_id(uid as int)
+		if is_instance_valid(unit) and unit is Unit:
+			var s: Dictionary = snapshot[uid]
+			var energy_val: int = s.get("energy", -1)
+			var effects_data: Array = s.get("effects", [])
+			unit.restore_state(s.cell, s.health, energy_val, effects_data)
+			unit.visible = bool(s.get("visible", true))
 
 ## Builds actions_by_type from recorded actions so replay uses the same run_pipeline as live execution.
 func _build_replay_actions_by_type(recording_actions: Array) -> Dictionary:
