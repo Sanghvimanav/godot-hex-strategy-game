@@ -255,6 +255,22 @@ static func has_required_group_resources(group: Dictionary, config: Dictionary) 
 		return true
 	return get_group_resource_amount(group, required_type) >= required_amount
 
+static func _apply_pending_damage(game_state: Dictionary, damage_by_id: Dictionary, applied_damage_by_id: Dictionary, recording: Dictionary) -> void:
+	for uid in damage_by_id:
+		var total: int = damage_by_id[uid]
+		var applied: int = applied_damage_by_id.get(uid, 0)
+		var to_apply: int = total - applied
+		if to_apply <= 0:
+			continue
+		var found = find_unit_by_id(game_state, uid)
+		if found.is_empty():
+			continue
+		var u: Dictionary = found.unit
+		u["health"] = maxi(0, u.get("health", 2) - to_apply)
+		applied_damage_by_id[uid] = total
+		if u["health"] <= 0 and uid not in recording.died_ids:
+			recording.died_ids.append(uid)
+
 
 static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> Dictionary:
 	var recording: Dictionary = { actions = [], died_ids = [], summary = [] }
@@ -352,7 +368,22 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 					amount = consumed
 				})
 		elif action_type in ABILITY_TYPES:
+			# Process reload first, then attacks, then support so resupply/heal can restore energy/health
+			# after units that attacked or spent energy this turn.
+			var reload_entries: Array = []
+			var attack_entries: Array = []
+			var support_entries: Array = []
 			for entry in entries:
+				var action_key: String = str(entry.action.get("action_key", ""))
+				if action_key in ["reload", "recharge"]:
+					reload_entries.append(entry)
+				elif action_key in ["heal_adjacent", "support_adjacent", "resupply_adjacent"]:
+					support_entries.append(entry)
+				else:
+					attack_entries.append(entry)
+			var ordered_entries: Array = reload_entries + attack_entries + support_entries
+			for i in ordered_entries.size():
+				var entry = ordered_entries[i]
 				var unit: Dictionary = entry.unit
 				if unit.get("health", 0) <= 0:
 					continue
@@ -371,6 +402,14 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				var uc: Array = unit.get("cell", [0, 0])
 				var uq: int = int(uc[0])
 				var ur: int = int(uc[1])
+				if action_key in ["reload", "recharge"]:
+					recording.actions.append({
+						type = action_type,
+						unit_id = unit.get("unit_id", -1),
+						action_key = action.get("action_key", ""),
+						ac = action
+					})
+					continue
 				var path_arr: Array = action.get("path", [])
 				var end_pt = action.get("end_point", [0, 0])
 				var target_cells: Array = get_damage_cells_for_config(uq, ur, path_arr, end_pt, config)
@@ -422,20 +461,11 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 					action_key = action.get("action_key", ""),
 					ac = action
 				})
-			for uid in damage_by_id:
-				var total: int = damage_by_id[uid]
-				var applied: int = applied_damage_by_id.get(uid, 0)
-				var to_apply: int = total - applied
-				if to_apply <= 0:
-					continue
-				var found = find_unit_by_id(game_state, uid)
-				if found.is_empty():
-					continue
-				var u: Dictionary = found.unit
-				u["health"] = maxi(0, u.get("health", 2) - to_apply)
-				applied_damage_by_id[uid] = total
-				if u["health"] <= 0:
-					recording.died_ids.append(uid)
+				# Apply attack damage before support actions so eliminated units cannot support.
+				var attack_boundary_index: int = reload_entries.size() + attack_entries.size() - 1
+				if not attack_entries.is_empty() and i == attack_boundary_index:
+					_apply_pending_damage(game_state, damage_by_id, applied_damage_by_id, recording)
+			_apply_pending_damage(game_state, damage_by_id, applied_damage_by_id, recording)
 
 		if action_type in SPAWN_TYPES:
 			for entry in entries:

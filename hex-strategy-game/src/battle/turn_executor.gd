@@ -91,12 +91,14 @@ static func _handle_abilities(action_type: String, entries: Array, ctx: Executio
 			support_entries.append(entry)
 		else:
 			attack_entries.append(entry)
+	# Reload first, then attacks, then support so resupply/heal can restore energy/health
+	# after units that attacked or spent energy this turn.
 	if not reload_entries.is_empty():
 		await _handle_reload.call(action_type, reload_entries, ctx)
-	if not support_entries.is_empty():
-		_handle_support(action_type, support_entries, ctx)
 	if not attack_entries.is_empty():
 		await _handle_attacks.call(action_type, attack_entries, ctx)
+	if not support_entries.is_empty():
+		_handle_support(action_type, support_entries, ctx)
 
 static func _handle_reload(_action_type: String, entries: Array, ctx: ExecutionContext) -> void:
 	for entry in entries:
