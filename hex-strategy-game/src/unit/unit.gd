@@ -132,7 +132,8 @@ func get_attack_paths() -> Array:
 ## Action types this unit cannot perform this turn. Stun disables all actions.
 func get_disabled_action_types() -> Array:
 	for e in active_effects:
-		if e is UnitEffect and e.kind == UnitEffect.Kind.Stun:
+		# Newly applied effects are queued for next turn via pending_first_tick.
+		if e is UnitEffect and e.kind == UnitEffect.Kind.Stun and not e.pending_first_tick:
 			return Actions.ACTION_ORDER.duplicate()
 	return []
 
