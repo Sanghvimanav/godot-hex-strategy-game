@@ -102,6 +102,15 @@ func apply_scenario(scenario: Dictionary) -> void:
 			unit.def = def
 			unit.starting_cell = cell
 			group_node.add_child(unit)
+			if u_spec is Dictionary:
+				if u_spec.has("health"):
+					unit.health = mini(int(u_spec.get("health", unit.max_health)), unit.max_health)
+					if unit.health_bar:
+						unit.health_bar.update_value(unit.health)
+				if u_spec.has("energy") and unit.max_energy > 0:
+					unit.energy = mini(int(u_spec.get("energy", unit.max_energy)), unit.max_energy)
+					if unit.energy_bar:
+						unit.energy_bar.update_value(unit.energy)
 	_refresh_groups()
 
 ## Build board from server game state (multiplayer). Sets unit_id on each unit for submit_actions.
