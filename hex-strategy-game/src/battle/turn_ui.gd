@@ -6,6 +6,7 @@ const BattlePhase = preload("res://src/battle/battle_phase.gd")
 @onready var replay_turn_picker: OptionButton = $turn_panel/vbox/replay_turn_picker
 @onready var turn_label: Label = $turn_panel/vbox/turn_label
 @onready var scenarios_button: Button = $turn_panel/vbox/scenarios_button
+@onready var resources_panel: PanelContainer = $resources_panel
 @onready var resources_label: Label = $resources_panel/margin/vbox/resources_label
 @onready var hovered_tile_label: Label = $resources_panel/margin/vbox/hovered_tile_label
 
@@ -16,6 +17,7 @@ var _selected_replay_turn: int = 0
 var _replay_available: bool = false
 var _replay_in_progress: bool = false
 var _updating_replay_picker: bool = false
+var _resources_panel_base_height := 0.0
 
 func _ready() -> void:
 	execute_button.pressed.connect(_on_execute_pressed)
@@ -40,9 +42,11 @@ func _ready() -> void:
 	EventBus.tile_resource_changed.connect(_on_tile_resource_changed)
 	_units_node = get_parent().get_node_or_null("units") as UnitsContainer
 	_hex_map_node = get_parent().get_node_or_null("hex_map")
+	_resources_panel_base_height = resources_panel.offset_bottom - resources_panel.offset_top
 	_update_replay_controls()
 	_update_resource_inventory()
 	_update_hovered_tile_resource()
+	_fit_resources_panel_to_content()
 	set_process(true)
 
 func _on_turn_changed(turn_number: int) -> void:
@@ -139,15 +143,21 @@ func _update_resource_inventory() -> void:
 	if resources_label == null:
 		return
 	var inventory: Dictionary = _get_player_resource_inventory()
+	var next_text := "None"
 	if inventory.is_empty():
-		resources_label.text = "None"
+		if resources_label.text != next_text:
+			resources_label.text = next_text
+			_fit_resources_panel_to_content()
 		return
 	var keys: Array = inventory.keys()
 	keys.sort()
 	var lines: Array[String] = []
 	for key in keys:
 		lines.append("%s: %d" % [str(key).capitalize(), int(inventory.get(key, 0))])
-	resources_label.text = "\n".join(lines)
+	next_text = "\n".join(lines)
+	if resources_label.text != next_text:
+		resources_label.text = next_text
+		_fit_resources_panel_to_content()
 
 func _get_player_resource_inventory() -> Dictionary:
 	if _units_node == null:
@@ -170,18 +180,26 @@ func _get_player_resource_inventory() -> Dictionary:
 func _update_hovered_tile_resource() -> void:
 	if hovered_tile_label == null:
 		return
+	var next_text := "Hover: n/a"
 	if _hex_map_node == null or not _hex_map_node.has_method("get_resource_info_at_cell"):
-		hovered_tile_label.text = "Hover: n/a"
+		if hovered_tile_label.text != next_text:
+			hovered_tile_label.text = next_text
+			_fit_resources_panel_to_content()
 		return
 	var scene = get_tree().current_scene
 	if not (scene is Node2D):
-		hovered_tile_label.text = "Hover: n/a"
+		if hovered_tile_label.text != next_text:
+			hovered_tile_label.text = next_text
+			_fit_resources_panel_to_content()
 		return
 	var mouse_world: Vector2 = scene.get_global_mouse_position()
 	var cell: Vector2 = Navigation.world_to_cell(mouse_world)
 	var cell_i := Vector2i(int(cell.x), int(cell.y))
 	if not Navigation.is_valid_cell(cell):
-		hovered_tile_label.text = "Hover: out of map"
+		next_text = "Hover: out of map"
+		if hovered_tile_label.text != next_text:
+			hovered_tile_label.text = next_text
+			_fit_resources_panel_to_content()
 		return
 	var info: Dictionary = _hex_map_node.get_resource_info_at_cell(cell_i)
 	var lines: Array[String] = [_build_hovered_resource_line(cell_i, info)]
@@ -192,7 +210,10 @@ func _update_hovered_tile_resource() -> void:
 		lines.append("Units (%d):" % units_at_cell.size())
 		for unit in units_at_cell:
 			lines.append("- %s" % _format_hovered_unit_line(unit))
-	hovered_tile_label.text = "\n".join(lines)
+	next_text = "\n".join(lines)
+	if hovered_tile_label.text != next_text:
+		hovered_tile_label.text = next_text
+		_fit_resources_panel_to_content()
 
 func _build_hovered_resource_line(cell_i: Vector2i, info: Dictionary) -> String:
 	if info.is_empty():
@@ -223,3 +244,14 @@ func _format_hovered_unit_line(unit: Unit) -> String:
 	var energy_now: int = unit.energy if unit.max_energy > 0 else 0
 	var energy_max: int = unit.max_energy if unit.max_energy > 0 else 0
 	return "[%s] %s HP %d/%d E %d/%d" % [group_name, unit_name, unit.health, unit.max_health, energy_now, energy_max]
+
+func _fit_resources_panel_to_content() -> void:
+	if resources_panel == null:
+		return
+	var min_height := resources_panel.get_combined_minimum_size().y
+	var desired_height: float = max(_resources_panel_base_height, min_height)
+	var current_height := resources_panel.offset_bottom - resources_panel.offset_top
+	if is_equal_approx(current_height, desired_height):
+		return
+	# Keep bottom edge fixed and grow upward when content needs more height.
+	resources_panel.offset_top = resources_panel.offset_bottom - desired_height

@@ -11,6 +11,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_replay_actions_support_server_ac_dictionary(tests) and ok
 	ok = _test_replay_history_stores_multiple_turns(tests) and ok
 	ok = _test_replay_history_respects_capacity(tests) and ok
+	ok = _test_apply_scenario_uses_health_and_energy_overrides(tests) and ok
 	return ok
 
 static func _make_container() -> UnitsContainer:
@@ -218,5 +219,56 @@ static func _test_replay_history_respects_capacity(tests: Node) -> bool:
 		container.free()
 		return false
 	tests._pass("replay history enforces max turn window")
+	container.free()
+	return true
+
+static func _test_apply_scenario_uses_health_and_energy_overrides(tests: Node) -> bool:
+	tests._log("test_replay_restore: apply_scenario applies unit health and energy overrides")
+	var container := _make_container()
+	tests.add_child(container)
+	var scenario := {
+		"groups": [
+			{
+				"name": "player",
+				"units": [
+					{"def_path": "res://src/unit/definitions/medic.tres", "cell": Vector2i(0, 0), "energy": 2},
+					{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(1, 0), "health": 3, "energy": 1},
+				]
+			},
+			{"name": "opponent", "ai": true, "units": []},
+		]
+	}
+	container.apply_scenario(scenario)
+	var player_group := container.get_node_or_null("player")
+	if player_group == null:
+		tests._fail("player group should exist after apply_scenario")
+		container.free()
+		return false
+	var medic: Unit = null
+	var marine: Unit = null
+	for child in player_group.get_children():
+		if not child is Unit:
+			continue
+		if child.def and child.def.resource_path == "res://src/unit/definitions/medic.tres":
+			medic = child
+		elif child.def and child.def.resource_path == "res://src/unit/definitions/marine.tres":
+			marine = child
+	if medic == null or marine == null:
+		tests._fail("apply_scenario should spawn both medic and marine")
+		container.free()
+		return false
+	if medic.energy != 2:
+		tests._fail("medic energy override should be 2, got %s" % medic.energy)
+		container.free()
+		return false
+	if marine.health != 3:
+		tests._fail("marine health override should be 3, got %s" % marine.health)
+		container.free()
+		return false
+	if marine.energy != 1:
+		tests._fail("marine energy override should be 1, got %s" % marine.energy)
+		container.free()
+		return false
+	tests._pass("apply_scenario applies unit health and energy overrides")
 	container.free()
 	return true

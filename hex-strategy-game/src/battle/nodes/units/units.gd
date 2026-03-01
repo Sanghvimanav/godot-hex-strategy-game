@@ -104,6 +104,13 @@ func apply_scenario(scenario: Dictionary) -> void:
 			unit.def = def
 			unit.starting_cell = cell
 			group_node.add_child(unit)
+			if u_spec is Dictionary:
+				if u_spec.has("health"):
+					unit.health = clampi(int(u_spec.get("health", unit.max_health)), 0, unit.max_health)
+				if u_spec.has("energy"):
+					unit.energy = clampi(int(u_spec.get("energy", unit.max_energy)), 0, unit.max_energy)
+					if unit.energy_bar and unit.max_energy > 0:
+						unit.energy_bar.update_value(unit.energy)
 	_refresh_groups()
 
 ## Build board from server game state (multiplayer). Sets unit_id on each unit for submit_actions.

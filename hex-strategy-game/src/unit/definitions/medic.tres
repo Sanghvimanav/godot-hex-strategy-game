@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="UnitDefinition" format=3]
+
+[ext_resource type="SpriteFrames" path="res://src/unit/art/ghost/ghost_spriteframes.tres" id="1_frames"]
+[ext_resource type="Script" uid="uid://r4e3cec6no81" path="res://src/unit/definitions/unit_definition.gd" id="1_script"]
+
+[resource]
+script = ExtResource("1_script")
+name = "Medic"
+type = 1
+faction = 2
+frames = ExtResource("1_frames")
+sprite_scale = Vector2(0.25, 0.25)
+sprite_offset = Vector2(0, 4)
+max_health = 2
+max_energy = 4
+sight_range = 2
+move_action_keys = Array[String](["move_short", "reload"])
+ability_action_keys = Array[String](["heal_adjacent"])
