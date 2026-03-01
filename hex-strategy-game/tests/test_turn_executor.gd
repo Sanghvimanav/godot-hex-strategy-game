@@ -18,6 +18,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_get_damage_cells_target_pattern_only_end_point(tests) and ok
 	ok = _test_get_damage_cells_self_or_adjacent_uses_absolute_endpoint(tests) and ok
 	ok = _test_attack_viper_has_target_pattern(tests) and ok
+	ok = _test_target_damage_effect_spawns_for_scout_and_viper(tests) and ok
 	ok = _test_handle_support_heals_absolute_target_and_spawns_effect(tests) and ok
 	ok = _test_fast_ability_before_move(tests) and ok
 	ok = _test_phase_animations_complete_before_next(tests) and ok
@@ -135,6 +136,92 @@ static func _test_attack_viper_has_target_pattern(tests: Node) -> bool:
 		tests._fail("attack_viper should have pattern=target (damage only target tile), got %s" % config.get("pattern", ""))
 		return false
 	tests._pass("attack_viper pattern=target")
+	return true
+
+static func _count_target_damage_effect_nodes(parent: Node) -> int:
+	var count := 0
+	for child in parent.get_children():
+		if str(child.name).begins_with("target_damage_effect"):
+			count += 1
+	return count
+
+static func _clear_target_damage_effect_nodes(parent: Node) -> void:
+	for child in parent.get_children():
+		if str(child.name).begins_with("target_damage_effect"):
+			child.free()
+
+static func _test_target_damage_effect_spawns_for_scout_and_viper(tests: Node) -> bool:
+	tests._log("test_turn_executor: target damage effect spawns for scout/viper attacks")
+	var root := Node2D.new()
+	tests.add_child(root)
+	var player := Node2D.new()
+	player.name = "player"
+	root.add_child(player)
+	var scout_def := load("res://src/unit/definitions/scout.tres") as UnitDefinition
+	var viper_def := load("res://src/unit/definitions/viper.tres") as UnitDefinition
+	var marine_def := load("res://src/unit/definitions/marine.tres") as UnitDefinition
+	if scout_def == null or viper_def == null or marine_def == null:
+		tests._fail("scout, viper, and marine definitions must load for target effect test")
+		root.free()
+		return false
+	var scout := UNIT_SCENE.instantiate() as Unit
+	scout.def = scout_def
+	scout.starting_cell = Vector2i(0, 0)
+	player.add_child(scout)
+	var viper := UNIT_SCENE.instantiate() as Unit
+	viper.def = viper_def
+	viper.starting_cell = Vector2i(1, 0)
+	player.add_child(viper)
+	var marine := UNIT_SCENE.instantiate() as Unit
+	marine.def = marine_def
+	marine.starting_cell = Vector2i(2, 0)
+	player.add_child(marine)
+
+	var scout_attack_def := ActionDefinition.new()
+	scout_attack_def.action_key = "attack_ray"
+	var scout_ac := ActionInstance.new(scout_attack_def, scout)
+	scout_ac.path = []
+	scout_ac.end_point = Vector2(0, 1)
+	_clear_target_damage_effect_nodes(player)
+	TurnExecutor._play_target_damage_effect_for_attack(scout, scout_ac)
+	var count_after_scout := _count_target_damage_effect_nodes(player)
+	if count_after_scout != 1:
+		tests._fail("attack_ray should spawn one target_damage_effect, got %d" % count_after_scout)
+		root.free()
+		return false
+
+	var viper_attack_def := ActionDefinition.new()
+	viper_attack_def.action_key = "attack_viper"
+	var viper_ac := ActionInstance.new(viper_attack_def, viper)
+	viper_ac.path = []
+	viper_ac.end_point = Vector2(1, 1)
+	if not TurnExecutor._should_play_target_damage_effect(viper, viper_ac):
+		tests._fail("attack_viper should be eligible for target damage effect")
+		root.free()
+		return false
+	_clear_target_damage_effect_nodes(player)
+	TurnExecutor._play_target_damage_effect_for_attack(viper, viper_ac)
+	var count_after_viper := _count_target_damage_effect_nodes(player)
+	if count_after_viper != 1:
+		tests._fail("attack_viper should spawn one target_damage_effect, got %d" % count_after_viper)
+		root.free()
+		return false
+
+	var marine_attack_def := ActionDefinition.new()
+	marine_attack_def.action_key = "attack_short"
+	var marine_ac := ActionInstance.new(marine_attack_def, marine)
+	marine_ac.path = []
+	marine_ac.end_point = Vector2(2, 1)
+	_clear_target_damage_effect_nodes(player)
+	TurnExecutor._play_target_damage_effect_for_attack(marine, marine_ac)
+	var count_after_marine := _count_target_damage_effect_nodes(player)
+	if count_after_marine != 0:
+		tests._fail("attack_short should not spawn target_damage_effect, got %d" % count_after_marine)
+		root.free()
+		return false
+
+	tests._pass("target damage effect spawns for scout/viper only")
+	root.free()
 	return true
 
 static func _test_handle_support_heals_absolute_target_and_spawns_effect(tests: Node) -> bool:

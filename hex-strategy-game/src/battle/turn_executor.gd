@@ -10,6 +10,7 @@ const ABILITY_TYPES: Array[String] = TurnExecutionCore.ABILITY_TYPES
 const SPAWN_TYPES: Array[String] = TurnExecutionCore.SPAWN_TYPES
 const ATTACK_TIMEOUT: float = 5.0
 const HEAL_EFFECT_SCENE := preload("res://src/unit/art/effects/heal_effect.tscn")
+const TARGET_DAMAGE_EFFECT_SCENE := preload("res://src/unit/art/effects/target_damage_effect.tscn")
 const UNIT_SCENE := preload("res://src/unit/unit.tscn")
 
 ## Execution context passed through the pipeline.
@@ -294,6 +295,8 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 		var play_animation: bool = true
 		if is_passive and not _would_attack_deal_damage(attacker, ac, ctx):
 			play_animation = false
+		if play_animation:
+			_play_target_damage_effect_for_attack(attacker, ac)
 		attacker.attack(ac, play_animation)
 		if play_animation:
 			var done_flag: Array = [false]
@@ -302,6 +305,22 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 			timeout.timeout.connect(func(): done_flag[0] = true, CONNECT_ONE_SHOT)
 			while not done_flag[0]:
 				await ctx.tree.process_frame
+
+static func _play_target_damage_effect_for_attack(attacker: Unit, ac: ActionInstance) -> void:
+	if not _should_play_target_damage_effect(attacker, ac):
+		return
+	var effect_parent: Node = attacker.get_parent()
+	if effect_parent == null:
+		return
+	var effect: Node2D = TARGET_DAMAGE_EFFECT_SCENE.instantiate() as Node2D
+	effect_parent.add_child(effect)
+	effect.global_position = Navigation.cell_to_world(ac.end_point, true)
+
+static func _should_play_target_damage_effect(attacker: Unit, ac: ActionInstance) -> bool:
+	if not _valid_unit(attacker) or ac == null or ac.definition == null:
+		return false
+	var action_key: String = ac.definition.action_key
+	return action_key == "attack_ray" or action_key == "attack_viper"
 
 static func _apply_stun_effect(ctx: ExecutionContext, target_unit: Unit, duration: int) -> void:
 	var effect := UnitEffect.new(UnitEffect.Kind.Stun, duration, {})

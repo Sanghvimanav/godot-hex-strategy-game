@@ -32,16 +32,16 @@ func _build_scenarios() -> void:
 		},
 		]
 	})
-	# Scout energy debug: just Scout vs Zergling
+	# Scout energy debug: Scout vs Marine at Shoot range (distance 2)
 	available_scenarios.append({
 		"id": "scout_debug",
-		"display_name": "Scout Debug (Scout vs Zergling)",
+		"display_name": "Scout Debug (Scout vs Marine)",
 		"groups": [
 			{"name": "player", "units": [
 				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(0, 0)},
 			]},
 			{"name": "opponent", "ai": true, "units": [
-				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-1, 1)},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(2, 0)},
 			]},
 		]
 	})
