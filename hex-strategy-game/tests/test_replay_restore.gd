@@ -9,6 +9,8 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_replay_actions_resolve_unit_by_stable_id(tests) and ok
 	ok = _test_serialize_recording_actions_data_only(tests) and ok
 	ok = _test_replay_actions_support_server_ac_dictionary(tests) and ok
+	ok = _test_replay_history_stores_multiple_turns(tests) and ok
+	ok = _test_replay_history_respects_capacity(tests) and ok
 	ok = _test_apply_scenario_uses_health_and_energy_overrides(tests) and ok
 	return ok
 
@@ -161,6 +163,62 @@ static func _test_replay_actions_support_server_ac_dictionary(tests: Node) -> bo
 		container.free()
 		return false
 	tests._pass("replay builder supports server-style dictionary ac payload")
+	container.free()
+	return true
+
+static func _test_replay_history_stores_multiple_turns(tests: Node) -> bool:
+	tests._log("test_replay_restore: replay history stores multiple turns")
+	var container := _make_container()
+	tests.add_child(container)
+	container._store_replay_recording_for_turn(1, { "actions": [] })
+	container._store_replay_recording_for_turn(2, { "actions": [] })
+	container._store_replay_recording_for_turn(3, { "actions": [] })
+	var turn_numbers: Array = container._get_replay_turn_numbers()
+	if turn_numbers.size() != 3:
+		tests._fail("expected three replay turns in history")
+		container.free()
+		return false
+	if int(turn_numbers[0]) != 1 or int(turn_numbers[1]) != 2 or int(turn_numbers[2]) != 3:
+		tests._fail("expected replay history order [1,2,3], got %s" % [turn_numbers])
+		container.free()
+		return false
+	var turn2_entry: Dictionary = container._get_replay_history_entry(2)
+	if int(turn2_entry.get("turn", 0)) != 2:
+		tests._fail("expected to resolve turn 2 replay entry")
+		container.free()
+		return false
+	var fallback_entry: Dictionary = container._get_replay_history_entry(999)
+	if int(fallback_entry.get("turn", 0)) != 3:
+		tests._fail("unknown turn should fall back to latest replay turn")
+		container.free()
+		return false
+	tests._pass("replay history stores multiple turns")
+	container.free()
+	return true
+
+static func _test_replay_history_respects_capacity(tests: Node) -> bool:
+	tests._log("test_replay_restore: replay history enforces max turn window")
+	var container := _make_container()
+	tests.add_child(container)
+	var max_history: int = UnitsContainer.MAX_REPLAY_TURN_HISTORY
+	for turn_idx in range(1, max_history + 3):
+		container._store_replay_recording_for_turn(turn_idx, { "actions": [] })
+	var turn_numbers: Array = container._get_replay_turn_numbers()
+	if turn_numbers.size() != max_history:
+		tests._fail("expected replay history size %d, got %d" % [max_history, turn_numbers.size()])
+		container.free()
+		return false
+	var expected_first_turn: int = 3
+	if int(turn_numbers[0]) != expected_first_turn:
+		tests._fail("expected oldest retained replay turn %d, got %d" % [expected_first_turn, int(turn_numbers[0])])
+		container.free()
+		return false
+	var expected_last_turn: int = max_history + 2
+	if int(turn_numbers[turn_numbers.size() - 1]) != expected_last_turn:
+		tests._fail("expected latest retained replay turn %d, got %d" % [expected_last_turn, int(turn_numbers[turn_numbers.size() - 1])])
+		container.free()
+		return false
+	tests._pass("replay history enforces max turn window")
 	container.free()
 	return true
 

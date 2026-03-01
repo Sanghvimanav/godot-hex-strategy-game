@@ -379,4 +379,4 @@ static func _would_attack_deal_damage(attacker, ac: ActionInstance, ctx: Executi
 	return false
 
 ## Replay is done by building actions_by_type from the recording and calling run_pipeline
-## with apply_damage=false and phase_callback=refresh_fog (see units.gd _replay_last_turn).
+## with apply_damage=false and phase_callback=refresh_fog (see units.gd _replay_turn_recording).
