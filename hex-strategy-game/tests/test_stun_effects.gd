@@ -5,11 +5,14 @@ const TurnExecutor = preload("res://src/battle/turn_executor.gd")
 const UnitScript = preload("res://src/unit/unit.gd")
 const UnitEffect = preload("res://src/unit/effect.gd")
 
+const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
+
 static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_stun_registers_and_persists_to_next_turn(tests) and ok
 	ok = _test_stun_replay_roundtrip_matches_next_turn_state(tests) and ok
 	ok = _test_stun_debug_scenario_exists(tests) and ok
+	ok = _test_attack_viper_stun_blocks_next_turn_move(tests) and ok
 	return ok
 
 static func _make_execution_context(tests: Node) -> TurnExecutor.ExecutionContext:
@@ -105,4 +108,65 @@ static func _test_stun_debug_scenario_exists(tests: Node) -> bool:
 		tests._fail("stun_replay_debug should include an AI Viper opponent")
 		return false
 	tests._pass("stun replay debug scenario exists")
+	return true
+
+## End-to-end Core behavior: attack_viper applies stun, next turn is blocked, then stun expires.
+static func _test_attack_viper_stun_blocks_next_turn_move(tests: Node) -> bool:
+	tests._log("test_stun_effects: attack_viper stun blocks next-turn move")
+	# Turn 1: Viper at (0,0), target at (2,0). Viper attacks and stuns.
+	var game_state_t1 := {
+		"groups": [
+			{ "name": "player", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/viper.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
+			]},
+			{ "name": "opponent", "ai": false, "units": [
+				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [2, 0], "health": 3, "max_health": 3, "energy": 4, "max_energy": 4 }
+			]}
+		]
+	}
+	var actions_t1 := {
+		"player": [{ "unit_id": 1, "action_key": "attack_viper", "path": [], "end_point": [2, 0] }],
+		"opponent": []
+	}
+	TurnExecutionCore.execute_turn(game_state_t1, actions_t1)
+	var target_found := TurnExecutionCore.find_unit_by_id(game_state_t1, 2)
+	if target_found.is_empty():
+		tests._fail("target should exist after turn 1")
+		return false
+	var effects_after_t1: Array = target_found.unit.get("effects", [])
+	if effects_after_t1.is_empty():
+		tests._fail("attack_viper should apply stun effect to target for next turn")
+		return false
+	# Turn 2: Stunned target tries to move.
+	var move_path: Array = []
+	for p in HexGrid.build_path_to(2, 0, 3, 0):
+		move_path.append([int(p.x), int(p.y)])
+	var actions_t2 := {
+		"player": [],
+		"opponent": [{ "unit_id": 2, "action_key": "move_short", "path": move_path, "end_point": [3, 0] }]
+	}
+	TurnExecutionCore.execute_turn(game_state_t1, actions_t2)
+	var target_after := TurnExecutionCore.find_unit_by_id(game_state_t1, 2)
+	if target_after.is_empty():
+		tests._fail("target should exist after turn 2")
+		return false
+	var cell: Array = target_after.unit.get("cell", [])
+	if cell != [2, 0]:
+		tests._fail("stunned target must not move; expected [2,0], got %s" % cell)
+		return false
+	var effects_after_t2: Array = target_after.unit.get("effects", [])
+	if not effects_after_t2.is_empty():
+		tests._fail("stun should expire after the blocked turn, got effects %s" % effects_after_t2)
+		return false
+	# Turn 3: same move is now allowed.
+	TurnExecutionCore.execute_turn(game_state_t1, actions_t2)
+	var target_after_expire := TurnExecutionCore.find_unit_by_id(game_state_t1, 2)
+	if target_after_expire.is_empty():
+		tests._fail("target should exist after turn 3")
+		return false
+	var cell_after_expire: Array = target_after_expire.unit.get("cell", [])
+	if cell_after_expire != [3, 0]:
+		tests._fail("target should move after stun expires; expected [3,0], got %s" % cell_after_expire)
+		return false
+	tests._pass("attack_viper stun blocks next-turn move")
 	return true
