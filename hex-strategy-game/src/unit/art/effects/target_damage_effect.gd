@@ -1,10 +1,9 @@
 extends Node2D
-## One-shot heal VFX: plays the default animation then frees itself.
+## One-shot target tile damage VFX for Scout/Viper attacks.
 
 @onready var sprite: AnimatedSprite2D = $sprite
 
 func _ready() -> void:
-	sprite.modulate = Color(0.72, 1.0, 0.78)  # Slightly greener tint
 	sprite.animation_finished.connect(_on_animation_finished)
 	sprite.play("default")
 

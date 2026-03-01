@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://src/unit/art/effects/target_damage_effect.gd" id="1_script"]
+[ext_resource type="SpriteFrames" path="res://src/unit/art/effects/target_damage_effect_spriteframes.tres" id="2_frames"]
+
+[node name="target_damage_effect" type="Node2D"]
+z_index = 20
+script = ExtResource("1_script")
+
+[node name="sprite" type="AnimatedSprite2D" parent="."]
+position = Vector2(0, -8)
+scale = Vector2(0.35, 0.35)
+sprite_frames = ExtResource("2_frames")
+animation = &"default"
