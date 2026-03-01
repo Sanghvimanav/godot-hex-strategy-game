@@ -138,6 +138,15 @@ const ACTION_CONFIGS: Dictionary = {
 		color = "#9C27B0",
 		energy_consumption = -1,
 	},
+	"rest_no_energy": {
+		key = "rest_no_energy",
+		type = "slow ability",
+		name = "Rest",
+		min_range = 0,
+		max_range = 0,
+		color = "#9C27B0",
+		energy_consumption = 0,
+	},
 	"support_adjacent": {
 		key = "support_adjacent",
 		type = "ability",
@@ -263,7 +272,7 @@ func get_move_definitions_for_action(action_key: String) -> Array[ActionDefiniti
 		push_warning("Unknown action key: %s" % action_key)
 		return []
 	var atype: String = config.get("type", "")
-	if action_key in ["reload", "recharge"]:
+	if action_key in ["reload", "recharge", "rest_no_energy"]:
 		var result: Array[ActionDefinition] = _build_self_definitions(config.get("name", "Rest"))
 		for ad in result:
 			ad.action_key = action_key
@@ -285,7 +294,7 @@ func get_ability_definitions_for_action(action_key: String) -> Array[ActionDefin
 		push_warning("Unknown action key: %s" % action_key)
 		return []
 	var atype: String = config.get("type", "")
-	if action_key in ["reload", "recharge"]:
+	if action_key in ["reload", "recharge", "rest_no_energy"]:
 		var result: Array[ActionDefinition] = _build_self_definitions(config.get("name", "Rest"))
 		for ad in result:
 			ad.action_key = action_key

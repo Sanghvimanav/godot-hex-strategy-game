@@ -214,6 +214,7 @@ func _on_server_message(obj: Dictionary) -> void:
 				MultiplayerState.is_multiplayer = true
 				MultiplayerState.is_host = _is_host
 				MultiplayerState.my_group = _my_group
+				Scenarios.selected_scenario_id = str(state.get("scenario_id", "default"))
 			get_tree().change_scene_to_file("res://src/battle/battle.tscn")
 		"game_over":
 			game_state_label.text = str(obj.get("message", "Game over."))

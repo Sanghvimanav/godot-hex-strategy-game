@@ -1045,7 +1045,7 @@ func _map_recorded_action_type(action_type: String) -> String:
 		atype = "fast ability"
 	elif atype == "slow attack":
 		atype = "slow ability"
-	elif atype == "reload":
+	elif atype in ["reload", "rest_no_energy"]:
 		atype = "slow ability"
 	return atype
 

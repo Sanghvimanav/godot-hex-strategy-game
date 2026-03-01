@@ -200,7 +200,7 @@ static func _pick_zergling_move(unit: Unit, options: Array, enemies: Array, grou
 			return best[randi_range(0, best.size() - 1)]
 	# No spread moves (e.g. already at dist 2, all moves go to 1 or 3): pick Rest if available
 	for entry in options:
-		if not entry.is_move and entry.ac.definition and entry.ac.definition.action_key == "reload":
+		if not entry.is_move and entry.ac.definition and entry.ac.definition.action_key in ["reload", "rest_no_energy"]:
 			return entry
 	# Fall through to default
 	return {}

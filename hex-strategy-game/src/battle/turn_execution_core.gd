@@ -495,7 +495,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 			var phase_energy_delta_by_id: Dictionary = {}
 			for entry in entries:
 				var action_key: String = str(entry.action.get("action_key", ""))
-				if action_key in ["reload", "recharge"]:
+				if action_key in ["reload", "recharge", "rest_no_energy"]:
 					reload_entries.append(entry)
 				elif action_key in ["heal_adjacent", "support_adjacent", "resupply_adjacent"]:
 					support_entries.append(entry)
@@ -523,7 +523,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				var uc: Array = unit.get("cell", [0, 0])
 				var uq: int = int(uc[0])
 				var ur: int = int(uc[1])
-				if action_key in ["reload", "recharge"]:
+				if action_key in ["reload", "recharge", "rest_no_energy"]:
 					recording.actions.append({
 						type = action_type,
 						unit_id = unit.get("unit_id", -1),

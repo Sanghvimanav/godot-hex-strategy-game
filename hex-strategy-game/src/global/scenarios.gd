@@ -255,9 +255,9 @@ func get_selected_scenario() -> Dictionary:
 func _default_tile_resources() -> Dictionary:
 	return {}
 
-## Returns random village tiles for zerg_vs_terran. Excludes unit cell pools.
+## Returns random village tiles for zerg_vs_terran. Excludes unit cell pools. Map is radius 6 for this scenario.
 func _random_village_tiles_for_zerg_vs_terran() -> Dictionary:
-	const HEX_RADIUS := 5
+	const HEX_RADIUS := 6
 	const NUM_VILLAGES := 5
 	const VILLAGE_AMOUNT := 3
 	var excluded: Dictionary = {}

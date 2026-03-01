@@ -88,7 +88,7 @@ static func _handle_abilities(action_type: String, entries: Array, ctx: Executio
 	for entry in entries:
 		var ac: ActionInstance = entry.ac
 		var action_key: String = ac.definition.action_key if ac.definition else ""
-		if action_key in ["reload", "recharge"]:
+		if action_key in ["reload", "recharge", "rest_no_energy"]:
 			reload_entries.append(entry)
 		elif action_key in ["heal_adjacent", "support_adjacent", "resupply_adjacent"]:
 			support_entries.append(entry)
