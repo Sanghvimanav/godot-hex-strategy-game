@@ -6,6 +6,7 @@ const TurnExecutor = preload("res://src/battle/turn_executor.gd")
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 const PlanningAI = preload("res://src/battle/ai/planning_ai.gd")
 const UNIT_SCENE := preload("res://src/unit/unit.tscn")
+const MAX_REPLAY_TURN_HISTORY: int = 8
 
 var groups: Array = []
 var ai_group_names: Array[String] = []
@@ -19,6 +20,7 @@ var selected_action_key: String = ""
 var turn_number: int = 1
 
 var last_turn_recording: Dictionary = {}  # { actions: [], died_ids: [], summary: [] }
+var replay_turn_history: Array = []  # [{ turn: int, recording: Dictionary }]
 
 func _ready() -> void:
 	_refresh_groups()
@@ -104,12 +106,12 @@ func apply_scenario(scenario: Dictionary) -> void:
 			group_node.add_child(unit)
 			if u_spec is Dictionary:
 				if u_spec.has("health"):
-					unit.health = mini(int(u_spec.get("health", unit.max_health)), unit.max_health)
+					unit.health = clampi(int(u_spec.get("health", unit.max_health)), 0, unit.max_health)
 					if unit.health_bar:
 						unit.health_bar.update_value(unit.health)
 				if u_spec.has("energy") and unit.max_energy > 0:
-					unit.energy = mini(int(u_spec.get("energy", unit.max_energy)), unit.max_energy)
-					if unit.energy_bar:
+					unit.energy = clampi(int(u_spec.get("energy", unit.max_energy)), 0, unit.max_energy)
+					if unit.energy_bar and unit.max_energy > 0:
 						unit.energy_bar.update_value(unit.energy)
 	_refresh_groups()
 
@@ -259,8 +261,10 @@ func start_battle() -> void:
 	battle_phase = BattlePhase.Phase.PLANNING
 	_clear_all_planned_actions()
 	last_turn_recording = {}
+	replay_turn_history.clear()
 	EventBus.turn_changed.emit(turn_number)
 	EventBus.replay_available_changed.emit(false)
+	EventBus.replay_history_changed.emit([], 0)
 	_begin_planning()
 
 func get_active_units() -> Array[Unit]:
@@ -512,7 +516,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
-			if _all_units_have_planned_action():
+			var can_execute: bool = _all_units_have_planned_action()
+			if can_execute:
 				_execute_planned_actions()
 		elif event.keycode == KEY_TAB:
 			_cycle_planning_unit(1 if not event.shift_pressed else -1)
@@ -665,7 +670,8 @@ func _finish_turn_after_execution() -> void:
 	turn_number += 1
 	print("[EXEC] _finish_turn_after_execution DONE, starting turn ", turn_number)
 	EventBus.turn_changed.emit(turn_number)
-	EventBus.replay_available_changed.emit(true)
+	EventBus.replay_available_changed.emit(not replay_turn_history.is_empty())
+	_emit_replay_history_changed()
 	_begin_planning()
 
 ## Build dictionary game_state from live Unit nodes for TurnExecutionCore.
@@ -812,17 +818,62 @@ func _filter_passive_summary_entries() -> void:
 		filtered.append(entry)
 	last_turn_recording.summary = filtered
 
+func _get_replay_turn_numbers() -> Array:
+	var turn_numbers: Array = []
+	for entry in replay_turn_history:
+		if not (entry is Dictionary):
+			continue
+		turn_numbers.append(int(entry.get("turn", 0)))
+	return turn_numbers
+
+func _get_replay_history_entry(requested_turn: int) -> Dictionary:
+	if replay_turn_history.is_empty():
+		return {}
+	if requested_turn <= 0:
+		return replay_turn_history[replay_turn_history.size() - 1]
+	for idx in range(replay_turn_history.size() - 1, -1, -1):
+		var entry: Dictionary = replay_turn_history[idx]
+		if int(entry.get("turn", -1)) == requested_turn:
+			return entry
+	return replay_turn_history[replay_turn_history.size() - 1]
+
+func _emit_replay_history_changed(selected_turn: int = 0) -> void:
+	var turn_numbers: Array = _get_replay_turn_numbers()
+	if selected_turn <= 0 and not turn_numbers.is_empty():
+		selected_turn = int(turn_numbers[turn_numbers.size() - 1])
+	EventBus.replay_history_changed.emit(turn_numbers, selected_turn)
+
+func _store_replay_recording_for_turn(turn_played: int, recording: Dictionary) -> void:
+	if recording.is_empty():
+		return
+	var cloned_recording: Dictionary = recording.duplicate(true)
+	last_turn_recording = cloned_recording
+	replay_turn_history.append({
+		"turn": turn_played,
+		"recording": cloned_recording
+	})
+	while replay_turn_history.size() > MAX_REPLAY_TURN_HISTORY:
+		replay_turn_history.remove_at(0)
+	EventBus.replay_available_changed.emit(not replay_turn_history.is_empty())
+	_emit_replay_history_changed(turn_played)
+
 func _on_unit_pick_requested(unit: Unit) -> void:
 	_select_unit_for_planning(unit)
 
-func _on_replay_turn_requested() -> void:
-	if battle_phase != BattlePhase.Phase.PLANNING or last_turn_recording.is_empty():
+func _on_replay_turn_requested(requested_turn: int) -> void:
+	if battle_phase != BattlePhase.Phase.PLANNING or replay_turn_history.is_empty():
 		return
+	var replay_entry: Dictionary = _get_replay_history_entry(requested_turn)
+	var replay_recording: Dictionary = replay_entry.get("recording", {})
+	if replay_recording.is_empty():
+		return
+	var replay_turn: int = int(replay_entry.get("turn", requested_turn))
+	_emit_replay_history_changed(replay_turn)
 	var summary_lines: Array = []
-	var died_ids: Array = last_turn_recording.get("died_ids", [])
-	var summary: Array = last_turn_recording.get("summary", [])
-	var before_state: Dictionary = last_turn_recording.get("before_state", {})
-	var damage_by_id: Dictionary = last_turn_recording.get("damage_by_id", {})
+	var died_ids: Array = replay_recording.get("died_ids", [])
+	var summary: Array = replay_recording.get("summary", [])
+	var before_state: Dictionary = replay_recording.get("before_state", {})
+	var damage_by_id: Dictionary = replay_recording.get("damage_by_id", {})
 
 	for action_type in Actions.ACTION_ORDER:
 		var entries_in_phase: Array = []
@@ -856,8 +907,8 @@ func _on_replay_turn_requested() -> void:
 
 	if summary_lines.size() > 0 and summary_lines[0] == "":
 		summary_lines.remove_at(0)
-	EventBus.show_replay_summary.emit(summary_lines)
-	_replay_last_turn()
+	EventBus.show_replay_summary.emit(summary_lines, "Turn %d actions" % replay_turn)
+	_replay_turn_recording(replay_recording)
 
 func _phase_display_name(action_type: String) -> String:
 	if action_type.is_empty():
@@ -868,15 +919,15 @@ func _phase_display_name(action_type: String) -> String:
 			parts[i] = parts[i].left(1).to_upper() + parts[i].substr(1)
 	return " ".join(parts)
 
-func _replay_last_turn() -> void:
+func _replay_turn_recording(replay_recording: Dictionary) -> void:
 	battle_phase = BattlePhase.Phase.EXECUTING
 	EventBus.unit_selected_for_planning.emit(null)
 	EventBus.show_selected_unit_cell.emit(null)
 	EventBus.show_move_path.emit(null, Vector2.ZERO)
 	var replay_return_state: Dictionary = _capture_replay_return_state()
-	_restore_before_state(last_turn_recording.get("before_state", {}))
+	_restore_before_state(replay_recording.get("before_state", {}))
 	var hex_map_node = get_parent().get_node_or_null("hex_map")
-	var actions_by_type := _build_replay_actions_by_type(last_turn_recording.get("actions", []))
+	var actions_by_type := _build_replay_actions_by_type(replay_recording.get("actions", []))
 	var ctx := TurnExecutor.ExecutionContext.new(
 		groups,
 		false,
@@ -887,7 +938,7 @@ func _replay_last_turn() -> void:
 	if hex_map_node and hex_map_node.has_method("refresh_fog"):
 		ctx.phase_callback = hex_map_node.refresh_fog
 	await TurnExecutor.run_pipeline(actions_by_type, ctx)
-	var damage_by_id: Dictionary = last_turn_recording.get("damage_by_id", {})
+	var damage_by_id: Dictionary = replay_recording.get("damage_by_id", {})
 	for uid_key in damage_by_id:
 		var unit = _resolve_unit_for_replay_id(int(uid_key))
 		if is_instance_valid(unit):
@@ -895,7 +946,7 @@ func _replay_last_turn() -> void:
 			unit.health -= dmg
 			if unit.health_bar:
 				unit.health_bar.update_value(unit.health)
-	var applied_effects: Array = last_turn_recording.get("applied_effects", [])
+	var applied_effects: Array = replay_recording.get("applied_effects", [])
 	for entry in applied_effects:
 		var unit = _resolve_unit_for_replay_id(int(entry.get("unit_id", 0)))
 		if is_instance_valid(unit) and unit is Unit:
@@ -1109,6 +1160,7 @@ func _run_planned_actions_phase3() -> void:
 	last_turn_recording["damage_causers"] = _convert_damage_causers_to_stable(last_turn_recording.get("damage_causers", {}))
 	last_turn_recording["applied_effects"] = _convert_applied_effects_to_stable(last_turn_recording.get("applied_effects", []))
 	_filter_passive_summary_entries()
+	_store_replay_recording_for_turn(turn_number, last_turn_recording)
 	var units_that_will_die: Array = []
 	for u in get_all_units():
 		if u.health <= 0:
@@ -1194,6 +1246,7 @@ func play_resolved_turn(turn_result: Dictionary, final_state: Dictionary) -> voi
 			apply_server_state(final_state)
 		return
 	print("[EXEC] play_resolved_turn START")
+	var executed_turn_number: int = turn_number
 	# Snapshot before_state for replay/undo (same shape as _record_turn_before_execution, but includes all units).
 	var before_state: Dictionary = {}
 	for u in get_all_units():
@@ -1234,6 +1287,7 @@ func play_resolved_turn(turn_result: Dictionary, final_state: Dictionary) -> voi
 	recording["summary"] = _build_summary_from_recording_actions(recording["actions"])
 	last_turn_recording = recording
 	_filter_passive_summary_entries()
+	_store_replay_recording_for_turn(executed_turn_number, last_turn_recording)
 
 	# Death animations (mirrors _run_planned_actions_phase3).
 	var units_that_will_die: Array = []
@@ -1271,7 +1325,8 @@ func play_resolved_turn(turn_result: Dictionary, final_state: Dictionary) -> voi
 		hex_map_node.refresh_fog()
 	_clear_all_planned_actions()
 	battle_phase = BattlePhase.Phase.PLANNING
-	EventBus.replay_available_changed.emit(true)
+	EventBus.replay_available_changed.emit(not replay_turn_history.is_empty())
+	_emit_replay_history_changed()
 	_begin_planning()
 
 ## Collects planned + passive actions from units, grouped by type.

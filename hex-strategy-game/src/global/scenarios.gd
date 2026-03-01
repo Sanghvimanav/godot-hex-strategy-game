@@ -85,6 +85,21 @@ func _build_scenarios() -> void:
 			]},
 		]
 	})
+	# Medic heal debug: one-turn GUI check where Marine is attacked and healed in the same turn.
+	available_scenarios.append({
+		"id": "medic_heal_debug",
+		"display_name": "Medic Heal Debug (Heal + Incoming Damage)",
+		"groups": [
+			{"name": "player", "units": [
+				{"def_path": "res://src/unit/definitions/medic.tres", "cell": Vector2i(0, 0), "energy": 4},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(1, 0), "health": 3, "energy": 4},
+			]},
+			{"name": "opponent", "ai": true, "units": [
+				# Placed at distance 2 from the Marine so AI Viper can damage Marine this turn.
+				{"def_path": "res://src/unit/definitions/viper.tres", "cell": Vector2i(-1, 1)},
+			]},
+		]
+	})
 	# Baneling debug: Baneling vs Marines (test explode)
 	available_scenarios.append({
 		"id": "baneling_debug",
@@ -147,7 +162,7 @@ func _build_scenarios() -> void:
 			]},
 		]
 	})
-	# Zerg vs Terran: Base + 2 Marines + Scout vs 5 Zerglings + Baneling (randomized positions)
+	# Zerg vs Terran: Base + 2 Marines + Scout + Medic vs 5 Zerglings + Baneling + Viper (randomized positions)
 	available_scenarios.append({
 		"id": "zerg_vs_terran",
 		"display_name": "Zerg vs Terran",
@@ -160,6 +175,7 @@ func _build_scenarios() -> void:
 					{"def_path": "res://src/unit/definitions/marine.tres"},
 					{"def_path": "res://src/unit/definitions/marine.tres"},
 					{"def_path": "res://src/unit/definitions/scout.tres"},
+					{"def_path": "res://src/unit/definitions/medic.tres"},
 				],
 				"cell_pool": [
 					Vector2i(0, 0), Vector2i(0, 1), Vector2i(0, 2), Vector2i(0, 3), Vector2i(0, 4), Vector2i(0, 5),

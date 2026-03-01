@@ -39,6 +39,9 @@ static func _test_stun_registers_and_persists_to_next_turn(tests: Node) -> bool:
 	if applied.size() != 1:
 		tests._fail("stun should be registered in recording.applied_effects")
 		return false
+	if unit.get_disabled_action_types().size() != 0:
+		tests._fail("newly applied stun should not disable actions until next turn")
+		return false
 	unit.tick_effects()
 	if unit.get_effects_display_text() != "Stun (1)":
 		tests._fail("newly applied stun should persist through the immediate end-turn tick")
@@ -112,26 +115,31 @@ static func _test_stun_debug_scenario_exists(tests: Node) -> bool:
 
 ## End-to-end Core behavior: attack_viper applies stun, next turn is blocked, then stun expires.
 static func _test_attack_viper_stun_blocks_next_turn_move(tests: Node) -> bool:
-	tests._log("test_stun_effects: attack_viper stun blocks next-turn move")
+	tests._log("test_stun_effects: attack_viper stun starts next turn and expires after one blocked turn")
 	# Turn 1: Viper at (0,0), target at (2,0). Viper attacks and stuns.
+	# Target also uses a slow action this turn, which should still execute.
 	var game_state_t1 := {
 		"groups": [
 			{ "name": "player", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/viper.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
 			]},
 			{ "name": "opponent", "ai": false, "units": [
-				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [2, 0], "health": 3, "max_health": 3, "energy": 4, "max_energy": 4 }
+				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [2, 0], "health": 3, "max_health": 3, "energy": 2, "max_energy": 4 }
 			]}
 		]
 	}
 	var actions_t1 := {
 		"player": [{ "unit_id": 1, "action_key": "attack_viper", "path": [], "end_point": [2, 0] }],
-		"opponent": []
+		"opponent": [{ "unit_id": 2, "action_key": "reload", "path": [], "end_point": [0, 0] }]
 	}
 	TurnExecutionCore.execute_turn(game_state_t1, actions_t1)
 	var target_found := TurnExecutionCore.find_unit_by_id(game_state_t1, 2)
 	if target_found.is_empty():
 		tests._fail("target should exist after turn 1")
+		return false
+	var energy_after_t1: int = int(target_found.unit.get("energy", -1))
+	if energy_after_t1 != 3:
+		tests._fail("target should still execute same-turn slow action before stun takes effect; expected energy 3, got %d" % energy_after_t1)
 		return false
 	var effects_after_t1: Array = target_found.unit.get("effects", [])
 	if effects_after_t1.is_empty():

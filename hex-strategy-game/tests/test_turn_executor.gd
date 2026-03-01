@@ -5,6 +5,8 @@ extends RefCounted
 
 const TurnExecutor = preload("res://src/battle/turn_executor.gd")
 const ActionInstance = preload("res://src/unit/action_collection.gd")
+const ActionDefinition = preload("res://src/unit/action_definition.gd")
+const UNIT_SCENE = preload("res://src/unit/unit.tscn")
 
 static func run_all(tests: Node) -> bool:
 	var ok := true
@@ -16,6 +18,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_get_damage_cells_target_pattern_only_end_point(tests) and ok
 	ok = _test_get_damage_cells_self_or_adjacent_uses_absolute_endpoint(tests) and ok
 	ok = _test_attack_viper_has_target_pattern(tests) and ok
+	ok = _test_handle_support_heals_absolute_target_and_spawns_effect(tests) and ok
 	ok = _test_fast_ability_before_move(tests) and ok
 	ok = _test_phase_animations_complete_before_next(tests) and ok
 	return ok
@@ -132,6 +135,80 @@ static func _test_attack_viper_has_target_pattern(tests: Node) -> bool:
 		tests._fail("attack_viper should have pattern=target (damage only target tile), got %s" % config.get("pattern", ""))
 		return false
 	tests._pass("attack_viper pattern=target")
+	return true
+
+static func _test_handle_support_heals_absolute_target_and_spawns_effect(tests: Node) -> bool:
+	tests._log("test_turn_executor: support heal queues absolute target then applies at phase end")
+	var root := Node2D.new()
+	tests.add_child(root)
+	var player := Node2D.new()
+	player.name = "player"
+	root.add_child(player)
+	var opponent := Node2D.new()
+	opponent.name = "opponent"
+	root.add_child(opponent)
+	var medic_def := load("res://src/unit/definitions/medic.tres") as UnitDefinition
+	var marine_def := load("res://src/unit/definitions/marine.tres") as UnitDefinition
+	if medic_def == null or marine_def == null:
+		tests._fail("medic and marine definitions must load for support test")
+		root.free()
+		return false
+	var medic := UNIT_SCENE.instantiate() as Unit
+	medic.def = medic_def
+	medic.starting_cell = Vector2i(3, 1)
+	player.add_child(medic)
+	var marine := UNIT_SCENE.instantiate() as Unit
+	marine.def = marine_def
+	marine.starting_cell = Vector2i(4, 1)
+	player.add_child(marine)
+	marine.max_health = 4
+	marine.health = 2
+	medic.max_energy = 4
+	medic.energy = 4
+	var heal_def := ActionDefinition.new()
+	heal_def.action_key = "heal_adjacent"
+	heal_def.display_name = "Heal"
+	var ac := ActionInstance.new(heal_def, medic)
+	ac.path = []
+	ac.end_point = Vector2(4, 1)  # Absolute target cell (not relative offset)
+	var get_units_at_cell := func(cell: Vector2) -> Array:
+		var out: Array = []
+		for g in [player, opponent]:
+			for child in g.get_children():
+				if child is Unit and HexGrid.cell_equal(child.cell, cell):
+					out.append(child)
+		return out
+	var ctx := TurnExecutor.ExecutionContext.new(
+		[player, opponent],
+		true,
+		{"actions": [], "died_ids": [], "summary": []},
+		get_units_at_cell,
+		tests.get_tree()
+	)
+	TurnExecutor._handle_support("ability", [{"unit": medic, "ac": ac}], ctx)
+	if marine.health != 2:
+		tests._fail("support should queue health delta until phase end; marine should remain 2 before apply, got %s" % marine.health)
+		root.free()
+		return false
+	if medic.energy != 4:
+		tests._fail("support should queue energy delta until phase end; medic should remain 4 before apply, got %s" % medic.energy)
+		root.free()
+		return false
+	TurnExecutor._apply_phase_stat_deltas(ctx)
+	if marine.health != 3:
+		tests._fail("heal_adjacent should heal marine at absolute [4,1] from 2 to 3, got %s" % marine.health)
+		root.free()
+		return false
+	if medic.energy != 3:
+		tests._fail("heal_adjacent should consume 1 medic energy (4 -> 3), got %s" % medic.energy)
+		root.free()
+		return false
+	if marine.get_node_or_null("heal_effect") == null:
+		tests._fail("heal_adjacent should spawn heal_effect on healed target")
+		root.free()
+		return false
+	tests._pass("support heal queues absolute target and applies at phase end")
+	root.free()
 	return true
 
 static func _test_fast_ability_before_move(tests: Node) -> bool:

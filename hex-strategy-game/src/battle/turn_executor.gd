@@ -137,7 +137,7 @@ static func _handle_support(_action_type: String, entries: Array, ctx: Execution
 		var supporter_group: Node = supporter.get_parent()
 		var target_cells: Array = get_damage_cells(supporter.cell, ac, config)
 		for raw_cell in target_cells:
-			var target_cell: Vector2 = Vector2(raw_cell.x, raw_cell.y)
+			var target_cell: Vector2 = Vector2(int(raw_cell.x), int(raw_cell.y))
 			var units_at: Array = ctx.get_units_at_cell.call(target_cell)
 			for target in units_at:
 				if not is_instance_valid(target) or not target is Unit:
@@ -383,4 +383,4 @@ static func _would_attack_deal_damage(attacker, ac: ActionInstance, ctx: Executi
 	return false
 
 ## Replay is done by building actions_by_type from the recording and calling run_pipeline
-## with apply_damage=false and phase_callback=refresh_fog (see units.gd _replay_last_turn).
+## with apply_damage=false and phase_callback=refresh_fog (see units.gd _replay_turn_recording).

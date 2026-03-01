@@ -118,6 +118,10 @@ text = "Execute Turn"
 layout_mode = 2
 text = "Replay Turn"
 
+[node name="replay_turn_picker" type="OptionButton" parent="turn_ui/turn_panel/vbox"]
+layout_mode = 2
+disabled = true
+
 [node name="scenarios_button" type="Button" parent="turn_ui/turn_panel/vbox"]
 layout_mode = 2
 text = "Scenarios"
