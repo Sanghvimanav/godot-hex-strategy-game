@@ -8,14 +8,15 @@ signal show_selected_unit_cell(cell)
 signal planning_started
 signal planning_complete
 signal execute_turn_requested
-signal replay_turn_requested
+signal replay_turn_requested(turn_number: int)
 signal unit_selected_for_planning(unit)
 signal unit_pick_requested(unit)
 signal show_units_panel(units: Array)
-signal show_replay_summary(lines: Array)
+signal show_replay_summary(lines: Array, title: String)
 signal action_key_selected(action_key)
 signal turn_changed(turn_number)
 signal replay_available_changed(available: bool)
+signal replay_history_changed(turn_numbers: Array, selected_turn: int)
 signal replay_finished
 ## Resource events: supports unit-driven and scripted/environmental depletion.
 signal tile_resource_deplete_requested(q: int, r: int, amount: int, reason: String)

@@ -1,5 +1,5 @@
 extends PanelContainer
-## Shows last turn's actions when replaying, including dead units.
+## Shows selected replay turn actions, including dead units.
 
 @onready var title_label: Label = $margin/vbox/title
 @onready var lines_container: VBoxContainer = $margin/vbox/lines
@@ -9,8 +9,8 @@ func _ready() -> void:
 	EventBus.replay_finished.connect(_on_replay_finished)
 	hide()
 
-func _on_show_replay_summary(lines: Array) -> void:
-	title_label.text = "Last turn actions"
+func _on_show_replay_summary(lines: Array, title: String) -> void:
+	title_label.text = title
 	for c in lines_container.get_children():
 		c.queue_free()
 	for line in lines:

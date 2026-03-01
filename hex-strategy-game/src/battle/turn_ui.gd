@@ -1,7 +1,9 @@
 extends CanvasLayer
+const BattlePhase = preload("res://src/battle/battle_phase.gd")
 
 @onready var execute_button: Button = $turn_panel/vbox/execute_button
 @onready var replay_button: Button = $turn_panel/vbox/replay_button
+@onready var replay_turn_picker: OptionButton = $turn_panel/vbox/replay_turn_picker
 @onready var turn_label: Label = $turn_panel/vbox/turn_label
 @onready var scenarios_button: Button = $turn_panel/vbox/scenarios_button
 @onready var resources_label: Label = $resources_panel/margin/vbox/resources_label
@@ -9,6 +11,27 @@ extends CanvasLayer
 
 var _units_node: UnitsContainer
 var _hex_map_node: Node
+var _replay_turn_numbers: Array[int] = []
+var _selected_replay_turn: int = 0
+var _replay_available: bool = false
+var _replay_in_progress: bool = false
+var _updating_replay_picker: bool = false
+
+func _agent_debug_log(hypothesis_id: String, location: String, message: String, data: Dictionary = {}) -> void:
+	var file := FileAccess.open("/opt/cursor/logs/debug.log", FileAccess.READ_WRITE)
+	if file == null:
+		file = FileAccess.open("/opt/cursor/logs/debug.log", FileAccess.WRITE_READ)
+	if file == null:
+		return
+	file.seek_end()
+	file.store_line(JSON.stringify({
+		"hypothesisId": hypothesis_id,
+		"location": location,
+		"message": message,
+		"data": data,
+		"timestamp": int(Time.get_unix_time_from_system() * 1000.0)
+	}))
+	file.close()
 
 func _ready() -> void:
 	execute_button.pressed.connect(_on_execute_pressed)
@@ -21,15 +44,19 @@ func _ready() -> void:
 			scenarios_button.visible = false
 	if replay_button:
 		replay_button.pressed.connect(_on_replay_pressed)
-		replay_button.disabled = true
+	if replay_turn_picker:
+		replay_turn_picker.item_selected.connect(_on_replay_turn_selected)
+		replay_turn_picker.disabled = true
 	EventBus.planning_started.connect(_on_planning_started)
 	EventBus.planning_complete.connect(_on_planning_complete)
 	EventBus.turn_changed.connect(_on_turn_changed)
 	EventBus.replay_available_changed.connect(_on_replay_available_changed)
+	EventBus.replay_history_changed.connect(_on_replay_history_changed)
 	EventBus.replay_finished.connect(_on_replay_finished)
 	EventBus.tile_resource_changed.connect(_on_tile_resource_changed)
 	_units_node = get_parent().get_node_or_null("units") as UnitsContainer
 	_hex_map_node = get_parent().get_node_or_null("hex_map")
+	_update_replay_controls()
 	_update_resource_inventory()
 	_update_hovered_tile_resource()
 	set_process(true)
@@ -43,6 +70,7 @@ func _on_planning_started() -> void:
 	execute_button.disabled = true
 	if MultiplayerState.is_multiplayer:
 		execute_button.text = "Submit"
+	_update_replay_controls()
 	_update_resource_inventory()
 
 func _on_planning_complete() -> void:
@@ -51,21 +79,88 @@ func _on_planning_complete() -> void:
 func _on_execute_pressed() -> void:
 	EventBus.execute_turn_requested.emit()
 	execute_button.disabled = true
+	_update_replay_controls()
 	if MultiplayerState.is_multiplayer:
 		execute_button.text = "Waiting for other players..."
 
 func _on_replay_pressed() -> void:
-	EventBus.replay_turn_requested.emit()
-	if replay_button:
-		replay_button.disabled = true
+	var turn_to_replay: int = _selected_replay_turn
+	if turn_to_replay <= 0 and not _replay_turn_numbers.is_empty():
+		turn_to_replay = _replay_turn_numbers[_replay_turn_numbers.size() - 1]
+	#region agent log
+	_agent_debug_log("H1", "turn_ui.gd:_on_replay_pressed", "Replay button pressed", {
+		"selected_replay_turn": _selected_replay_turn,
+		"turn_to_replay": turn_to_replay,
+		"replay_available": _replay_available,
+		"replay_in_progress": _replay_in_progress,
+		"history_size": _replay_turn_numbers.size()
+	})
+	#endregion
+	var is_planning: bool = _units_node != null and _units_node.battle_phase == BattlePhase.Phase.PLANNING
+	if not is_planning:
+		_replay_in_progress = false
+		_update_replay_controls()
+		return
+	EventBus.replay_turn_requested.emit(turn_to_replay)
+	_replay_in_progress = true
+	#region agent log
+	_agent_debug_log("H1", "turn_ui.gd:_on_replay_pressed", "Replay request emitted and controls set in-progress", {
+		"turn_to_replay": turn_to_replay,
+		"replay_in_progress": _replay_in_progress
+	})
+	#endregion
+	_update_replay_controls()
 
 func _on_replay_finished() -> void:
-	if replay_button:
-		replay_button.disabled = false
+	_replay_in_progress = false
+	#region agent log
+	_agent_debug_log("H3", "turn_ui.gd:_on_replay_finished", "Replay finished signal received", {
+		"replay_in_progress": _replay_in_progress
+	})
+	#endregion
+	_update_replay_controls()
 
 func _on_replay_available_changed(available: bool) -> void:
+	_replay_available = available
+	_update_replay_controls()
+
+func _on_replay_history_changed(turn_numbers: Array, selected_turn: int) -> void:
+	_replay_turn_numbers.clear()
+	for raw_turn in turn_numbers:
+		_replay_turn_numbers.append(int(raw_turn))
+	var fallback_turn: int = _replay_turn_numbers[_replay_turn_numbers.size() - 1] if not _replay_turn_numbers.is_empty() else 0
+	_selected_replay_turn = selected_turn if selected_turn > 0 else fallback_turn
+	if replay_turn_picker:
+		_updating_replay_picker = true
+		replay_turn_picker.clear()
+		for turn_number in _replay_turn_numbers:
+			replay_turn_picker.add_item("Turn %d" % turn_number)
+		var selected_index: int = _replay_turn_numbers.find(_selected_replay_turn)
+		if selected_index < 0 and not _replay_turn_numbers.is_empty():
+			selected_index = _replay_turn_numbers.size() - 1
+			_selected_replay_turn = _replay_turn_numbers[selected_index]
+		if selected_index >= 0:
+			replay_turn_picker.select(selected_index)
+		_updating_replay_picker = false
+	_update_replay_controls()
+
+func _on_replay_turn_selected(index: int) -> void:
+	if _updating_replay_picker:
+		return
+	if index < 0 or index >= _replay_turn_numbers.size():
+		return
+	_selected_replay_turn = _replay_turn_numbers[index]
+	_update_replay_controls()
+
+func _update_replay_controls() -> void:
+	var has_history: bool = not _replay_turn_numbers.is_empty()
+	var is_planning: bool = true
+	if _units_node != null:
+		is_planning = _units_node.battle_phase == BattlePhase.Phase.PLANNING
 	if replay_button:
-		replay_button.disabled = not available
+		replay_button.disabled = (not _replay_available) or (not has_history) or _replay_in_progress or (not is_planning)
+	if replay_turn_picker:
+		replay_turn_picker.disabled = (not has_history) or _replay_in_progress or (not is_planning)
 
 func _on_tile_resource_changed(_q: int, _r: int, _resource_type: String, _amount: int, _max_amount: int, _reason: String) -> void:
 	_update_hovered_tile_resource()
