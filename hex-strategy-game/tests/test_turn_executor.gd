@@ -16,6 +16,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_get_damage_cells_self_pattern_uses_attacker_cell(tests) and ok
 	ok = _test_get_damage_cells_non_self_uses_path(tests) and ok
 	ok = _test_get_damage_cells_target_pattern_only_end_point(tests) and ok
+	ok = _test_get_damage_cells_self_or_adjacent_uses_absolute_endpoint(tests) and ok
 	ok = _test_attack_viper_has_target_pattern(tests) and ok
 	ok = _test_handle_support_heals_absolute_target_and_spawns_effect(tests) and ok
 	ok = _test_fast_ability_before_move(tests) and ok
@@ -111,6 +112,22 @@ static func _test_get_damage_cells_target_pattern_only_end_point(tests: Node) ->
 	tests._pass("get_damage_cells target uses end_point only")
 	return true
 
+static func _test_get_damage_cells_self_or_adjacent_uses_absolute_endpoint(tests: Node) -> bool:
+	tests._log("test_turn_executor: get_damage_cells self_or_adjacent uses absolute end_point")
+	var ac := ActionInstance.new(null, null)
+	ac.path = []
+	ac.end_point = Vector2(3, 1)
+	var config: Dictionary = { "pattern": "self_or_adjacent" }
+	var cells: Array = TurnExecutor.get_damage_cells(Vector2(2, 1), ac, config)
+	if cells.size() != 1:
+		tests._fail("self_or_adjacent should return 1 cell, got %d" % cells.size())
+		return false
+	if not HexGrid.cell_equal(cells[0], Vector2(3, 1)):
+		tests._fail("self_or_adjacent should treat end_point as absolute, got %s" % cells)
+		return false
+	tests._pass("get_damage_cells self_or_adjacent uses absolute end_point")
+	return true
+
 static func _test_attack_viper_has_target_pattern(tests: Node) -> bool:
 	tests._log("test_turn_executor: attack_viper has pattern target")
 	var config: Dictionary = Actions.get_action_config("attack_viper")
@@ -121,7 +138,7 @@ static func _test_attack_viper_has_target_pattern(tests: Node) -> bool:
 	return true
 
 static func _test_handle_support_heals_absolute_target_and_spawns_effect(tests: Node) -> bool:
-	tests._log("test_turn_executor: support heal uses absolute target cell and spawns heal effect")
+	tests._log("test_turn_executor: support heal queues absolute target then applies at phase end")
 	var root := Node2D.new()
 	tests.add_child(root)
 	var player := Node2D.new()
@@ -169,6 +186,15 @@ static func _test_handle_support_heals_absolute_target_and_spawns_effect(tests: 
 		tests.get_tree()
 	)
 	TurnExecutor._handle_support("ability", [{"unit": medic, "ac": ac}], ctx)
+	if marine.health != 2:
+		tests._fail("support should queue health delta until phase end; marine should remain 2 before apply, got %s" % marine.health)
+		root.free()
+		return false
+	if medic.energy != 4:
+		tests._fail("support should queue energy delta until phase end; medic should remain 4 before apply, got %s" % medic.energy)
+		root.free()
+		return false
+	TurnExecutor._apply_phase_stat_deltas(ctx)
 	if marine.health != 3:
 		tests._fail("heal_adjacent should heal marine at absolute [4,1] from 2 to 3, got %s" % marine.health)
 		root.free()
@@ -181,7 +207,7 @@ static func _test_handle_support_heals_absolute_target_and_spawns_effect(tests: 
 		tests._fail("heal_adjacent should spawn heal_effect on healed target")
 		root.free()
 		return false
-	tests._pass("support heal uses absolute target cell and spawns heal effect")
+	tests._pass("support heal queues absolute target and applies at phase end")
 	root.free()
 	return true
 

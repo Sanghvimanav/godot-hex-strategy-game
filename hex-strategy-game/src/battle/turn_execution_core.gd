@@ -87,7 +87,7 @@ static func get_damage_cells_for_config(attacker_q: int, attacker_r: int, path_a
 			out.append(Vector2i(attacker_q + d.x, attacker_r + d.y))
 		return out
 	if pattern == "self_or_adjacent":
-		# ActionInstance.end_point is already absolute board coordinates.
+		# Support actions use absolute world end_point board coordinates.
 		return [Vector2i(_cell_q(end_point), _cell_r(end_point))]
 	var cells: Array = []
 	for p in path_array:
@@ -258,11 +258,38 @@ static func has_required_group_resources(group: Dictionary, config: Dictionary) 
 		return true
 	return get_group_resource_amount(group, required_type) >= required_amount
 
+static func _add_stat_delta(delta_by_id: Dictionary, unit_id: int, amount: int) -> void:
+	if unit_id <= 0 or amount == 0:
+		return
+	delta_by_id[unit_id] = int(delta_by_id.get(unit_id, 0)) + amount
+
+static func _apply_phase_stat_deltas(game_state: Dictionary, health_delta_by_id: Dictionary, energy_delta_by_id: Dictionary, recording: Dictionary) -> void:
+	for uid in health_delta_by_id:
+		var found = find_unit_by_id(game_state, int(uid))
+		if found.is_empty():
+			continue
+		var unit: Dictionary = found.unit
+		var max_h: int = int(unit.get("max_health", 2))
+		var health_now: int = int(unit.get("health", max_h))
+		var next_health: int = maxi(0, mini(max_h, health_now + int(health_delta_by_id[uid])))
+		unit["health"] = next_health
+		if next_health <= 0 and int(uid) not in recording.died_ids:
+			recording.died_ids.append(int(uid))
+	for uid in energy_delta_by_id:
+		var found = find_unit_by_id(game_state, int(uid))
+		if found.is_empty():
+			continue
+		var unit: Dictionary = found.unit
+		var max_e: int = int(unit.get("max_energy", 0))
+		if max_e <= 0:
+			continue
+		var energy_now: int = int(unit.get("energy", 0))
+		var next_energy: int = maxi(0, mini(max_e, energy_now + int(energy_delta_by_id[uid])))
+		unit["energy"] = next_energy
+
 
 static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> Dictionary:
 	var recording: Dictionary = { actions = [], died_ids = [], summary = [] }
-	var damage_by_id: Dictionary = {}
-	var applied_damage_by_id: Dictionary = {}
 
 	for action_type in Actions.ACTION_ORDER:
 		var entries: Array = []
@@ -355,7 +382,23 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 					amount = consumed
 				})
 		elif action_type in ABILITY_TYPES:
+			# Process reload first, then attacks, then support so resupply/heal can restore energy/health
+			# after units that attacked or spent energy this turn.
+			var reload_entries: Array = []
+			var attack_entries: Array = []
+			var support_entries: Array = []
+			var phase_health_delta_by_id: Dictionary = {}
+			var phase_energy_delta_by_id: Dictionary = {}
 			for entry in entries:
+				var action_key: String = str(entry.action.get("action_key", ""))
+				if action_key in ["reload", "recharge"]:
+					reload_entries.append(entry)
+				elif action_key in ["heal_adjacent", "support_adjacent", "resupply_adjacent"]:
+					support_entries.append(entry)
+				else:
+					attack_entries.append(entry)
+			var ordered_entries: Array = reload_entries + attack_entries + support_entries
+			for entry in ordered_entries:
 				var unit: Dictionary = entry.unit
 				if unit.get("health", 0) <= 0:
 					continue
@@ -365,15 +408,24 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				var config: Dictionary = Actions.get_action_config(str(action.get("action_key", "")))
 				if config.is_empty():
 					continue
+				var unit_id: int = int(unit.get("unit_id", -1))
 				var ec: int = int(config.get("energy_consumption", 0))
 				if ec > 0 and unit.get("max_energy", 0) > 0:
-					unit["energy"] = maxi(0, unit.get("energy", 0) - ec)
+					_add_stat_delta(phase_energy_delta_by_id, unit_id, -ec)
 				elif ec < 0:
-					unit["energy"] = mini(unit.get("max_energy", 0), unit.get("energy", 0) + absi(ec))
+					_add_stat_delta(phase_energy_delta_by_id, unit_id, absi(ec))
 				var action_key: String = str(action.get("action_key", ""))
 				var uc: Array = unit.get("cell", [0, 0])
 				var uq: int = int(uc[0])
 				var ur: int = int(uc[1])
+				if action_key in ["reload", "recharge"]:
+					recording.actions.append({
+						type = action_type,
+						unit_id = unit.get("unit_id", -1),
+						action_key = action.get("action_key", ""),
+						ac = action
+					})
+					continue
 				var path_arr: Array = action.get("path", [])
 				var end_pt = action.get("end_point", [0, 0])
 				var target_cells: Array = get_damage_cells_for_config(uq, ur, path_arr, end_pt, config)
@@ -393,10 +445,9 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 							if target_u.get("health", 0) <= 0:
 								continue
 							if heal_amount > 0:
-								var max_h: int = target_u.get("max_health", 2)
-								target_u["health"] = mini(target_u.get("health", max_h) + heal_amount, max_h)
+								_add_stat_delta(phase_health_delta_by_id, int(target_u.get("unit_id", -1)), heal_amount)
 							if recharge > 0 and target_u.get("max_energy", 0) > 0:
-								target_u["energy"] = mini(target_u.get("energy", 0) + recharge, target_u.get("max_energy", 0))
+								_add_stat_delta(phase_energy_delta_by_id, int(target_u.get("unit_id", -1)), recharge)
 				else:
 					if config.has("area_of_effect"):
 						var aoe_cells: Array = HexGrid.get_aoe_tiles(Vector2(uq, ur), Vector2(_cell_q(end_pt), _cell_r(end_pt)), config.area_of_effect)
@@ -413,34 +464,21 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 							if o.group.get("name", "") == attacker_group_name:
 								continue
 							var uid: int = o.unit.get("unit_id", -1)
-							damage_by_id[uid] = damage_by_id.get(uid, 0) + damage_amount
+							_add_stat_delta(phase_health_delta_by_id, uid, -damage_amount)
 							if stun_duration > 0:
 								_apply_stun_effect(o.unit, stun_duration)
 					if config.get("self_damage", false):
-						var uid: int = unit.get("unit_id", -1)
-						damage_by_id[uid] = damage_by_id.get(uid, 0) + int(config.get("self_damage_amount", 999))
+						_add_stat_delta(phase_health_delta_by_id, unit_id, -int(config.get("self_damage_amount", 999)))
 				recording.actions.append({
 					type = action_type,
 					unit_id = unit.get("unit_id", -1),
 					action_key = action.get("action_key", ""),
 					ac = action
 				})
-			for uid in damage_by_id:
-				var total: int = damage_by_id[uid]
-				var applied: int = applied_damage_by_id.get(uid, 0)
-				var to_apply: int = total - applied
-				if to_apply <= 0:
-					continue
-				var found = find_unit_by_id(game_state, uid)
-				if found.is_empty():
-					continue
-				var u: Dictionary = found.unit
-				u["health"] = maxi(0, u.get("health", 2) - to_apply)
-				applied_damage_by_id[uid] = total
-				if u["health"] <= 0:
-					recording.died_ids.append(uid)
+			_apply_phase_stat_deltas(game_state, phase_health_delta_by_id, phase_energy_delta_by_id, recording)
 
 		if action_type in SPAWN_TYPES:
+			var phase_spawn_energy_delta_by_id: Dictionary = {}
 			for entry in entries:
 				var unit: Dictionary = entry.unit
 				if unit.get("health", 0) <= 0:
@@ -460,7 +498,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				if ec > 0 and unit.get("max_energy", 0) > 0:
 					if unit.get("energy", 0) < ec:
 						continue
-					unit["energy"] = maxi(0, unit.get("energy", 0) - ec)
+					_add_stat_delta(phase_spawn_energy_delta_by_id, int(unit.get("unit_id", -1)), -ec)
 				var def_dict: Dictionary = get_unit_def(spawn_path)
 				if def_dict.is_empty():
 					continue
@@ -489,6 +527,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 					spawn_path = spawn_path,
 					cell = uc.duplicate()
 				})
+			_apply_phase_stat_deltas(game_state, {}, phase_spawn_energy_delta_by_id, recording)
 
 	for group in game_state.get("groups", []):
 		var units: Array = group.get("units", [])

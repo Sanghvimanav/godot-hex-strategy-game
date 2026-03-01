@@ -107,7 +107,9 @@ func apply_scenario(scenario: Dictionary) -> void:
 			if u_spec is Dictionary:
 				if u_spec.has("health"):
 					unit.health = clampi(int(u_spec.get("health", unit.max_health)), 0, unit.max_health)
-				if u_spec.has("energy"):
+					if unit.health_bar:
+						unit.health_bar.update_value(unit.health)
+				if u_spec.has("energy") and unit.max_energy > 0:
 					unit.energy = clampi(int(u_spec.get("energy", unit.max_energy)), 0, unit.max_energy)
 					if unit.energy_bar and unit.max_energy > 0:
 						unit.energy_bar.update_value(unit.energy)

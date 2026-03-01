@@ -45,6 +45,20 @@ func _build_scenarios() -> void:
 			]},
 		]
 	})
+	# Resupply + shoot debug: base is off-origin to catch absolute-target support bugs.
+	available_scenarios.append({
+		"id": "resupply_shoot_debug",
+		"display_name": "Resupply Shoot Debug (Base+Scout off-origin)",
+		"groups": [
+			{"name": "player", "units": [
+				{"def_path": "res://src/unit/definitions/terran_base.tres", "cell": Vector2i(2, 1), "energy": 5},
+				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(3, 1)},
+			]},
+			{"name": "opponent", "ai": true, "units": [
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(5, 1)},
+			]},
+		]
+	})
 	# Zergling vs Zergling
 	available_scenarios.append({
 		"id": "zerg_vs_zerg",
