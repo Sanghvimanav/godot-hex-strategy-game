@@ -7,6 +7,7 @@ extends PanelContainer
 func _ready() -> void:
 	EventBus.show_replay_summary.connect(_on_show_replay_summary)
 	EventBus.turn_changed.connect(_on_turn_changed)
+	EventBus.replay_finished.connect(_on_replay_finished)
 	hide()
 
 func _on_show_replay_summary(lines: Array, title: String) -> void:
@@ -24,4 +25,7 @@ func _on_show_replay_summary(lines: Array, title: String) -> void:
 	show()
 
 func _on_turn_changed(_turn_number: int) -> void:
+	hide()
+
+func _on_replay_finished() -> void:
 	hide()

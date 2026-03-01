@@ -28,6 +28,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_execute_turn_attack_and_heal_same_phase_use_net_health(tests) and ok
 	ok = _test_execute_turn_zergling_fast_move_hits_scout_before_scout_move(tests) and ok
 	ok = _test_execute_turn_zergling_moves_onto_marine_attack_tile_takes_one_damage(tests) and ok
+	ok = _test_execute_turn_summary_marks_cancelled_when_unit_eliminated_first(tests) and ok
 	ok = _test_check_win_condition_one_alive(tests) and ok
 	ok = _test_check_win_condition_both_alive(tests) and ok
 	ok = _test_check_win_condition_both_dead(tests) and ok
@@ -673,6 +674,68 @@ static func _test_execute_turn_zergling_moves_onto_marine_attack_tile_takes_one_
 		tests._fail("zergling should take exactly 1 damage (3 -> 2), got health %d" % zerg_health)
 		return false
 	tests._pass("zergling moves onto marine attack tile takes one damage")
+	return true
+
+static func _test_execute_turn_summary_marks_cancelled_when_unit_eliminated_first(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: summary keeps submitted phase actions and marks cancelled when eliminated first")
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 1, "max_health": 3, "energy": 2, "max_energy": 4 }
+			]},
+			{ "name": "opponent", "ai": false, "units": [
+				{ "unit_id": 2, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
+			]}
+		]
+	}
+	var zerg_path: Array = []
+	for p in HexGrid.build_path_to(0, 0, 1, 0):
+		zerg_path.append([int(p.x), int(p.y)])
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "attack_short", "path": [], "end_point": [0, 0] }
+		],
+		"opponent": [
+			{ "unit_id": 2, "action_key": "fast_move", "path": zerg_path, "end_point": [1, 0] }
+		]
+	}
+	var recording := TurnExecutionCore.execute_turn(game_state, player_actions)
+	var summary: Array = recording.get("summary", [])
+	if summary.is_empty():
+		tests._fail("summary should include submitted actions")
+		return false
+	var marine_entry: Dictionary = {}
+	var zerg_entry: Dictionary = {}
+	for raw_entry in summary:
+		if not (raw_entry is Dictionary):
+			continue
+		var entry: Dictionary = raw_entry
+		if int(entry.get("unit_id", -1)) == 1 and str(entry.get("action_key", "")) == "attack_short":
+			marine_entry = entry
+		if int(entry.get("unit_id", -1)) == 2 and str(entry.get("action_key", "")) == "fast_move":
+			zerg_entry = entry
+	if marine_entry.is_empty():
+		tests._fail("summary should include marine submitted attack_short action")
+		return false
+	if not bool(marine_entry.get("cancelled", false)):
+		tests._fail("marine action should be marked cancelled after elimination before ability phase")
+		return false
+	if str(marine_entry.get("cancelled_reason", "")) != "eliminated_before_phase":
+		tests._fail("marine cancelled action should include eliminated_before_phase reason")
+		return false
+	if str(marine_entry.get("action_type", "")) != "ability":
+		tests._fail("marine submitted attack should remain grouped under ability phase")
+		return false
+	if zerg_entry.is_empty():
+		tests._fail("summary should include zergling submitted fast_move action")
+		return false
+	if bool(zerg_entry.get("cancelled", false)):
+		tests._fail("executed fast_move action should not be marked cancelled")
+		return false
+	if str(zerg_entry.get("action_type", "")) != "fast move":
+		tests._fail("zergling action should remain grouped under fast move phase")
+		return false
+	tests._pass("summary marks eliminated-before-phase actions as cancelled")
 	return true
 
 static func _test_check_win_condition_one_alive(tests: Node) -> bool:

@@ -6,6 +6,7 @@ class_name TurnExecutionCore
 const MOVE_TYPES: Array[String] = ["fast move", "move", "slow move"]
 const ABILITY_TYPES: Array[String] = ["fast ability", "ability", "slow ability"]
 const SPAWN_TYPES: Array[String] = ["spawn"]
+const CANCELLED_REASON_ELIMINATED_BEFORE_PHASE := "eliminated_before_phase"
 
 
 static func find_unit_by_id(game_state: Dictionary, unit_id: int) -> Dictionary:
@@ -287,22 +288,121 @@ static func _apply_phase_stat_deltas(game_state: Dictionary, health_delta_by_id:
 		var next_energy: int = maxi(0, mini(max_e, energy_now + int(energy_delta_by_id[uid])))
 		unit["energy"] = next_energy
 
+static func _get_unit_display_name(unit: Dictionary) -> String:
+	var def_path: String = str(unit.get("def_path", ""))
+	if not def_path.is_empty():
+		var def_res: Resource = load(def_path) as Resource
+		if def_res != null:
+			var resolved_name: String = str(def_res.get("name"))
+			if not resolved_name.is_empty() and resolved_name != "Null":
+				return resolved_name
+	return "Unit"
+
+static func _get_action_display_name(action_key: String, action_type: String) -> String:
+	var config: Dictionary = Actions.get_action_config(action_key)
+	if not config.is_empty():
+		var display_name: String = str(config.get("name", ""))
+		if not display_name.is_empty():
+			return display_name
+	if action_type in MOVE_TYPES:
+		return "Move"
+	return "Action"
+
+static func _build_submitted_action_summary(game_state: Dictionary, player_actions: Dictionary) -> Dictionary:
+	var actions_by_group: Dictionary = {}
+	var submitted_by_id: Dictionary = {}
+	var ordered_ids: Array = []
+	var next_submission_id: int = 1
+	for group in game_state.get("groups", []):
+		var group_name: String = str(group.get("name", ""))
+		var source_actions: Array = player_actions.get(group_name, [])
+		var augmented_actions: Array = []
+		for raw_action in source_actions:
+			if not (raw_action is Dictionary):
+				continue
+			var action: Dictionary = raw_action.duplicate(true)
+			var action_key: String = str(action.get("action_key", ""))
+			var action_type: String = get_action_type(action_key)
+			if action_type.is_empty():
+				continue
+			var unit_id: int = int(action.get("unit_id", -1))
+			var unit_name: String = "Unit"
+			var found = find_unit_by_id(game_state, unit_id)
+			if not found.is_empty():
+				unit_name = _get_unit_display_name(found.unit)
+			var summary_entry: Dictionary = {
+				"submission_id": next_submission_id,
+				"unit_id": unit_id,
+				"unit_name": unit_name,
+				"action_key": action_key,
+				"action_name": _get_action_display_name(action_key, action_type),
+				"action_type": action_type,
+				"cancelled": false,
+			}
+			submitted_by_id[next_submission_id] = summary_entry
+			ordered_ids.append(next_submission_id)
+			action["_summary_submission_id"] = next_submission_id
+			augmented_actions.append(action)
+			next_submission_id += 1
+		actions_by_group[group_name] = augmented_actions
+	return {
+		"actions_by_group": actions_by_group,
+		"submitted_by_id": submitted_by_id,
+		"ordered_ids": ordered_ids,
+	}
+
+static func _mark_submitted_action_cancelled(submitted_by_id: Dictionary, submission_id: int, reason: String) -> void:
+	if submission_id <= 0 or not submitted_by_id.has(submission_id):
+		return
+	var entry: Dictionary = submitted_by_id[submission_id]
+	entry["cancelled"] = true
+	entry["cancelled_reason"] = reason
+	submitted_by_id[submission_id] = entry
+
+static func _mark_submitted_action_executed(submitted_by_id: Dictionary, submission_id: int) -> void:
+	if submission_id <= 0 or not submitted_by_id.has(submission_id):
+		return
+	var entry: Dictionary = submitted_by_id[submission_id]
+	entry["cancelled"] = false
+	entry.erase("cancelled_reason")
+	submitted_by_id[submission_id] = entry
+
+static func _finalize_submitted_action_summary(submitted_by_id: Dictionary, ordered_ids: Array) -> Array:
+	var summary: Array = []
+	for sid in ordered_ids:
+		var submission_id: int = int(sid)
+		if not submitted_by_id.has(submission_id):
+			continue
+		var entry: Dictionary = submitted_by_id[submission_id].duplicate(true)
+		entry.erase("submission_id")
+		summary.append(entry)
+	return summary
+
 
 static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> Dictionary:
 	var recording: Dictionary = { actions = [], died_ids = [], summary = [] }
+	var submitted_summary_meta: Dictionary = _build_submitted_action_summary(game_state, player_actions)
+	var submitted_actions_by_group: Dictionary = submitted_summary_meta.get("actions_by_group", {})
+	var submitted_by_id: Dictionary = submitted_summary_meta.get("submitted_by_id", {})
+	var ordered_submission_ids: Array = submitted_summary_meta.get("ordered_ids", [])
 
 	for action_type in Actions.ACTION_ORDER:
 		var entries: Array = []
 		for group in game_state.get("groups", []):
 			var gname: String = group.get("name", "")
 			# Process all groups that have actions (SP includes AI; MP only has human groups)
-			for action in player_actions.get(gname, []):
+			for action in submitted_actions_by_group.get(gname, []):
 				var found = find_unit_by_id(game_state, action.get("unit_id", -1))
 				if found.is_empty():
 					continue
 				if get_action_type(str(action.get("action_key", ""))) != action_type:
 					continue
-				entries.append({ "unit": found.unit, "action": action, "group": group })
+				entries.append({
+					"unit": found.unit,
+					"action": action,
+					"group": group,
+					"submission_id": int(action.get("_summary_submission_id", -1))
+				})
 
 		# Add passive abilities (e.g. attack_passive) so server matches single-player TurnExecutor:
 		# each unit's passive_action_keys become implicit actions in the appropriate ability phase.
@@ -335,6 +435,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 			for entry in entries:
 				var unit: Dictionary = entry.unit
 				if unit.get("health", 0) <= 0:
+					_mark_submitted_action_cancelled(submitted_by_id, int(entry.get("submission_id", -1)), CANCELLED_REASON_ELIMINATED_BEFORE_PHASE)
 					continue
 				if _unit_has_stun(unit):
 					continue
@@ -351,10 +452,12 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 						from_cell = from_cell,
 						path = path
 					})
+					_mark_submitted_action_executed(submitted_by_id, int(entry.get("submission_id", -1)))
 		elif action_type == "extract":
 			for entry in entries:
 				var unit: Dictionary = entry.unit
 				if unit.get("health", 0) <= 0:
+					_mark_submitted_action_cancelled(submitted_by_id, int(entry.get("submission_id", -1)), CANCELLED_REASON_ELIMINATED_BEFORE_PHASE)
 					continue
 				if _unit_has_stun(unit):
 					continue
@@ -381,6 +484,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 					resource_type = resource_type,
 					amount = consumed
 				})
+				_mark_submitted_action_executed(submitted_by_id, int(entry.get("submission_id", -1)))
 		elif action_type in ABILITY_TYPES:
 			# Process reload first, then attacks, then support so resupply/heal can restore energy/health
 			# after units that attacked or spent energy this turn.
@@ -401,6 +505,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 			for entry in ordered_entries:
 				var unit: Dictionary = entry.unit
 				if unit.get("health", 0) <= 0:
+					_mark_submitted_action_cancelled(submitted_by_id, int(entry.get("submission_id", -1)), CANCELLED_REASON_ELIMINATED_BEFORE_PHASE)
 					continue
 				if _unit_has_stun(unit):
 					continue
@@ -425,6 +530,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 						action_key = action.get("action_key", ""),
 						ac = action
 					})
+					_mark_submitted_action_executed(submitted_by_id, int(entry.get("submission_id", -1)))
 					continue
 				var path_arr: Array = action.get("path", [])
 				var end_pt = action.get("end_point", [0, 0])
@@ -475,6 +581,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 					action_key = action.get("action_key", ""),
 					ac = action
 				})
+				_mark_submitted_action_executed(submitted_by_id, int(entry.get("submission_id", -1)))
 			_apply_phase_stat_deltas(game_state, phase_health_delta_by_id, phase_energy_delta_by_id, recording)
 
 		if action_type in SPAWN_TYPES:
@@ -482,6 +589,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 			for entry in entries:
 				var unit: Dictionary = entry.unit
 				if unit.get("health", 0) <= 0:
+					_mark_submitted_action_cancelled(submitted_by_id, int(entry.get("submission_id", -1)), CANCELLED_REASON_ELIMINATED_BEFORE_PHASE)
 					continue
 				if _unit_has_stun(unit):
 					continue
@@ -527,6 +635,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 					spawn_path = spawn_path,
 					cell = uc.duplicate()
 				})
+				_mark_submitted_action_executed(submitted_by_id, int(entry.get("submission_id", -1)))
 			_apply_phase_stat_deltas(game_state, {}, phase_spawn_energy_delta_by_id, recording)
 
 	for group in game_state.get("groups", []):
@@ -535,6 +644,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 		group["units"] = units.filter(func(u): return u.get("unit_id", -1) not in died)
 
 	_tick_all_effects(game_state)
+	recording["summary"] = _finalize_submitted_action_summary(submitted_by_id, ordered_submission_ids)
 
 	return recording
 
