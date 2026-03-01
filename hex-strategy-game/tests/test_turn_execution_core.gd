@@ -15,6 +15,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_get_damage_cells_ray(tests) and ok
 	ok = _test_get_damage_cells_target(tests) and ok
 	ok = _test_get_damage_cells_area_adjacent(tests) and ok
+	ok = _test_get_damage_cells_self_or_adjacent_absolute(tests) and ok
 	ok = _test_execute_turn_move_and_attack(tests) and ok
 	ok = _test_execute_turn_move_does_not_deplete_tile_resource(tests) and ok
 	ok = _test_execute_turn_extract_depletes_and_accumulates_group_resource(tests) and ok
@@ -179,6 +180,19 @@ static func _test_get_damage_cells_area_adjacent(tests: Node) -> bool:
 		tests._fail("area_adjacent should include attacker cell")
 		return false
 	tests._pass("get_damage_cells_for_config area_adjacent")
+	return true
+
+static func _test_get_damage_cells_self_or_adjacent_absolute(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: get_damage_cells_for_config self_or_adjacent uses absolute endpoint")
+	var config := { "pattern": "self_or_adjacent" }
+	var cells := TurnExecutionCore.get_damage_cells_for_config(2, 1, [], [3, 1], config)
+	if cells.size() != 1:
+		tests._fail("self_or_adjacent should return one target cell, got %d" % cells.size())
+		return false
+	if cells[0] != Vector2i(3, 1):
+		tests._fail("self_or_adjacent should treat end_point as absolute world cell, got %s" % cells)
+		return false
+	tests._pass("get_damage_cells_for_config self_or_adjacent uses absolute endpoint")
 	return true
 
 static func _test_execute_turn_move_and_attack(tests: Node) -> bool:
@@ -435,25 +449,25 @@ static func _test_execute_turn_scout_attack_ray_damages_only_target_tile(tests: 
 	return true
 
 static func _test_execute_turn_resupply_after_scout_attack_same_turn(tests: Node) -> bool:
-	tests._log("test_turn_execution_core: base resupplies scout after scout attacks same turn")
-	# Base at (0,0), scout at (1,0) adjacent, enemy at (3,0). Scout attacks (consumes 1 energy).
-	# Base resupplies adjacent (scout). Resupply must run AFTER attack so scout gets recharge.
+	tests._log("test_turn_execution_core: non-origin base resupplies scout after scout attacks same turn")
+	# Base is not at origin. Action end_point is absolute world cell (as submitted by client).
+	# Scout attacks (consumes 1), base resupplies scout (+1) in same turn => net 0 for scout energy.
 	var game_state := {
 		"groups": [
 			{ "name": "player", "ai": false, "units": [
-				{ "unit_id": 1, "def_path": "res://src/unit/definitions/terran_base.tres", "cell": [0, 0], "health": 6, "max_health": 6, "energy": 5, "max_energy": 5 },
-				{ "unit_id": 2, "def_path": "res://src/unit/definitions/scout.tres", "cell": [1, 0], "health": 2, "max_health": 2, "energy": 3, "max_energy": 3 }
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/terran_base.tres", "cell": [2, 1], "health": 6, "max_health": 6, "energy": 5, "max_energy": 5 },
+				{ "unit_id": 2, "def_path": "res://src/unit/definitions/scout.tres", "cell": [3, 1], "health": 2, "max_health": 2, "energy": 3, "max_energy": 3 }
 			]},
 			{ "name": "opponent", "ai": false, "units": [
-				{ "unit_id": 3, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [3, 0], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
+				{ "unit_id": 3, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [5, 1], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
 			]}
 		]
 	}
 	# Order: resupply first, attack second - tests that support runs after attacks regardless of submission order
 	var player_actions := {
 		"player": [
-			{ "unit_id": 1, "action_key": "resupply_adjacent", "path": [], "end_point": [1, 0] },
-			{ "unit_id": 2, "action_key": "attack_ray", "path": [], "end_point": [3, 0] }
+			{ "unit_id": 1, "action_key": "resupply_adjacent", "path": [], "end_point": [3, 1] },
+			{ "unit_id": 2, "action_key": "attack_ray", "path": [], "end_point": [5, 1] }
 		],
 		"opponent": []
 	}
@@ -464,9 +478,9 @@ static func _test_execute_turn_resupply_after_scout_attack_same_turn(tests: Node
 		return false
 	var scout_energy: int = int(scout.unit.get("energy", -1))
 	if scout_energy != 3:
-		tests._fail("resupply must run after attack: scout should have 3 energy (attack 3->2, resupply +1 -> 3), got %d" % scout_energy)
+		tests._fail("non-origin resupply target should be absolute: scout should have 3 energy (attack 3->2, resupply +1 -> 3), got %d" % scout_energy)
 		return false
-	tests._pass("base resupplies scout after scout attacks same turn")
+	tests._pass("non-origin base resupplies scout after scout attacks same turn")
 	return true
 
 static func _test_execute_turn_attack_and_heal_same_phase_use_net_health(tests: Node) -> bool:

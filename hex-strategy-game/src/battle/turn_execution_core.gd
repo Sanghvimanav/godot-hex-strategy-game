@@ -87,9 +87,8 @@ static func get_damage_cells_for_config(attacker_q: int, attacker_r: int, path_a
 			out.append(Vector2i(attacker_q + d.x, attacker_r + d.y))
 		return out
 	if pattern == "self_or_adjacent":
-		var ep_q: int = _cell_q(end_point)
-		var ep_r: int = _cell_r(end_point)
-		return [Vector2i(attacker_q + ep_q, attacker_r + ep_r)]
+		# Support actions use absolute world end_point in submitted action payloads.
+		return [Vector2i(_cell_q(end_point), _cell_r(end_point))]
 	var cells: Array = []
 	for p in path_array:
 		cells.append(Vector2i(_cell_q(p), _cell_r(p)))

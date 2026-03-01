@@ -14,6 +14,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_get_damage_cells_self_pattern_uses_attacker_cell(tests) and ok
 	ok = _test_get_damage_cells_non_self_uses_path(tests) and ok
 	ok = _test_get_damage_cells_target_pattern_only_end_point(tests) and ok
+	ok = _test_get_damage_cells_self_or_adjacent_uses_absolute_endpoint(tests) and ok
 	ok = _test_attack_viper_has_target_pattern(tests) and ok
 	ok = _test_fast_ability_before_move(tests) and ok
 	ok = _test_phase_animations_complete_before_next(tests) and ok
@@ -106,6 +107,22 @@ static func _test_get_damage_cells_target_pattern_only_end_point(tests: Node) ->
 		tests._fail("target pattern should return [end_point], got %s" % cells)
 		return false
 	tests._pass("get_damage_cells target uses end_point only")
+	return true
+
+static func _test_get_damage_cells_self_or_adjacent_uses_absolute_endpoint(tests: Node) -> bool:
+	tests._log("test_turn_executor: get_damage_cells self_or_adjacent uses absolute end_point")
+	var ac := ActionInstance.new(null, null)
+	ac.path = []
+	ac.end_point = Vector2(3, 1)
+	var config: Dictionary = { "pattern": "self_or_adjacent" }
+	var cells: Array = TurnExecutor.get_damage_cells(Vector2(2, 1), ac, config)
+	if cells.size() != 1:
+		tests._fail("self_or_adjacent should return 1 cell, got %d" % cells.size())
+		return false
+	if not HexGrid.cell_equal(cells[0], Vector2(3, 1)):
+		tests._fail("self_or_adjacent should treat end_point as absolute, got %s" % cells)
+		return false
+	tests._pass("get_damage_cells self_or_adjacent uses absolute end_point")
 	return true
 
 static func _test_attack_viper_has_target_pattern(tests: Node) -> bool:
