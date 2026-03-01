@@ -22,6 +22,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_execute_turn_spawn_scout_requires_people(tests) and ok
 	ok = _test_execute_turn_scout_attack_ray_damages_only_target_tile(tests) and ok
 	ok = _test_execute_turn_resupply_after_scout_attack_same_turn(tests) and ok
+	ok = _test_execute_turn_attack_and_heal_same_phase_use_net_health(tests) and ok
 	ok = _test_execute_turn_zergling_fast_move_hits_scout_before_scout_move(tests) and ok
 	ok = _test_execute_turn_zergling_moves_onto_marine_attack_tile_takes_one_damage(tests) and ok
 	ok = _test_check_win_condition_one_alive(tests) and ok
@@ -466,6 +467,41 @@ static func _test_execute_turn_resupply_after_scout_attack_same_turn(tests: Node
 		tests._fail("resupply must run after attack: scout should have 3 energy (attack 3->2, resupply +1 -> 3), got %d" % scout_energy)
 		return false
 	tests._pass("base resupplies scout after scout attacks same turn")
+	return true
+
+static func _test_execute_turn_attack_and_heal_same_phase_use_net_health(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: simultaneous attack and heal use net health")
+	# Scout starts at 1 HP. Enemy marine attacks scout while allied base heals scout
+	# in the same ability phase. Net delta should be 0, so scout remains at 1 HP.
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/terran_base.tres", "cell": [0, 0], "health": 6, "max_health": 6, "energy": 5, "max_energy": 5 },
+				{ "unit_id": 2, "def_path": "res://src/unit/definitions/scout.tres", "cell": [1, 0], "health": 1, "max_health": 2, "energy": 3, "max_energy": 3 }
+			]},
+			{ "name": "opponent", "ai": false, "units": [
+				{ "unit_id": 3, "def_path": "res://src/unit/definitions/marine.tres", "cell": [2, 0], "health": 3, "max_health": 3, "energy": 4, "max_energy": 4 }
+			]}
+		]
+	}
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "heal_adjacent", "path": [], "end_point": [1, 0] }
+		],
+		"opponent": [
+			{ "unit_id": 3, "action_key": "attack_short", "path": [], "end_point": [1, 0] }
+		]
+	}
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var scout := TurnExecutionCore.find_unit_by_id(game_state, 2)
+	if scout.is_empty():
+		tests._fail("scout should survive when same-phase heal offsets incoming damage")
+		return false
+	var scout_health: int = int(scout.unit.get("health", -1))
+	if scout_health != 1:
+		tests._fail("same-phase attack/heal should resolve by net health (expected 1, got %d)" % scout_health)
+		return false
+	tests._pass("simultaneous attack and heal use net health")
 	return true
 
 static func _test_execute_turn_zergling_fast_move_hits_scout_before_scout_move(tests: Node) -> bool:

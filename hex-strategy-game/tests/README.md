@@ -35,7 +35,7 @@ Or use the script: `hex-strategy-game/tests/run_tests.sh`
 - **HexGrid** – `cell_equal`, `hex_distance`, `are_adjacent`, `get_hexes_at_distance`, `build_path_to`.
 - **TurnExecutor** – `ABILITY_TYPES` and `MOVE_TYPES`; `attack_passive` has pattern `"self"`; `get_damage_cells()` uses attacker's current cell for self-pattern (so Zergling can move then attack and hit Marine); fast ability before move in `ACTION_ORDER`.
 - **EventBus** – `show_units_panel` signal exists and can be connected/emitted (avoids UNUSED_SIGNAL regression).
-- **TurnExecutionCore** – `find_unit_by_id`, `get_units_at_cell`, `get_unit_def`, `get_damage_cells_for_config` (self, ray, target, area_adjacent), `execute_turn` (move + attack, recording structure, died_ids), `check_win_condition`; support (heal/resupply) runs after attacks in ability phase so base can resupply scout after scout attacks same turn.
+- **TurnExecutionCore** – `find_unit_by_id`, `get_units_at_cell`, `get_unit_def`, `get_damage_cells_for_config` (self, ray, target, area_adjacent), `execute_turn` (move + attack, recording structure, died_ids), `check_win_condition`; ability phases resolve health/energy from net deltas (damage+heal, spend+recharge) at phase end.
 - **ServerTurnExecutor** – `validate_action` (valid move, invalid path, unit not found, dead unit, target out of range), `execute_turn` delegates to core.
 - **Unified pipeline** – TurnExecutor.get_damage_cells matches TurnExecutionCore.get_damage_cells_for_config for self/ray/target; execute_turn produces valid recording structure.
 - **Stun effects** – stun application is recorded during execution, persists through immediate end-turn tick to the next planning turn, and replays back to the same stunned next-turn state.

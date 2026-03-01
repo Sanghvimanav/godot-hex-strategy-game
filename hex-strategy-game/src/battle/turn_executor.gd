@@ -21,7 +21,8 @@ class ExecutionContext:
 	var apply_damage: bool
 	var recording: Dictionary
 	var damage_by_id: Dictionary = {}
-	var applied_damage_by_id: Dictionary = {}  ## Damage already applied this turn (so we apply after each attack phase)
+	var phase_health_delta_by_id: Dictionary = {}
+	var phase_energy_delta_by_id: Dictionary = {}
 	var get_units_at_cell: Callable
 	var tree: SceneTree
 	var phase_callback: Callable = Callable()
@@ -35,7 +36,7 @@ class ExecutionContext:
 
 ## Runs the pipeline. actions_by_type: { type -> [{unit, ac, is_move}] }
 ## Records to ctx.recording when apply_damage is true.
-## Damage is applied after each attack phase so units that die cannot perform later actions.
+## Health/energy deltas are accumulated per phase and applied at phase end.
 static func run_pipeline(actions_by_type: Dictionary, ctx: ExecutionContext) -> void:
 	for action_type in Actions.ACTION_ORDER:
 		var entries: Array = actions_by_type[action_type] if actions_by_type.has(action_type) else []
@@ -50,10 +51,11 @@ static func run_pipeline(actions_by_type: Dictionary, ctx: ExecutionContext) -> 
 			continue
 		var handler := _get_handler_for_type(action_type)
 		if handler.is_valid():
+			ctx.phase_health_delta_by_id.clear()
+			ctx.phase_energy_delta_by_id.clear()
 			await handler.call(action_type, filtered, ctx)
-			# Apply damage after each ability phase so units that die are skipped in later phases
-			if action_type in ABILITY_TYPES and ctx.apply_damage:
-				_apply_accumulated_damage(ctx)
+			if ctx.apply_damage:
+				_apply_phase_stat_deltas(ctx)
 			if ctx.phase_callback.is_valid():
 				ctx.phase_callback.call()
 
@@ -117,9 +119,7 @@ static func _handle_reload(_action_type: String, entries: Array, ctx: ExecutionC
 				elif ac.definition.action_key == "recharge":
 					gain = 1
 				if gain > 0:
-					u.energy = mini(u.energy + gain, u.max_energy)
-					if u.energy_bar:
-						u.energy_bar.update_value(u.energy)
+					_queue_energy_delta(ctx, u, gain)
 		await ctx.tree.process_frame
 
 static func _handle_support(_action_type: String, entries: Array, ctx: ExecutionContext) -> void:
@@ -130,10 +130,8 @@ static func _handle_support(_action_type: String, entries: Array, ctx: Execution
 		var ac: ActionInstance = entry.ac
 		var config: Dictionary = Actions.get_action_config(ac.definition.action_key) if ac.definition else {}
 		var power: int = int(config["energy_consumption"]) if config.has("energy_consumption") else 0
-		if ctx.apply_damage and power > 0 and supporter.max_energy > 0 and supporter.energy > 0:
-			supporter.energy -= power
-			if supporter.energy_bar:
-				supporter.energy_bar.update_value(supporter.energy)
+		if ctx.apply_damage and power > 0 and supporter.max_energy > 0:
+			_queue_energy_delta(ctx, supporter, -power)
 		var heal_amount: int = int(config["heal_amount"]) if config.has("heal_amount") else 1
 		var recharge: int = int(config["recharge"]) if config.has("recharge") else 1
 		var supporter_group: Node = supporter.get_parent()
@@ -148,13 +146,10 @@ static func _handle_support(_action_type: String, entries: Array, ctx: Execution
 			if not target.is_active:
 				continue
 			if ctx.apply_damage:
-				target.health = mini(target.health + heal_amount, target.max_health)
-				if target.health_bar:
-					target.health_bar.update_value(target.health)
+				if heal_amount > 0:
+					_queue_health_delta(ctx, target, heal_amount)
 				if target.max_energy > 0 and recharge > 0:
-					target.energy = mini(target.energy + recharge, target.max_energy)
-					if target.energy_bar:
-						target.energy_bar.update_value(target.energy)
+					_queue_energy_delta(ctx, target, recharge)
 			if heal_amount > 0:
 				var effect: Node2D = HEAL_EFFECT_SCENE.instantiate()
 				target.add_child(effect)
@@ -183,9 +178,7 @@ static func _handle_spawn(action_type: String, entries: Array, ctx: ExecutionCon
 		var config: Dictionary = Actions.get_action_config(action_key)
 		var power: int = int(config.get("energy_consumption", 0))
 		if ctx.apply_damage and power > 0 and spawner.max_energy > 0:
-			spawner.energy = maxi(0, spawner.energy - power)
-			if spawner.energy_bar:
-				spawner.energy_bar.update_value(spawner.energy)
+			_queue_energy_delta(ctx, spawner, -power)
 		var def: Resource = load(spawn_path) as UnitDefinition
 		if def == null:
 			continue
@@ -247,6 +240,7 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 						dealt_damage = true
 						var uid: int = child.get_instance_id()
 						ctx.damage_by_id[uid] = (ctx.damage_by_id[uid] if ctx.damage_by_id.has(uid) else 0) + damage_amount
+						_queue_health_delta(ctx, child, -damage_amount)
 						if stun_duration > 0:
 							_apply_stun_effect(ctx, child, stun_duration)
 		var aoe: Dictionary = config["area_of_effect"] if config.has("area_of_effect") else {}
@@ -270,6 +264,7 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 							dealt_damage = true
 							var uid: int = child.get_instance_id()
 							ctx.damage_by_id[uid] = (ctx.damage_by_id[uid] if ctx.damage_by_id.has(uid) else 0) + damage_amount
+							_queue_health_delta(ctx, child, -damage_amount)
 							if stun_duration > 0:
 								_apply_stun_effect(ctx, child, stun_duration)
 		if config.has("self_damage") and config["self_damage"]:
@@ -277,6 +272,7 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 			var uid: int = attacker.get_instance_id()
 			var self_dmg: int = int(config["self_damage_amount"]) if config.has("self_damage_amount") else 999
 			ctx.damage_by_id[uid] = (ctx.damage_by_id[uid] if ctx.damage_by_id.has(uid) else 0) + self_dmg
+			_queue_health_delta(ctx, attacker, -self_dmg)
 		if ctx.apply_damage:
 			var should_record := not is_passive or dealt_damage
 			if should_record:
@@ -286,9 +282,7 @@ static func _handle_attacks(action_type: String, entries: Array, ctx: ExecutionC
 				var key := "%d_%s" % [_recording_unit_id(attacker), action_key]
 				causers[key] = true
 				ctx.recording["damage_causers"] = causers
-	if ctx.apply_damage and ctx.damage_by_id.size() > 0:
-		_apply_accumulated_damage(ctx)
-	# Then play attack animations (after damage so positions are correct)
+	# Then play attack animations.
 	for entry in entries:
 		var attacker = entry.unit
 		if not _valid_unit(attacker):
@@ -324,27 +318,42 @@ static func _recording_unit_id(unit: Unit) -> int:
 		return int(unit.get_meta("unit_id"))
 	return unit.get_instance_id()
 
-## Applies accumulated damage (since last call) to units. Call after each attack phase.
-## Updates ctx.applied_damage_by_id and ctx.recording.died_ids when units die.
-static func _apply_accumulated_damage(ctx: ExecutionContext) -> void:
-	for uid in ctx.damage_by_id:
-		var already_applied: int = ctx.applied_damage_by_id[uid] if ctx.applied_damage_by_id.has(uid) else 0
-		var total_damage: int = ctx.damage_by_id[uid]
-		var to_apply: int = total_damage - already_applied
-		if to_apply <= 0:
-			continue
-		var unit = instance_from_id(uid)
+static func _queue_health_delta(ctx: ExecutionContext, unit: Unit, amount: int) -> void:
+	if not ctx.apply_damage or amount == 0:
+		return
+	var uid: int = unit.get_instance_id()
+	ctx.phase_health_delta_by_id[uid] = int(ctx.phase_health_delta_by_id.get(uid, 0)) + amount
+
+static func _queue_energy_delta(ctx: ExecutionContext, unit: Unit, amount: int) -> void:
+	if not ctx.apply_damage or amount == 0 or unit.max_energy <= 0:
+		return
+	var uid: int = unit.get_instance_id()
+	ctx.phase_energy_delta_by_id[uid] = int(ctx.phase_energy_delta_by_id.get(uid, 0)) + amount
+
+static func _apply_phase_stat_deltas(ctx: ExecutionContext) -> void:
+	for uid in ctx.phase_health_delta_by_id:
+		var unit = instance_from_id(int(uid))
 		if not is_instance_valid(unit) or not unit is Unit:
 			continue
-		unit.health = unit.health - to_apply  # Explicit assign so setter runs
+		var next_health: int = maxi(0, mini(unit.max_health, unit.health + int(ctx.phase_health_delta_by_id[uid])))
+		unit.health = next_health  # Explicit assign so setter runs
 		if unit.health_bar:
 			unit.health_bar.update_value(unit.health)
-		ctx.applied_damage_by_id[uid] = total_damage
-		if ctx.apply_damage and unit.health <= 0:
+		if next_health <= 0:
 			var died_ids: Array = ctx.recording["died_ids"] if ctx.recording.has("died_ids") else []
 			if uid not in died_ids:
 				died_ids.append(uid)
 				ctx.recording["died_ids"] = died_ids
+	for uid in ctx.phase_energy_delta_by_id:
+		var unit = instance_from_id(int(uid))
+		if not is_instance_valid(unit) or not unit is Unit or unit.max_energy <= 0:
+			continue
+		var next_energy: int = maxi(0, mini(unit.max_energy, unit.energy + int(ctx.phase_energy_delta_by_id[uid])))
+		unit.energy = next_energy
+		if unit.energy_bar:
+			unit.energy_bar.update_value(unit.energy)
+	ctx.phase_health_delta_by_id.clear()
+	ctx.phase_energy_delta_by_id.clear()
 
 ## Returns true if the attack would damage any enemy (used to skip passive attack animation when no damage).
 static func _would_attack_deal_damage(attacker, ac: ActionInstance, ctx: ExecutionContext) -> bool:
