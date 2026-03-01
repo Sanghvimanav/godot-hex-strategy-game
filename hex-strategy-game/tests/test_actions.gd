@@ -199,14 +199,14 @@ static func _test_zerg_vs_terran_includes_medic(tests: Node) -> bool:
 	return true
 
 static func _test_medic_heal_debug_scenario_exists(tests: Node) -> bool:
-	tests._log("test_actions: medic_heal_debug scenario includes medic and damaged marine")
+	tests._log("test_actions: medic_heal_debug includes medic, damaged marine, and attacking viper")
 	var scenario: Dictionary = Scenarios.get_scenario_by_id("medic_heal_debug")
 	if scenario.is_empty():
 		tests._fail("medic_heal_debug scenario should exist")
 		return false
 	var has_medic := false
 	var has_damaged_marine := false
-	var has_empty_ai_opponent := false
+	var has_ai_viper := false
 	for g in scenario.get("groups", []):
 		var group_name: String = str(g.get("name", ""))
 		var units: Array = g.get("units", [])
@@ -216,18 +216,20 @@ static func _test_medic_heal_debug_scenario_exists(tests: Node) -> bool:
 					has_medic = true
 				if str(u.get("def_path", "")) == "res://src/unit/definitions/marine.tres" and int(u.get("health", 0)) == 3:
 					has_damaged_marine = true
-		if group_name == "opponent" and bool(g.get("ai", false)) and units.is_empty():
-			has_empty_ai_opponent = true
+		if group_name == "opponent" and bool(g.get("ai", false)):
+			for u in units:
+				if str(u.get("def_path", "")) == "res://src/unit/definitions/viper.tres":
+					has_ai_viper = true
 	if not has_medic:
 		tests._fail("medic_heal_debug should include a player medic")
 		return false
 	if not has_damaged_marine:
 		tests._fail("medic_heal_debug should include a marine with starting health 3")
 		return false
-	if not has_empty_ai_opponent:
-		tests._fail("medic_heal_debug should include empty AI opponent group")
+	if not has_ai_viper:
+		tests._fail("medic_heal_debug should include an AI viper attacker")
 		return false
-	tests._pass("medic_heal_debug scenario includes medic and damaged marine")
+	tests._pass("medic_heal_debug includes medic, damaged marine, and attacking viper")
 	return true
 
 static func _test_extract_tile_action_config(tests: Node) -> bool:

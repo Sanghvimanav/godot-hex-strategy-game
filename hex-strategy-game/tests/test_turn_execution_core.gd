@@ -21,6 +21,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_execute_turn_extract_depletes_and_accumulates_group_resource(tests) and ok
 	ok = _test_execute_turn_recruit_people_only_extracts_people(tests) and ok
 	ok = _test_execute_turn_heal_adjacent_targets_absolute_cell(tests) and ok
+	ok = _test_execute_turn_heal_and_incoming_damage_same_turn_maintains_health(tests) and ok
 	ok = _test_execute_turn_spawn_scout_requires_people(tests) and ok
 	ok = _test_execute_turn_scout_attack_ray_damages_only_target_tile(tests) and ok
 	ok = _test_execute_turn_zergling_fast_move_hits_scout_before_scout_move(tests) and ok
@@ -378,6 +379,45 @@ static func _test_execute_turn_heal_adjacent_targets_absolute_cell(tests: Node) 
 		tests._fail("heal_adjacent should heal marine at [2,0] by 1 (2 -> 3), got %s" % marine_found.unit.get("health", 0))
 		return false
 	tests._pass("heal_adjacent heals ally at absolute end_point cell")
+	return true
+
+static func _test_execute_turn_heal_and_incoming_damage_same_turn_maintains_health(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: marine health is maintained when healed and attacked in same turn")
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/medic.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 4, "max_energy": 4 },
+				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 3, "max_health": 4, "energy": 4, "max_energy": 4 }
+			]},
+			{ "name": "opponent", "ai": true, "units": [
+				{ "unit_id": 3, "def_path": "res://src/unit/definitions/viper.tres", "cell": [-1, 1], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
+			]}
+		]
+	}
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "heal_adjacent", "path": [], "end_point": [1, 0] },
+		],
+		"opponent": [
+			{ "unit_id": 3, "action_key": "attack_viper", "path": [], "end_point": [1, 0] },
+		]
+	}
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var marine_found := TurnExecutionCore.find_unit_by_id(game_state, 2)
+	if marine_found.is_empty():
+		tests._fail("marine should survive simultaneous heal/damage turn")
+		return false
+	if int(marine_found.unit.get("health", 0)) != 3:
+		tests._fail("marine health should stay at 3 (heal +1 and damage -1), got %s" % marine_found.unit.get("health", 0))
+		return false
+	var medic_found := TurnExecutionCore.find_unit_by_id(game_state, 1)
+	if medic_found.is_empty():
+		tests._fail("medic should survive simultaneous heal/damage turn")
+		return false
+	if int(medic_found.unit.get("energy", -1)) != 3:
+		tests._fail("medic should spend 1 energy for heal (4 -> 3), got %s" % medic_found.unit.get("energy", -1))
+		return false
+	tests._pass("marine health is maintained when healed and attacked in same turn")
 	return true
 
 static func _test_execute_turn_spawn_scout_requires_people(tests: Node) -> bool:

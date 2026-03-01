@@ -71,16 +71,19 @@ func _build_scenarios() -> void:
 			]},
 		]
 	})
-	# Medic heal debug: one-turn GUI check (damaged marine starts adjacent to medic).
+	# Medic heal debug: one-turn GUI check where Marine is attacked and healed in the same turn.
 	available_scenarios.append({
 		"id": "medic_heal_debug",
-		"display_name": "Medic Heal Debug (Medic heals damaged Marine)",
+		"display_name": "Medic Heal Debug (Heal + Incoming Damage)",
 		"groups": [
 			{"name": "player", "units": [
 				{"def_path": "res://src/unit/definitions/medic.tres", "cell": Vector2i(0, 0), "energy": 4},
 				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(1, 0), "health": 3, "energy": 4},
 			]},
-			{"name": "opponent", "ai": true, "units": []},
+			{"name": "opponent", "ai": true, "units": [
+				# Placed at distance 2 from the Marine so AI Viper can damage Marine this turn.
+				{"def_path": "res://src/unit/definitions/viper.tres", "cell": Vector2i(-1, 1)},
+			]},
 		]
 	})
 	# Baneling debug: Baneling vs Marines (test explode)
