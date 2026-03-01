@@ -22,22 +22,6 @@ var turn_number: int = 1
 var last_turn_recording: Dictionary = {}  # { actions: [], died_ids: [], summary: [] }
 var replay_turn_history: Array = []  # [{ turn: int, recording: Dictionary }]
 
-func _agent_debug_log(hypothesis_id: String, location: String, message: String, data: Dictionary = {}) -> void:
-	var file := FileAccess.open("/opt/cursor/logs/debug.log", FileAccess.READ_WRITE)
-	if file == null:
-		file = FileAccess.open("/opt/cursor/logs/debug.log", FileAccess.WRITE_READ)
-	if file == null:
-		return
-	file.seek_end()
-	file.store_line(JSON.stringify({
-		"hypothesisId": hypothesis_id,
-		"location": location,
-		"message": message,
-		"data": data,
-		"timestamp": int(Time.get_unix_time_from_system() * 1000.0)
-	}))
-	file.close()
-
 func _ready() -> void:
 	_refresh_groups()
 	EventBus.execute_turn_requested.connect(_on_execute_turn_requested)
@@ -524,12 +508,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
 			var can_execute: bool = _all_units_have_planned_action()
-			#region agent log
-			_agent_debug_log("H4", "units.gd:_unhandled_input", "Enter key unhandled path evaluated", {
-				"battle_phase": int(battle_phase),
-				"can_execute": can_execute
-			})
-			#endregion
 			if can_execute:
 				_execute_planned_actions()
 		elif event.keycode == KEY_TAB:
@@ -766,12 +744,6 @@ func _build_player_actions_from_units(game_state: Dictionary) -> Dictionary:
 	return player_actions
 
 func _execute_planned_actions() -> void:
-	#region agent log
-	_agent_debug_log("H4", "units.gd:_execute_planned_actions", "Execute planned actions invoked", {
-		"battle_phase": int(battle_phase),
-		"active_units": get_active_units().size()
-	})
-	#endregion
 	print("[EXEC] _execute_planned_actions START")
 	battle_phase = BattlePhase.Phase.EXECUTING
 	EventBus.unit_selected_for_planning.emit(null)
@@ -880,21 +852,7 @@ func _on_unit_pick_requested(unit: Unit) -> void:
 	_select_unit_for_planning(unit)
 
 func _on_replay_turn_requested(requested_turn: int) -> void:
-	#region agent log
-	_agent_debug_log("H2", "units.gd:_on_replay_turn_requested", "Replay request received", {
-		"requested_turn": requested_turn,
-		"battle_phase": int(battle_phase),
-		"history_size": replay_turn_history.size()
-	})
-	#endregion
 	if battle_phase != BattlePhase.Phase.PLANNING or replay_turn_history.is_empty():
-		#region agent log
-		_agent_debug_log("H2", "units.gd:_on_replay_turn_requested", "Replay request rejected by guard", {
-			"requested_turn": requested_turn,
-			"battle_phase": int(battle_phase),
-			"history_size": replay_turn_history.size()
-		})
-		#endregion
 		return
 	var replay_entry: Dictionary = _get_replay_history_entry(requested_turn)
 	var replay_recording: Dictionary = replay_entry.get("recording", {})
@@ -941,13 +899,6 @@ func _on_replay_turn_requested(requested_turn: int) -> void:
 	if summary_lines.size() > 0 and summary_lines[0] == "":
 		summary_lines.remove_at(0)
 	EventBus.show_replay_summary.emit(summary_lines, "Turn %d actions" % replay_turn)
-	#region agent log
-	_agent_debug_log("H3", "units.gd:_on_replay_turn_requested", "Replay recording start requested", {
-		"replay_turn": replay_turn,
-		"summary_lines": summary_lines.size(),
-		"recorded_actions": replay_recording.get("actions", []).size()
-	})
-	#endregion
 	_replay_turn_recording(replay_recording)
 
 func _phase_display_name(action_type: String) -> String:

@@ -17,22 +17,6 @@ var _replay_available: bool = false
 var _replay_in_progress: bool = false
 var _updating_replay_picker: bool = false
 
-func _agent_debug_log(hypothesis_id: String, location: String, message: String, data: Dictionary = {}) -> void:
-	var file := FileAccess.open("/opt/cursor/logs/debug.log", FileAccess.READ_WRITE)
-	if file == null:
-		file = FileAccess.open("/opt/cursor/logs/debug.log", FileAccess.WRITE_READ)
-	if file == null:
-		return
-	file.seek_end()
-	file.store_line(JSON.stringify({
-		"hypothesisId": hypothesis_id,
-		"location": location,
-		"message": message,
-		"data": data,
-		"timestamp": int(Time.get_unix_time_from_system() * 1000.0)
-	}))
-	file.close()
-
 func _ready() -> void:
 	execute_button.pressed.connect(_on_execute_pressed)
 	execute_button.disabled = true
@@ -87,15 +71,6 @@ func _on_replay_pressed() -> void:
 	var turn_to_replay: int = _selected_replay_turn
 	if turn_to_replay <= 0 and not _replay_turn_numbers.is_empty():
 		turn_to_replay = _replay_turn_numbers[_replay_turn_numbers.size() - 1]
-	#region agent log
-	_agent_debug_log("H1", "turn_ui.gd:_on_replay_pressed", "Replay button pressed", {
-		"selected_replay_turn": _selected_replay_turn,
-		"turn_to_replay": turn_to_replay,
-		"replay_available": _replay_available,
-		"replay_in_progress": _replay_in_progress,
-		"history_size": _replay_turn_numbers.size()
-	})
-	#endregion
 	var is_planning: bool = _units_node != null and _units_node.battle_phase == BattlePhase.Phase.PLANNING
 	if not is_planning:
 		_replay_in_progress = false
@@ -103,21 +78,10 @@ func _on_replay_pressed() -> void:
 		return
 	EventBus.replay_turn_requested.emit(turn_to_replay)
 	_replay_in_progress = true
-	#region agent log
-	_agent_debug_log("H1", "turn_ui.gd:_on_replay_pressed", "Replay request emitted and controls set in-progress", {
-		"turn_to_replay": turn_to_replay,
-		"replay_in_progress": _replay_in_progress
-	})
-	#endregion
 	_update_replay_controls()
 
 func _on_replay_finished() -> void:
 	_replay_in_progress = false
-	#region agent log
-	_agent_debug_log("H3", "turn_ui.gd:_on_replay_finished", "Replay finished signal received", {
-		"replay_in_progress": _replay_in_progress
-	})
-	#endregion
 	_update_replay_controls()
 
 func _on_replay_available_changed(available: bool) -> void:
