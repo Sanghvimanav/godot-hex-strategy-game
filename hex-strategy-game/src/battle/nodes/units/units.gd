@@ -869,15 +869,31 @@ func _on_replay_turn_requested(requested_turn: int) -> void:
 		return
 	var replay_turn: int = int(replay_entry.get("turn", requested_turn))
 	_emit_replay_history_changed(replay_turn)
+	var summary_lines: Array = _build_replay_summary_lines(replay_recording)
+	EventBus.show_replay_summary.emit(summary_lines, "Turn %d actions" % replay_turn)
+	_replay_turn_recording(replay_recording)
+
+func _phase_display_name(action_type: String) -> String:
+	if action_type.is_empty():
+		return "Other"
+	var parts: PackedStringArray = action_type.split(" ")
+	for i in parts.size():
+		if parts[i].length() > 0:
+			parts[i] = parts[i].left(1).to_upper() + parts[i].substr(1)
+	return " ".join(parts)
+
+func _build_replay_summary_lines(replay_recording: Dictionary) -> Array:
 	var summary_lines: Array = []
 	var died_ids: Array = replay_recording.get("died_ids", [])
 	var summary: Array = replay_recording.get("summary", [])
 	var before_state: Dictionary = replay_recording.get("before_state", {})
 	var damage_by_id: Dictionary = replay_recording.get("damage_by_id", {})
-
 	for action_type in Actions.ACTION_ORDER:
 		var entries_in_phase: Array = []
-		for entry in summary:
+		for raw_entry in summary:
+			if not (raw_entry is Dictionary):
+				continue
+			var entry: Dictionary = raw_entry
 			if entry.get("action_type", "") == action_type:
 				entries_in_phase.append(entry)
 		if entries_in_phase.is_empty():
@@ -885,10 +901,10 @@ func _on_replay_turn_requested(requested_turn: int) -> void:
 		summary_lines.append("")
 		summary_lines.append(_phase_display_name(action_type))
 		for entry in entries_in_phase:
-			var entry_id: int = int(entry.get("unit_id", entry.get("instance_id", -1)))
-			var suffix := " (eliminated)" if entry_id in died_ids else ""
-			summary_lines.append("  %s: %s%s" % [entry.unit_name, entry.action_name, suffix])
-
+			var suffix: String = _build_replay_summary_entry_suffix(entry, died_ids)
+			var unit_name: String = str(entry.get("unit_name", "Unit"))
+			var action_name: String = str(entry.get("action_name", "Action"))
+			summary_lines.append("  %s: %s%s" % [unit_name, action_name, suffix])
 	summary_lines.append("")
 	summary_lines.append("Units damaged")
 	if damage_by_id.is_empty():
@@ -904,20 +920,20 @@ func _on_replay_turn_requested(requested_turn: int) -> void:
 				unit_name = unit.def.name
 			var elim := " (eliminated)" if end_hp <= 0 else ""
 			summary_lines.append("  %s: %d HP → %d (-%d)%s" % [unit_name, start_hp, end_hp, damage, elim])
-
 	if summary_lines.size() > 0 and summary_lines[0] == "":
 		summary_lines.remove_at(0)
-	EventBus.show_replay_summary.emit(summary_lines, "Turn %d actions" % replay_turn)
-	_replay_turn_recording(replay_recording)
+	return summary_lines
 
-func _phase_display_name(action_type: String) -> String:
-	if action_type.is_empty():
-		return "Other"
-	var parts: PackedStringArray = action_type.split(" ")
-	for i in parts.size():
-		if parts[i].length() > 0:
-			parts[i] = parts[i].left(1).to_upper() + parts[i].substr(1)
-	return " ".join(parts)
+func _build_replay_summary_entry_suffix(entry: Dictionary, died_ids: Array) -> String:
+	if bool(entry.get("cancelled", false)):
+		var cancelled_reason: String = str(entry.get("cancelled_reason", ""))
+		if cancelled_reason == "eliminated_before_phase":
+			return " (cancelled: eliminated first)"
+		return " (cancelled)"
+	var entry_id: int = int(entry.get("unit_id", entry.get("instance_id", -1)))
+	if entry_id in died_ids:
+		return " (eliminated)"
+	return ""
 
 func _replay_turn_recording(replay_recording: Dictionary) -> void:
 	battle_phase = BattlePhase.Phase.EXECUTING
@@ -1284,7 +1300,11 @@ func play_resolved_turn(turn_result: Dictionary, final_state: Dictionary) -> voi
 	recording["died_ids"] = _convert_instance_ids_to_stable_ids(recording.get("died_ids", []))
 	recording["damage_causers"] = _convert_damage_causers_to_stable(recording.get("damage_causers", {}))
 	recording["applied_effects"] = _convert_applied_effects_to_stable(recording.get("applied_effects", []))
-	recording["summary"] = _build_summary_from_recording_actions(recording["actions"])
+	var submitted_summary: Array = []
+	for raw_entry in turn_result.get("summary", []):
+		if raw_entry is Dictionary:
+			submitted_summary.append((raw_entry as Dictionary).duplicate(true))
+	recording["summary"] = submitted_summary if not submitted_summary.is_empty() else _build_summary_from_recording_actions(recording["actions"])
 	last_turn_recording = recording
 	_filter_passive_summary_entries()
 	_store_replay_recording_for_turn(executed_turn_number, last_turn_recording)

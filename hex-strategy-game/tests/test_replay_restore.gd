@@ -13,6 +13,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_replay_history_respects_capacity(tests) and ok
 	ok = _test_apply_scenario_uses_health_and_energy_overrides(tests) and ok
 	ok = _test_replay_summary_panel_hides_after_replay_finished(tests) and ok
+	ok = _test_replay_summary_lines_group_by_phase_and_mark_cancelled(tests) and ok
 	return ok
 
 static func _make_container() -> UnitsContainer:
@@ -298,4 +299,53 @@ static func _test_replay_summary_panel_hides_after_replay_finished(tests: Node) 
 		return false
 	tests._pass("replay summary panel closes on replay_finished")
 	panel.free()
+	return true
+
+static func _test_replay_summary_lines_group_by_phase_and_mark_cancelled(tests: Node) -> bool:
+	tests._log("test_replay_restore: replay summary groups submitted actions by phase and marks cancelled actions")
+	var container := _make_container()
+	tests.add_child(container)
+	var replay_recording := {
+		"summary": [
+			{
+				"unit_id": 2,
+				"unit_name": "Zergling",
+				"action_key": "fast_move",
+				"action_name": "Move",
+				"action_type": "fast move",
+				"cancelled": false
+			},
+			{
+				"unit_id": 1,
+				"unit_name": "Marine",
+				"action_key": "attack_short",
+				"action_name": "Attack",
+				"action_type": "ability",
+				"cancelled": true,
+				"cancelled_reason": "eliminated_before_phase"
+			}
+		],
+		"died_ids": [1],
+		"before_state": {
+			1: {"health": 1, "unit_name": "Marine"}
+		},
+		"damage_by_id": {1: 1}
+	}
+	var lines: Array = container._build_replay_summary_lines(replay_recording)
+	if not lines.has("  Zergling: Move"):
+		tests._fail("replay summary should include fast move submitted action line")
+		container.free()
+		return false
+	if not lines.has("  Marine: Attack (cancelled: eliminated first)"):
+		tests._fail("replay summary should mark eliminated-before-phase action as cancelled")
+		container.free()
+		return false
+	var fast_move_idx: int = lines.find("Fast Move")
+	var ability_idx: int = lines.find("Ability")
+	if fast_move_idx < 0 or ability_idx < 0 or fast_move_idx >= ability_idx:
+		tests._fail("replay summary should group lines by phase order (Fast Move before Ability)")
+		container.free()
+		return false
+	tests._pass("replay summary groups by phase and marks cancelled actions")
+	container.free()
 	return true
