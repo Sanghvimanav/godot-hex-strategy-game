@@ -139,27 +139,35 @@ static func _handle_support(_action_type: String, entries: Array, ctx: Execution
 		var heal_amount: int = int(config["heal_amount"]) if config.has("heal_amount") else 1
 		var recharge: int = int(config["recharge"]) if config.has("recharge") else 1
 		var supporter_group: Node = supporter.get_parent()
-		# end_point is relative (0,0 = self); resolve to world cell
-		var target_cell: Vector2 = Vector2(int(supporter.cell.x) + int(ac.end_point.x), int(supporter.cell.y) + int(ac.end_point.y))
-		var units_at: Array = ctx.get_units_at_cell.call(target_cell)
-		for target in units_at:
-			if not is_instance_valid(target) or not target is Unit:
-				continue
-			if target.get_parent() != supporter_group:
-				continue
-			if not target.is_active:
-				continue
-			if ctx.apply_damage:
-				target.health = mini(target.health + heal_amount, target.max_health)
-				if target.health_bar:
-					target.health_bar.update_value(target.health)
-				if target.max_energy > 0 and recharge > 0:
-					target.energy = mini(target.energy + recharge, target.max_energy)
-					if target.energy_bar:
-						target.energy_bar.update_value(target.energy)
-			if heal_amount > 0:
-				var effect: Node2D = HEAL_EFFECT_SCENE.instantiate()
-				target.add_child(effect)
+		# Use shared targeting resolution so support/heal matches server/core behavior.
+		var target_cells: Array = TurnExecutionCore.get_damage_cells_for_config(
+			int(supporter.cell.x),
+			int(supporter.cell.y),
+			ac.path if ac else [],
+			ac.end_point if ac else supporter.cell,
+			config
+		)
+		for raw_cell in target_cells:
+			var target_cell: Vector2 = Vector2(int(raw_cell.x), int(raw_cell.y))
+			var units_at: Array = ctx.get_units_at_cell.call(target_cell)
+			for target in units_at:
+				if not is_instance_valid(target) or not target is Unit:
+					continue
+				if target.get_parent() != supporter_group:
+					continue
+				if not target.is_active:
+					continue
+				if ctx.apply_damage:
+					target.health = mini(target.health + heal_amount, target.max_health)
+					if target.health_bar:
+						target.health_bar.update_value(target.health)
+					if target.max_energy > 0 and recharge > 0:
+						target.energy = mini(target.energy + recharge, target.max_energy)
+						if target.energy_bar:
+							target.energy_bar.update_value(target.energy)
+				if heal_amount > 0:
+					var effect: Node2D = HEAL_EFFECT_SCENE.instantiate()
+					target.add_child(effect)
 		if ctx.apply_damage:
 			ctx.recording.actions.append({ "type": _action_type, "unit": supporter, "unit_id": _recording_unit_id(supporter), "ac": ac })
 

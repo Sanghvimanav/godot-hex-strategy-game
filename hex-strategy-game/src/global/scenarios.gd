@@ -71,6 +71,18 @@ func _build_scenarios() -> void:
 			]},
 		]
 	})
+	# Medic heal debug: one-turn GUI check (damaged marine starts adjacent to medic).
+	available_scenarios.append({
+		"id": "medic_heal_debug",
+		"display_name": "Medic Heal Debug (Medic heals damaged Marine)",
+		"groups": [
+			{"name": "player", "units": [
+				{"def_path": "res://src/unit/definitions/medic.tres", "cell": Vector2i(0, 0), "energy": 4},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(1, 0), "health": 3, "energy": 4},
+			]},
+			{"name": "opponent", "ai": true, "units": []},
+		]
+	})
 	# Baneling debug: Baneling vs Marines (test explode)
 	available_scenarios.append({
 		"id": "baneling_debug",
