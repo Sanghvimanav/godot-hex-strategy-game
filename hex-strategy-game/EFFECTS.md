@@ -4,7 +4,7 @@ Effects are single-turn or multi-turn statuses on a unit (stun, heal over time, 
 
 ## Effect kinds (`UnitEffect.Kind`)
 
-- **Stun** – Disables all actions for the duration. Used by attacks with `stun_duration` in `actions.gd`. Duration is in turns remaining; each end-of-turn tick decrements it.
+- **Stun** – Disables all actions for the duration. Used by attacks with `stun_duration` in `actions.gd`. Newly applied stun is queued for the next turn (`pending_first_tick`), so same-turn actions still resolve; each later end-of-turn tick decrements duration.
 - **HealOverTime** – Each tick, heals the unit by `params.heal_per_turn` (capped at max health), then decrements duration. Add via abilities/support that push `UnitEffect.new(UnitEffect.Kind.HealOverTime, turns, { "heal_per_turn": 1 })` and `unit.add_effect(effect)`.
 - **MovementBuff** – `params.move_bonus` (e.g. +1) is summed in `unit.get_move_range_bonus()`. To make it change move range, move definition resolution would need to take the unit and add this bonus when building move paths (not yet wired).
 

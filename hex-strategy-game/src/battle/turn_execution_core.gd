@@ -100,7 +100,8 @@ static func get_damage_cells_for_config(attacker_q: int, attacker_r: int, path_a
 static func get_action_type(action_key: String) -> String:
 	return Actions.get_action_type(action_key)
 
-## Returns true if unit dict has an active Stun effect (duration > 0).
+## Returns true if unit dict has an active Stun effect for this turn.
+## Newly applied stuns are marked pending_first_tick and only activate next turn.
 static func _unit_has_stun(unit_dict: Dictionary) -> bool:
 	var effects: Array = unit_dict.get("effects", [])
 	for e in effects:
@@ -108,8 +109,11 @@ static func _unit_has_stun(unit_dict: Dictionary) -> bool:
 			continue
 		if str(e.get("kind", "")) != "Stun":
 			continue
-		if int(e.get("duration", 0)) > 0:
-			return true
+		if int(e.get("duration", 0)) <= 0:
+			continue
+		if bool(e.get("pending_first_tick", false)):
+			continue
+		return true
 	return false
 
 ## Adds a stun effect to a unit dict. pending_first_tick mirrors Unit.add_effect()
