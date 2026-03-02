@@ -869,9 +869,7 @@ func _on_replay_turn_requested(requested_turn: int) -> void:
 		return
 	var replay_turn: int = int(replay_entry.get("turn", requested_turn))
 	_emit_replay_history_changed(replay_turn)
-	var summary_lines: Array = _build_replay_summary_lines(replay_recording)
-	EventBus.show_replay_summary.emit(summary_lines, "Turn %d actions" % replay_turn)
-	_replay_turn_recording(replay_recording)
+	_replay_turn_recording(replay_recording, replay_turn)
 
 func _phase_display_name(action_type: String) -> String:
 	if action_type.is_empty():
@@ -882,7 +880,40 @@ func _phase_display_name(action_type: String) -> String:
 			parts[i] = parts[i].left(1).to_upper() + parts[i].substr(1)
 	return " ".join(parts)
 
-func _build_replay_summary_lines(replay_recording: Dictionary) -> Array:
+func _resolve_replay_observer_group_name() -> String:
+	if not multiplayer_my_group.is_empty():
+		return multiplayer_my_group
+	if groups.is_empty():
+		return ""
+	return str(groups[0].name)
+
+func _collect_visible_replay_unit_ids() -> Dictionary:
+	var visible_ids: Dictionary = {}
+	var observer_group_name: String = _resolve_replay_observer_group_name()
+	for u in get_all_units():
+		if not (is_instance_valid(u) and u is Unit):
+			continue
+		if not u.is_active:
+			continue
+		var stable_id: int = _get_unit_stable_id(u)
+		if stable_id <= 0:
+			continue
+		var unit_group_name: String = u.get_parent().name if u.get_parent() else ""
+		if not observer_group_name.is_empty() and unit_group_name == observer_group_name:
+			visible_ids[stable_id] = true
+			continue
+		if u.visible:
+			visible_ids[stable_id] = true
+	return visible_ids
+
+func _is_replay_unit_visible(unit_id: int, visible_unit_ids: Dictionary) -> bool:
+	if visible_unit_ids.is_empty():
+		return true
+	if unit_id <= 0:
+		return false
+	return bool(visible_unit_ids.get(unit_id, false))
+
+func _build_replay_summary_lines(replay_recording: Dictionary, visible_unit_ids: Dictionary = {}) -> Array:
 	var summary_lines: Array = []
 	var died_ids: Array = replay_recording.get("died_ids", [])
 	var summary: Array = replay_recording.get("summary", [])
@@ -896,30 +927,42 @@ func _build_replay_summary_lines(replay_recording: Dictionary) -> Array:
 			var entry: Dictionary = raw_entry
 			if entry.get("action_type", "") == action_type:
 				entries_in_phase.append(entry)
+		var visible_entries: Array = []
+		for entry in entries_in_phase:
+			var entry_id: int = int(entry.get("unit_id", entry.get("instance_id", -1)))
+			if not _is_replay_unit_visible(entry_id, visible_unit_ids):
+				continue
+			visible_entries.append(entry)
+		if visible_entries.is_empty():
+			continue
 		if entries_in_phase.is_empty():
 			continue
 		summary_lines.append("")
 		summary_lines.append(_phase_display_name(action_type))
-		for entry in entries_in_phase:
+		for entry in visible_entries:
 			var suffix: String = _build_replay_summary_entry_suffix(entry, died_ids)
 			var unit_name: String = str(entry.get("unit_name", "Unit"))
 			var action_name: String = str(entry.get("action_name", "Action"))
 			summary_lines.append("  %s: %s%s" % [unit_name, action_name, suffix])
 	summary_lines.append("")
 	summary_lines.append("Units damaged")
-	if damage_by_id.is_empty():
+	var has_visible_damage: bool = false
+	for uid in damage_by_id:
+		var stable_uid: int = int(uid)
+		if not _is_replay_unit_visible(stable_uid, visible_unit_ids):
+			continue
+		has_visible_damage = true
+		var start_hp: int = before_state.get(uid, {}).get("health", 0)
+		var damage: int = damage_by_id[uid]
+		var end_hp: int = mini(maxi(start_hp - damage, 0), 999)
+		var unit_name: String = str(before_state.get(uid, {}).get("unit_name", "Unit"))
+		var unit = _resolve_unit_for_replay_id(stable_uid)
+		if is_instance_valid(unit) and unit is Unit:
+			unit_name = unit.def.name
+		var elim := " (eliminated)" if end_hp <= 0 else ""
+		summary_lines.append("  %s: %d HP → %d (-%d)%s" % [unit_name, start_hp, end_hp, damage, elim])
+	if not has_visible_damage:
 		summary_lines.append("  None")
-	else:
-		for uid in damage_by_id:
-			var start_hp: int = before_state.get(uid, {}).get("health", 0)
-			var damage: int = damage_by_id[uid]
-			var end_hp: int = mini(maxi(start_hp - damage, 0), 999)
-			var unit_name: String = str(before_state.get(uid, {}).get("unit_name", "Unit"))
-			var unit = _resolve_unit_for_replay_id(int(uid))
-			if is_instance_valid(unit) and unit is Unit:
-				unit_name = unit.def.name
-			var elim := " (eliminated)" if end_hp <= 0 else ""
-			summary_lines.append("  %s: %d HP → %d (-%d)%s" % [unit_name, start_hp, end_hp, damage, elim])
 	if summary_lines.size() > 0 and summary_lines[0] == "":
 		summary_lines.remove_at(0)
 	return summary_lines
@@ -935,7 +978,7 @@ func _build_replay_summary_entry_suffix(entry: Dictionary, died_ids: Array) -> S
 		return " (eliminated)"
 	return ""
 
-func _replay_turn_recording(replay_recording: Dictionary) -> void:
+func _replay_turn_recording(replay_recording: Dictionary, replay_turn: int = 0) -> void:
 	battle_phase = BattlePhase.Phase.EXECUTING
 	EventBus.unit_selected_for_planning.emit(null)
 	EventBus.show_selected_unit_cell.emit(null)
@@ -943,6 +986,12 @@ func _replay_turn_recording(replay_recording: Dictionary) -> void:
 	var replay_return_state: Dictionary = _capture_replay_return_state()
 	_restore_before_state(replay_recording.get("before_state", {}))
 	var hex_map_node = get_parent().get_node_or_null("hex_map")
+	if hex_map_node and hex_map_node.has_method("refresh_fog"):
+		hex_map_node.refresh_fog()
+	var visible_unit_ids: Dictionary = _collect_visible_replay_unit_ids()
+	var summary_lines: Array = _build_replay_summary_lines(replay_recording, visible_unit_ids)
+	var replay_title_turn: int = replay_turn if replay_turn > 0 else turn_number
+	EventBus.show_replay_summary.emit(summary_lines, "Turn %d actions" % replay_title_turn)
 	var actions_by_type := _build_replay_actions_by_type(replay_recording.get("actions", []))
 	var ctx := TurnExecutor.ExecutionContext.new(
 		groups,
