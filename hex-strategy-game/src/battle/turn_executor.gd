@@ -101,7 +101,7 @@ static func _handle_abilities(action_type: String, entries: Array, ctx: Executio
 	if not attack_entries.is_empty():
 		await _handle_attacks.call(action_type, attack_entries, ctx)
 	if not support_entries.is_empty():
-		_handle_support(action_type, support_entries, ctx)
+		await _handle_support.call(action_type, support_entries, ctx)
 
 static func _handle_reload(_action_type: String, entries: Array, ctx: ExecutionContext) -> void:
 	for entry in entries:
@@ -157,6 +157,9 @@ static func _handle_support(_action_type: String, entries: Array, ctx: Execution
 					target.add_child(effect)
 		if ctx.apply_damage:
 			ctx.recording.actions.append({ "type": _action_type, "unit": supporter, "unit_id": _recording_unit_id(supporter), "ac": ac })
+		# Play supporter's ability animation (e.g. medic heal)
+		var play_animation: bool = ctx.tree != null
+		await supporter.play_ability_animation(ac, play_animation)
 
 static func _handle_spawn(action_type: String, entries: Array, ctx: ExecutionContext) -> void:
 	for entry in entries:

@@ -207,7 +207,20 @@ const ACTION_CONFIGS: Dictionary = {
 		color = "#FBC02D",
 		energy_consumption = 0,
 		tile_resource_depletion = 1,
+		## Scout can only recruit people from villages, not crystals or other resources.
 		allowed_resource_types = ["people"],
+	},
+	"mine_crystal": {
+		key = "mine_crystal",
+		type = "extract",
+		name = "Mine",
+		pattern = "self",
+		min_range = 0,
+		max_range = 0,
+		color = "#64B5F6",
+		energy_consumption = 0,
+		tile_resource_depletion = 1,
+		allowed_resource_types = ["crystal"],
 	},
 	"spawn_zergling": {
 		key = "spawn_zergling",
@@ -224,10 +237,52 @@ const ACTION_CONFIGS: Dictionary = {
 		name = "Spawn Scout",
 		pattern = "self",
 		color = "#8B4513",
-		energy_consumption = 5,
+		energy_consumption = 0,
 		spawn_unit = "res://src/unit/definitions/scout.tres",
 		required_group_resource_type = "people",
+		required_group_resource_amount = 3,
+	},
+	"create_infantry_camp": {
+		key = "create_infantry_camp",
+		type = "spawn",
+		name = "Create Marine Corp",
+		pattern = "self_or_adjacent",
+		color = "#8B4513",
+		energy_consumption = 0,
+		spawn_unit = "res://src/unit/definitions/infantry_camp.tres",
+		required_group_resource_type = "crystal",
 		required_group_resource_amount = 5,
+	},
+	"spawn_marine": {
+		key = "spawn_marine",
+		type = "spawn",
+		name = "Spawn Marine",
+		pattern = "self",
+		color = "#8B4513",
+		energy_consumption = 0,
+		spawn_unit = "res://src/unit/definitions/marine.tres",
+		required_group_resources = [{"type": "crystal", "amount": 1}, {"type": "people", "amount": 4}],
+	},
+	"spawn_medic": {
+		key = "spawn_medic",
+		type = "spawn",
+		name = "Spawn Medic",
+		pattern = "self",
+		color = "#8B4513",
+		energy_consumption = 0,
+		spawn_unit = "res://src/unit/definitions/medic.tres",
+		required_group_resources = [{"type": "crystal", "amount": 2}, {"type": "people", "amount": 3}],
+	},
+	"spawn_excavator": {
+		key = "spawn_excavator",
+		type = "spawn",
+		name = "Spawn Excavator",
+		pattern = "self",
+		color = "#8B4513",
+		energy_consumption = 0,
+		spawn_unit = "res://src/unit/definitions/excavator.tres",
+		required_group_resource_type = "crystal",
+		required_group_resource_amount = 2,
 	},
 }
 
@@ -299,8 +354,13 @@ func get_ability_definitions_for_action(action_key: String) -> Array[ActionDefin
 		for ad in result:
 			ad.action_key = action_key
 		return result
-	if action_key in ["spawn_zergling", "spawn_scout"]:
+	if action_key in ["spawn_zergling", "spawn_scout", "spawn_marine", "spawn_medic", "spawn_excavator"]:
 		var result: Array[ActionDefinition] = _build_self_definitions(config.get("name", "Spawn"))
+		for ad in result:
+			ad.action_key = action_key
+		return result
+	if action_key == "create_infantry_camp":
+		var result: Array[ActionDefinition] = _build_self_or_adjacent_definitions(config.get("name", "Create"))
 		for ad in result:
 			ad.action_key = action_key
 		return result

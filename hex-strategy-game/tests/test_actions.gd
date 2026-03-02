@@ -14,6 +14,8 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_scout_visibility_range(tests) and ok
 	ok = _test_medic_definition_stats_and_actions(tests) and ok
 	ok = _test_zerg_vs_terran_includes_medic(tests) and ok
+	ok = _test_zerg_vs_terran_v2_scenario_exists(tests) and ok
+	ok = _test_excavator_debug_scenario_exists(tests) and ok
 	ok = _test_medic_heal_debug_scenario_exists(tests) and ok
 	ok = _test_extract_tile_action_config(tests) and ok
 	ok = _test_recruit_people_action_config(tests) and ok
@@ -198,6 +200,83 @@ static func _test_zerg_vs_terran_includes_medic(tests: Node) -> bool:
 	tests._pass("zerg_vs_terran scenario includes terran medic")
 	return true
 
+static func _test_zerg_vs_terran_v2_scenario_exists(tests: Node) -> bool:
+	tests._log("test_actions: zerg_vs_terran_v2 has base+marine+scout vs zergling+spawning_pool")
+	var scenario: Dictionary = Scenarios.get_scenario_by_id("zerg_vs_terran_v2")
+	if scenario.is_empty():
+		tests._fail("zerg_vs_terran_v2 scenario should exist")
+		return false
+	var has_base := false
+	var has_marine := false
+	var has_scout := false
+	var has_zergling := false
+	var has_spawning_pool := false
+	for g in scenario.get("groups", []):
+		var group_name: String = str(g.get("name", ""))
+		var units: Array = g.get("units", [])
+		if group_name == "player":
+			for u in units:
+				var def: String = str(u.get("def_path", ""))
+				if def == "res://src/unit/definitions/terran_base.tres" or def == "res://src/unit/definitions/infantry_camp.tres":
+					has_base = true
+				elif def == "res://src/unit/definitions/marine.tres":
+					has_marine = true
+				elif def == "res://src/unit/definitions/scout.tres":
+					has_scout = true
+		if group_name == "opponent" and bool(g.get("ai", false)):
+			for u in units:
+				var def: String = str(u.get("def_path", ""))
+				if def == "res://src/unit/definitions/zergling.tres":
+					has_zergling = true
+				elif def == "res://src/unit/definitions/spawning_pool.tres":
+					has_spawning_pool = true
+	if not has_base:
+		tests._fail("zerg_vs_terran_v2 should include player terran base")
+		return false
+	if not has_marine:
+		tests._fail("zerg_vs_terran_v2 should include player marine")
+		return false
+	if not has_scout:
+		tests._fail("zerg_vs_terran_v2 should include player scout")
+		return false
+	if not has_zergling:
+		tests._fail("zerg_vs_terran_v2 should include opponent zergling")
+		return false
+	if not has_spawning_pool:
+		tests._fail("zerg_vs_terran_v2 should include opponent spawning pool")
+		return false
+	tests._pass("zerg_vs_terran_v2 has base+marine+scout vs zergling+spawning_pool")
+	return true
+
+static func _test_excavator_debug_scenario_exists(tests: Node) -> bool:
+	tests._log("test_actions: excavator_debug has excavator on crystal tile")
+	var scenario: Dictionary = Scenarios.get_scenario_by_id("excavator_debug")
+	if scenario.is_empty():
+		tests._fail("excavator_debug scenario should exist")
+		return false
+	var has_excavator := false
+	var has_crystal := false
+	for g in scenario.get("groups", []):
+		if str(g.get("name", "")) == "player":
+			for u in g.get("units", []):
+				if str(u.get("def_path", "")) == "res://src/unit/definitions/excavator.tres":
+					has_excavator = true
+					break
+	var tile_resources: Dictionary = scenario.get("tile_resources", {})
+	for key in tile_resources:
+		var entry = tile_resources[key]
+		if entry is Dictionary and str(entry.get("resource_type", "")) == "crystal":
+			has_crystal = true
+			break
+	if not has_excavator:
+		tests._fail("excavator_debug should include player excavator")
+		return false
+	if not has_crystal:
+		tests._fail("excavator_debug should include crystal tile")
+		return false
+	tests._pass("excavator_debug has excavator on crystal tile")
+	return true
+
 static func _test_medic_heal_debug_scenario_exists(tests: Node) -> bool:
 	tests._log("test_actions: medic_heal_debug includes medic, damaged marine, and attacking viper")
 	var scenario: Dictionary = Scenarios.get_scenario_by_id("medic_heal_debug")
@@ -267,7 +346,7 @@ static func _test_recruit_people_action_config(tests: Node) -> bool:
 	return true
 
 static func _test_spawn_scout_action_config(tests: Node) -> bool:
-	tests._log("test_actions: spawn_scout action requires people and spawns scout")
+	tests._log("test_actions: spawn_scout action requires 3 people and spawns scout")
 	var c: Dictionary = Actions.get_action_config("spawn_scout")
 	if c.is_empty():
 		tests._fail("spawn_scout config should exist")
@@ -281,8 +360,8 @@ static func _test_spawn_scout_action_config(tests: Node) -> bool:
 	if c.get("required_group_resource_type", "") != "people":
 		tests._fail("spawn_scout should require people resource type")
 		return false
-	if int(c.get("required_group_resource_amount", 0)) != 5:
-		tests._fail("spawn_scout should require exactly 5 people")
+	if int(c.get("required_group_resource_amount", 0)) != 3:
+		tests._fail("spawn_scout should require exactly 3 people")
 		return false
 	tests._pass("spawn_scout action config")
 	return true

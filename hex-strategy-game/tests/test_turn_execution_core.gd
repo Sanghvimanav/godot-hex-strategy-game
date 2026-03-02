@@ -426,10 +426,10 @@ static func _test_execute_turn_heal_and_incoming_damage_same_turn_maintains_heal
 	return true
 
 static func _test_execute_turn_spawn_scout_requires_people(tests: Node) -> bool:
-	tests._log("test_turn_execution_core: spawn_scout requires 5 people")
+	tests._log("test_turn_execution_core: spawn_scout requires 3 people")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "resources": { "people": 4 }, "units": [
+			{ "name": "player", "ai": false, "resources": { "people": 2 }, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/terran_base.tres", "cell": [0, 0], "health": 6, "max_health": 6, "energy": 5, "max_energy": 5 }
 			]},
 			{ "name": "opponent", "ai": false, "units": [] }
@@ -443,10 +443,7 @@ static func _test_execute_turn_spawn_scout_requires_people(tests: Node) -> bool:
 	}
 	var blocked_recording := TurnExecutionCore.execute_turn(game_state, player_actions)
 	if game_state.get("groups", [])[0].get("units", []).size() != 1:
-		tests._fail("spawn_scout should not spawn when people < 5")
-		return false
-	if int(game_state.get("groups", [])[0].get("units", [])[0].get("energy", -1)) != 5:
-		tests._fail("blocked spawn_scout should not consume energy")
+		tests._fail("spawn_scout should not spawn when people < 3")
 		return false
 	for a in blocked_recording.get("actions", []):
 		if a.get("type", "") == "spawn":
@@ -455,20 +452,21 @@ static func _test_execute_turn_spawn_scout_requires_people(tests: Node) -> bool:
 	var groups_after_block: Array = game_state.get("groups", [])
 	var player_group_after_block: Dictionary = groups_after_block[0]
 	var player_resources_after_block: Dictionary = player_group_after_block.get("resources", {})
-	player_resources_after_block["people"] = 5
+	player_resources_after_block["people"] = 3
 	player_group_after_block["resources"] = player_resources_after_block
 	groups_after_block[0] = player_group_after_block
 	game_state["groups"] = groups_after_block
 	var spawn_recording := TurnExecutionCore.execute_turn(game_state, player_actions)
 	var units_after_spawn: Array = game_state.get("groups", [])[0].get("units", [])
 	if units_after_spawn.size() != 2:
-		tests._fail("spawn_scout should spawn a new scout when people >= 5")
+		tests._fail("spawn_scout should spawn a new scout when people >= 3")
 		return false
 	if units_after_spawn[1].get("def_path", "") != "res://src/unit/definitions/scout.tres":
 		tests._fail("spawn_scout should create scout unit, got %s" % units_after_spawn[1].get("def_path", ""))
 		return false
-	if int(units_after_spawn[0].get("energy", -1)) != 0:
-		tests._fail("successful spawn_scout should consume 5 energy")
+	var people_after: int = int(game_state.get("groups", [])[0].get("resources", {}).get("people", -1))
+	if people_after != 0:
+		tests._fail("successful spawn_scout should consume 3 people, got %d remaining" % people_after)
 		return false
 	var has_spawn_record := false
 	for a in spawn_recording.get("actions", []):
@@ -478,7 +476,7 @@ static func _test_execute_turn_spawn_scout_requires_people(tests: Node) -> bool:
 	if not has_spawn_record:
 		tests._fail("spawn_scout should record a spawn action")
 		return false
-	tests._pass("spawn_scout requires 5 people")
+	tests._pass("spawn_scout requires 3 people")
 	return true
 
 static func _test_execute_turn_scout_attack_ray_damages_only_target_tile(tests: Node) -> bool:

@@ -54,12 +54,8 @@ func _can_extract_from_current_cell(action_key: String) -> bool:
 	return true
 
 func _has_required_group_resources(config: Dictionary) -> bool:
-	var required_type: String = str(config.get("required_group_resource_type", ""))
-	var required_amount: int = int(config.get("required_group_resource_amount", 0))
-	if required_type.is_empty() or required_amount <= 0:
-		return true
-	var inventory: Dictionary = _get_group_resource_inventory()
-	return int(inventory.get(required_type, 0)) >= required_amount
+	var inv: Dictionary = _get_group_resource_inventory()
+	return TurnExecutionCore.has_required_group_resources({"resources": inv}, config)
 
 func _get_group_resource_inventory() -> Dictionary:
 	var group_node: Node = unit.get_parent()

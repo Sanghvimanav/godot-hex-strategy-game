@@ -244,6 +244,34 @@ static func _add_group_resource(group: Dictionary, resource_type: String, amount
 	resources[safe_type] = int(resources.get(safe_type, 0)) + amount
 	group["resources"] = resources
 
+static func _consume_group_resources_for_spawn(group: Dictionary, config: Dictionary) -> void:
+	var multi: Array = config.get("required_group_resources", [])
+	if multi is Array and multi.size() > 0:
+		for req in multi:
+			if not (req is Dictionary):
+				continue
+			var rtype: String = str(req.get("type", ""))
+			var ramt: int = int(req.get("amount", 0))
+			if rtype.is_empty() or ramt <= 0:
+				continue
+			var resources = group.get("resources", {})
+			if not (resources is Dictionary):
+				resources = {}
+			var current: int = int(resources.get(rtype, 0))
+			resources[rtype] = maxi(0, current - ramt)
+			group["resources"] = resources
+		return
+	var required_type: String = str(config.get("required_group_resource_type", ""))
+	var required_amount: int = int(config.get("required_group_resource_amount", 0))
+	if required_type.is_empty() or required_amount <= 0:
+		return
+	var resources = group.get("resources", {})
+	if not (resources is Dictionary):
+		resources = {}
+	var current: int = int(resources.get(required_type, 0))
+	resources[required_type] = maxi(0, current - required_amount)
+	group["resources"] = resources
+
 static func get_group_resource_amount(group: Dictionary, resource_type: String) -> int:
 	if resource_type.is_empty():
 		return 0
@@ -253,6 +281,18 @@ static func get_group_resource_amount(group: Dictionary, resource_type: String) 
 	return int(resources.get(resource_type, 0))
 
 static func has_required_group_resources(group: Dictionary, config: Dictionary) -> bool:
+	var multi: Array = config.get("required_group_resources", [])
+	if multi is Array and multi.size() > 0:
+		for req in multi:
+			if not (req is Dictionary):
+				continue
+			var rtype: String = str(req.get("type", ""))
+			var ramt: int = int(req.get("amount", 0))
+			if rtype.is_empty() or ramt <= 0:
+				continue
+			if get_group_resource_amount(group, rtype) < ramt:
+				return false
+		return true
 	var required_type: String = str(config.get("required_group_resource_type", ""))
 	var required_amount: int = int(config.get("required_group_resource_amount", 0))
 	if required_type.is_empty() or required_amount <= 0:
@@ -611,6 +651,12 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				if def_dict.is_empty():
 					continue
 				var uc: Array = unit.get("cell", [0, 0])
+				var spawn_cell: Array
+				if config.get("pattern", "") == "self_or_adjacent":
+					var ep = action.get("end_point", uc)
+					spawn_cell = [int(ep[0]) if ep is Array and ep.size() > 0 else int(uc[0]), int(ep[1]) if ep is Array and ep.size() > 1 else int(uc[1])]
+				else:
+					spawn_cell = [int(uc[0]), int(uc[1])]
 				var max_id: int = 0
 				for g in game_state.get("groups", []):
 					for u in g.get("units", []):
@@ -619,7 +665,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				var new_unit: Dictionary = {
 					"unit_id": new_id,
 					"def_path": spawn_path,
-					"cell": [int(uc[0]), int(uc[1])],
+					"cell": spawn_cell.duplicate(),
 					"health": def_dict.get("max_health", 2),
 					"max_health": def_dict.get("max_health", 2),
 					"energy": def_dict.get("start_energy", 0),
@@ -627,13 +673,14 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 					"is_active": true
 				}
 				entry.group.get("units", []).append(new_unit)
+				_consume_group_resources_for_spawn(entry.group, config)
 				recording.actions.append({
 					type = "spawn",
 					unit_id = unit.get("unit_id", -1),
 					action_key = action.get("action_key", ""),
 					spawned_unit_id = new_id,
 					spawn_path = spawn_path,
-					cell = uc.duplicate()
+					cell = spawn_cell.duplicate()
 				})
 				_mark_submitted_action_executed(submitted_by_id, int(entry.get("submission_id", -1)))
 			_apply_phase_stat_deltas(game_state, {}, phase_spawn_energy_delta_by_id, recording)

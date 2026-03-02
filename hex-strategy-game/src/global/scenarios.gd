@@ -100,6 +100,21 @@ func _build_scenarios() -> void:
 			]},
 		]
 	})
+	# Excavator debug: Excavator on crystal tile to test mine + resupply
+	available_scenarios.append({
+		"id": "excavator_debug",
+		"display_name": "Excavator Debug (Mine + Resupply)",
+		"groups": [
+			{"name": "player", "units": [
+				{"def_path": "res://src/unit/definitions/excavator.tres", "cell": Vector2i(0, 0), "energy": 3},
+				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(1, 0), "energy": 1},
+			]},
+			{"name": "opponent", "ai": true, "units": [
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-3, 2)},
+			]},
+		],
+		"tile_resources": _crystal_tile_resources([Vector2i(0, 0)], 2),
+	})
 	# Baneling debug: Baneling vs Marines (test explode)
 	available_scenarios.append({
 		"id": "baneling_debug",
@@ -130,24 +145,24 @@ func _build_scenarios() -> void:
 			]},
 		]
 	})
-	# Scout recruit test: gather people from villages, then unlock base scout spawn.
+	# Scout recruit test: gather crystals + people, then unlock base scout spawn (3 people) or infantry camp (5 crystals).
 	available_scenarios.append({
 		"id": "scout_recruit_test",
-		"display_name": "Scout Recruit Test (Village -> Base Spawn)",
+		"display_name": "Scout Recruit Test (Crystal + Village -> Base Spawn)",
 		"groups": [
-			{"name": "player", "units": [
+			{"name": "player", "resources": {"crystal": 0, "people": 0}, "units": [
 				{"def_path": "res://src/unit/definitions/terran_base.tres", "cell": Vector2i(0, 0)},
 				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(1, 0)},
+				{"def_path": "res://src/unit/definitions/excavator.tres", "cell": Vector2i(-1, 0)},
 			]},
 			{"name": "opponent", "ai": true, "units": [
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 4)},
 			]},
 		],
-		"tile_resources": _with_village_resources([
-			Vector2i(1, 0),
-			Vector2i(2, 0),
-			Vector2i(-1, 1),
-		], 5),
+		"tile_resources": _merge_tile_resources(
+			_crystal_tile_resources([Vector2i(-1, 0), Vector2i(2, 0)], 5),
+			_village_tile_resources([Vector2i(1, 0), Vector2i(-1, 1)], 5),
+		),
 	})
 	# Stun debug: verify stun is shown on the next planning turn and after replay.
 	available_scenarios.append({
@@ -161,6 +176,32 @@ func _build_scenarios() -> void:
 				{"def_path": "res://src/unit/definitions/viper.tres", "cell": Vector2i(2, 0)},
 			]},
 		]
+	})
+	# Zerg vs Terran v2: Terran Base + Marine + Scout + Excavator vs Zergling + Spawning Pool at opposite ends
+	available_scenarios.append({
+		"id": "zerg_vs_terran_v2",
+		"display_name": "Zerg vs Terran v2",
+		"groups": [
+			{"name": "player", "resources": {"crystal": 0, "people": 0}, "units": [
+				{"def_path": "res://src/unit/definitions/terran_base.tres", "cell": Vector2i(4, 0)},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(3, 0)},
+				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(4, 1)},
+				{"def_path": "res://src/unit/definitions/excavator.tres", "cell": Vector2i(3, 1)},
+			]},
+			{"name": "opponent", "ai": true, "units": [
+				{"def_path": "res://src/unit/definitions/spawning_pool.tres", "cell": Vector2i(-4, 0)},
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 1)},
+			]},
+		],
+		"tile_resources": _merge_tile_resources(
+			_crystal_tile_resources([
+				Vector2i(2, 0), Vector2i(-2, 0), Vector2i(0, 2), Vector2i(0, -2),
+				Vector2i(2, -2), Vector2i(-2, 2),
+			], 20),
+			_village_tile_resources([
+				Vector2i(1, 1), Vector2i(-1, -1), Vector2i(2, -1), Vector2i(-2, 1),
+			], 5),
+		),
 	})
 	# Zerg vs Terran: Base + 2 Marines + Scout + Medic vs 5 Zerglings + Baneling + Viper (randomized positions)
 	available_scenarios.append({
@@ -301,6 +342,22 @@ func _random_village_tiles_for_zerg_vs_terran() -> Dictionary:
 		var c: Vector2i = candidates[i]
 		out[HexGrid.get_cell_key(c.x, c.y)] = { amount = VILLAGE_AMOUNT, max_amount = VILLAGE_AMOUNT, resource_type = "village" }
 	return out
+
+func _crystal_tile_resources(cells: Array, amount_per_tile: int = 20) -> Dictionary:
+	var crystal: Dictionary = {}
+	var capped_amount: int = maxi(1, amount_per_tile)
+	var crystal_color: Color = Color(0.25, 0.45, 1.0)
+	for raw_cell in cells:
+		var cell: Vector2i = Vector2i.ZERO
+		if raw_cell is Vector2i:
+			cell = raw_cell
+		elif raw_cell is Vector2:
+			cell = Vector2i(int(raw_cell.x), int(raw_cell.y))
+		elif raw_cell is Array and raw_cell.size() >= 2:
+			cell = Vector2i(int(raw_cell[0]), int(raw_cell[1]))
+		var key := HexGrid.get_cell_key(cell.x, cell.y)
+		crystal[key] = { amount = capped_amount, max_amount = capped_amount, resource_type = "crystal", resource_color = crystal_color }
+	return crystal
 
 func _village_tile_resources(cells: Array, amount_per_village: int = 5) -> Dictionary:
 	var villages: Dictionary = {}

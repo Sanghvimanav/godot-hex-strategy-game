@@ -209,10 +209,10 @@ static func _test_validate_action_extract_requires_resource(tests: Node) -> bool
 	return true
 
 static func _test_validate_action_spawn_scout_requires_people(tests: Node) -> bool:
-	tests._log("test_server_turn_executor: validate_action spawn_scout requires 5 people")
+	tests._log("test_server_turn_executor: validate_action spawn_scout requires 3 people")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "resources": { "people": 4 }, "units": [
+			{ "name": "player", "ai": false, "resources": { "people": 2 }, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/terran_base.tres", "cell": [0, 0], "health": 6, "max_health": 6, "energy": 5, "max_energy": 5 }
 			]},
 			{ "name": "opponent", "ai": false, "units": [] }
@@ -226,20 +226,20 @@ static func _test_validate_action_spawn_scout_requires_people(tests: Node) -> bo
 	}
 	var fail_result := ServerTurnExecutor.validate_action(game_state, spawn_action, "player")
 	if fail_result.get("valid", false):
-		tests._fail("spawn_scout should fail when people < 5")
+		tests._fail("spawn_scout should fail when people < 3")
 		return false
 	var groups_after_fail: Array = game_state.get("groups", [])
 	var player_group_after_fail: Dictionary = groups_after_fail[0]
 	var resources_after_fail: Dictionary = player_group_after_fail.get("resources", {})
-	resources_after_fail["people"] = 5
+	resources_after_fail["people"] = 3
 	player_group_after_fail["resources"] = resources_after_fail
 	groups_after_fail[0] = player_group_after_fail
 	game_state["groups"] = groups_after_fail
 	var ok_result := ServerTurnExecutor.validate_action(game_state, spawn_action, "player")
 	if not ok_result.get("valid", false):
-		tests._fail("spawn_scout should pass when people >= 5: %s" % ok_result.get("error", ""))
+		tests._fail("spawn_scout should pass when people >= 3: %s" % ok_result.get("error", ""))
 		return false
-	tests._pass("validate_action spawn_scout requires 5 people")
+	tests._pass("validate_action spawn_scout requires 3 people")
 	return true
 
 static func _test_execute_turn_delegates_to_core(tests: Node) -> bool:

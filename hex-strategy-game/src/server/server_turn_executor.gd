@@ -33,6 +33,17 @@ static func _has_extractable_resource_for_config(entry: Variant, action_config: 
 	return int(entry) > 0
 
 static func _required_resource_error(config: Dictionary) -> String:
+	var multi: Array = config.get("required_group_resources", [])
+	if multi is Array and multi.size() > 0:
+		var parts: Array[String] = []
+		for req in multi:
+			if req is Dictionary:
+				var rtype: String = str(req.get("type", ""))
+				var ramt: int = int(req.get("amount", 0))
+				if not rtype.is_empty() and ramt > 0:
+					parts.append("%d %s" % [ramt, rtype])
+		if parts.size() > 0:
+			return "Requires " + ", ".join(parts)
 	var required_type: String = str(config.get("required_group_resource_type", ""))
 	var required_amount: int = int(config.get("required_group_resource_amount", 0))
 	if required_type.is_empty() or required_amount <= 0:
@@ -92,6 +103,13 @@ static func validate_action(game_state: Dictionary, action: Dictionary, group_na
 	if atype == "spawn":
 		if not TurnExecutionCore.has_required_group_resources(group, config):
 			return { valid = false, error = _required_resource_error(config) }
+		if str(action_key) == "create_infantry_camp":
+			var dist: int = HexGrid.hex_distance(uq, ur, end_cell.x, end_cell.y)
+			if dist > 1:
+				return { valid = false, error = "Must be placed on adjacent tile" }
+			var occupied: Array = TurnExecutionCore.get_units_at_cell(game_state, end_cell)
+			if occupied.size() > 0:
+				return { valid = false, error = "Tile already occupied" }
 	if atype in MOVE_TYPES:
 		var full_path: Array = path.duplicate()
 		full_path.append([end_cell.x, end_cell.y])

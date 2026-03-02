@@ -1,6 +1,6 @@
 class_name Unit
 extends Node2D
-## Uses global Actions autoload for ACTION_ORDER etc. (do not preload actions.gd here).
+	## Uses global Actions autoload for ACTION_ORDER etc. (do not preload actions.gd here).
 
 signal movement_complete
 signal attack_beginning(ac)
@@ -105,6 +105,20 @@ func attack(ac: ActionInstance, play_animation: bool = true) -> void:
 	if play_animation:
 		sprite.play('idle')
 
+## Plays ability animation (e.g. heal) without consuming energy. Used for support actions.
+func play_ability_animation(ac: ActionInstance, play_animation: bool = true) -> void:
+	attack_beginning.emit(ac)
+	if play_animation and sprite.sprite_frames != null and sprite.sprite_frames.has_animation("attack"):
+		sprite.play('attack')
+		if ac.end_point.x < cell.x:
+			sprite.flip_h = true
+		elif ac.end_point.x > cell.x:
+			sprite.flip_h = false
+		await sprite.animation_finished
+	attack_complete.emit()
+	if play_animation:
+		sprite.play('idle')
+
 func move_along_path(path: Array) -> void:
 	if path.is_empty():
 		movement_complete.emit()
@@ -132,8 +146,7 @@ func get_attack_paths() -> Array:
 ## Action types this unit cannot perform this turn. Stun disables all actions.
 func get_disabled_action_types() -> Array:
 	for e in active_effects:
-		# Newly applied effects are queued for next turn via pending_first_tick.
-		if e is UnitEffect and e.kind == UnitEffect.Kind.Stun and not e.pending_first_tick:
+		if e is UnitEffect and e.kind == UnitEffect.Kind.Stun:
 			return Actions.ACTION_ORDER.duplicate()
 	return []
 

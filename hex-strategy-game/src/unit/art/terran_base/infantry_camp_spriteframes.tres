@@ -1,0 +1,54 @@
+[gd_resource type="SpriteFrames" format=3 uid="uid://bnqgefkd3nd5d"]
+
+[ext_resource type="Texture2D" uid="uid://d1qmqre1is06f" path="res://src/unit/art/terran_base/ChatGPT Image Mar 1, 2026, 10_56_54 PM.png" id="1_tex"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_7il58"]
+atlas = ExtResource("1_tex")
+region = Rect2(0, 0, 1536, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_1gh5g"]
+atlas = ExtResource("1_tex")
+region = Rect2(0, 0, 1536, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_fvx83"]
+atlas = ExtResource("1_tex")
+region = Rect2(0, 0, 1536, 1024)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_7j3nn"]
+atlas = ExtResource("1_tex")
+region = Rect2(0, 0, 1536, 1024)
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_7il58")
+}],
+"loop": false,
+"name": &"attack",
+"speed": 1.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_1gh5g")
+}],
+"loop": false,
+"name": &"death",
+"speed": 1.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_fvx83")
+}],
+"loop": false,
+"name": &"hit",
+"speed": 1.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_7j3nn")
+}],
+"loop": true,
+"name": &"idle",
+"speed": 1.0
+}]

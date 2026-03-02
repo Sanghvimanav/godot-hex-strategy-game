@@ -3,7 +3,8 @@ extends Node2D
 ## Replaces square TileMap for hexagonal gameplay.
 
 const TileResourceConfig = preload("res://src/maps/resources/tile_resource_config.gd")
-const VILLAGE_OVERLAY_TEXTURE = preload("res://src/maps/resources/village_overlay.svg")
+const VILLAGE_OVERLAY_TEXTURE = preload("res://src/maps/resources/Charming pixel art village scene.png")
+const CRYSTAL_OVERLAY_TEXTURE = preload("res://src/maps/resources/crystals.png")
 
 @export_range(8, 96, 2) var spacing: int = 24  ## Distance between hex centers
 @export_range(4, 64, 1) var tile_radius: float = 12  ## Visual size of each hex (radius from center to corner)
@@ -137,13 +138,18 @@ func _refresh_tile_visual(key: String) -> void:
 func _is_village_tile(tile: Dictionary) -> bool:
 	return int(tile.get("resource_max_amount", 0)) > 0 and str(tile.get("resource_type", "")) == "people"
 
+func _is_crystal_tile(tile: Dictionary) -> bool:
+	return int(tile.get("resource_max_amount", 0)) > 0 and str(tile.get("resource_type", "")) == "crystal"
+
 func _refresh_tile_overlay(key: String) -> void:
 	if not grid.has(key):
 		return
 	var tile: Dictionary = grid[key]
 	var has_village_overlay: bool = _is_village_tile(tile)
+	var has_crystal_overlay: bool = _is_crystal_tile(tile)
+	var has_overlay: bool = has_village_overlay or has_crystal_overlay
 	var existing: Sprite2D = _resource_overlay_nodes[key] if _resource_overlay_nodes.has(key) else null
-	if not has_village_overlay:
+	if not has_overlay:
 		if existing != null:
 			existing.queue_free()
 			_resource_overlay_nodes.erase(key)
@@ -151,17 +157,29 @@ func _refresh_tile_overlay(key: String) -> void:
 	var pos := HexGrid.hex_to_pixel(int(tile.q), int(tile.r), _bounds.min_x, _bounds.min_y, 0.0)
 	if existing == null:
 		existing = Sprite2D.new()
-		existing.texture = VILLAGE_OVERLAY_TEXTURE
 		existing.centered = true
 		existing.z_index = 1  ## Above tile fill, below units.
 		add_child(existing)
 		_resource_overlay_nodes[key] = existing
-	existing.position = pos + Vector2(0, tile_radius * 0.35)
-	var tex_size: Vector2 = existing.texture.get_size() if existing.texture else Vector2.ONE
-	if tex_size.x > 0.0:
-		var desired_width: float = tile_radius * 2.25
-		var scale_factor: float = desired_width / tex_size.x
-		existing.scale = Vector2(scale_factor, scale_factor)
+	if has_village_overlay:
+		existing.texture = VILLAGE_OVERLAY_TEXTURE
+		existing.region_enabled = false
+		existing.position = pos + Vector2(0, tile_radius * 0.35)
+		var tex_size: Vector2 = existing.texture.get_size() if existing.texture else Vector2.ONE
+		if tex_size.x > 0.0:
+			var desired_width: float = tile_radius * 2.25
+			var scale_x: float = desired_width / tex_size.x
+			var height_multiplier: float = 1.4  ## Stretch village taller (1.0 = same as width scale)
+			existing.scale = Vector2(scale_x, scale_x * height_multiplier)
+	elif has_crystal_overlay:
+		existing.texture = CRYSTAL_OVERLAY_TEXTURE
+		existing.region_enabled = false
+		existing.position = pos + Vector2(0, tile_radius * -0.2)
+		var tex_size: Vector2 = existing.texture.get_size() if existing.texture else Vector2.ONE
+		if tex_size.x > 0.0:
+			var desired_width: float = tile_radius * 1.1
+			var scale_x: float = desired_width / tex_size.x
+			existing.scale = Vector2(scale_x, scale_x)
 
 func has_resource_at_cell(cell: Vector2i) -> bool:
 	var key := HexGrid.get_cell_key(int(cell.x), int(cell.y))
@@ -252,6 +270,8 @@ func apply_tile_resource_state(state: Dictionary) -> void:
 			var resource_type: String = str(entry.get("resource_type", tile.get("resource_type", "")))
 			if not resource_type.is_empty():
 				tile.resource_type = resource_type
+			if entry.has("resource_color") and entry.resource_color is Color:
+				tile.resource_color = entry.resource_color
 		grid[key] = tile
 		_refresh_tile_visual(key)
 

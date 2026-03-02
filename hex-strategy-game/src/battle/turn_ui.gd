@@ -223,6 +223,8 @@ func _build_hovered_resource_line(cell_i: Vector2i, info: Dictionary) -> String:
 	var max_amount: int = int(info.get("max_amount", 0))
 	if rtype == "people":
 		return "Hover [%d,%d]: village people %d/%d" % [cell_i.x, cell_i.y, amount, max_amount]
+	if rtype == "crystal":
+		return "Hover [%d,%d]: crystal %d/%d" % [cell_i.x, cell_i.y, amount, max_amount]
 	return "Hover [%d,%d]: %s %d/%d" % [cell_i.x, cell_i.y, rtype, amount, max_amount]
 
 func _get_visible_units_at_hovered_cell(cell_i: Vector2i) -> Array:
