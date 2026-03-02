@@ -15,28 +15,92 @@ func get_move_paths() -> Array:
 
 ## Returns Array of {ac: ActionInstance, is_move: bool} for a single action key.
 func get_options_for_action_key(action_key: String) -> Array:
+	var availability: Dictionary = get_action_availability(action_key)
+	var options = availability.get("options", [])
+	return options if options is Array else []
+
+## Returns {available: bool, options: Array, reason: String} for one action key.
+func get_action_availability(action_key: String) -> Dictionary:
+	if unit == null or unit.def == null:
+		return {
+			"available": false,
+			"options": [],
+			"reason": "No unit selected",
+		}
 	var result: Array = []
 	if action_key in unit.def.move_action_keys:
 		var defs_arr: Array = Actions.get_move_definitions_for_action(action_key)
 		for def in defs_arr:
 			var ac: ActionInstance = def.to_action_instance(unit) as ActionInstance
 			result.append({"ac": ac, "is_move": true})
-		return _filter_acs_and_wrap(result)
-	if action_key in unit.def.ability_action_keys:
-		var config: Dictionary = Actions.get_action_config(action_key)
-		if not _has_required_group_resources(config):
-			return []
-		if Actions.get_action_type(action_key) == "extract" and not _can_extract_from_current_cell(action_key):
-			return []
-		var power: int = int(config.get("energy_consumption", 0))
-		if power > 0 and unit.max_energy > 0 and unit.energy < power:
-			return []
+		var move_options: Array = _filter_acs_and_wrap(result)
+		return {
+			"available": not move_options.is_empty(),
+			"options": move_options,
+			"reason": "No valid targets" if move_options.is_empty() else "",
+		}
+	elif action_key in unit.def.ability_action_keys:
+		var reason: String = _get_ability_unavailability_reason(action_key)
+		if not reason.is_empty():
+			return {
+				"available": false,
+				"options": [],
+				"reason": reason,
+			}
 		var defs_arr: Array = Actions.get_ability_definitions_for_action(action_key)
 		for def in defs_arr:
 			var ac: ActionInstance = def.to_action_instance(unit) as ActionInstance
 			result.append({"ac": ac, "is_move": false})
-		return _filter_acs_and_wrap(result)
-	return []
+		var ability_options: Array = _filter_acs_and_wrap(result)
+		return {
+			"available": not ability_options.is_empty(),
+			"options": ability_options,
+			"reason": "No valid targets" if ability_options.is_empty() else "",
+		}
+	return {
+		"available": false,
+		"options": [],
+		"reason": "Unknown action",
+	}
+
+func _get_ability_unavailability_reason(action_key: String) -> String:
+	var config: Dictionary = Actions.get_action_config(action_key)
+	if not _has_required_group_resources(config):
+		return _format_required_group_resources_reason(config)
+	if Actions.get_action_type(action_key) == "extract" and not _can_extract_from_current_cell(action_key):
+		return _format_extract_unavailability_reason(config)
+	var power: int = int(config.get("energy_consumption", 0))
+	if power > 0 and unit.max_energy > 0 and unit.energy < power:
+		return "Requires %d energy (%d/%d)" % [power, unit.energy, unit.max_energy]
+	return ""
+
+func _format_required_group_resources_reason(config: Dictionary) -> String:
+	var required_type: String = str(config.get("required_group_resource_type", "resource"))
+	var required_amount: int = int(config.get("required_group_resource_amount", 0))
+	if required_amount <= 0:
+		return "Insufficient group resources"
+	return "Requires %d %s" % [required_amount, required_type]
+
+func _format_extract_unavailability_reason(config: Dictionary) -> String:
+	var cell: Vector2 = unit.cell
+	var key := HexGrid.get_cell_key(int(cell.x), int(cell.y))
+	if not Navigation.grid.has(key):
+		return "No resource on this tile"
+	var tile: Dictionary = Navigation.grid[key]
+	if int(tile.get("resource_amount", 0)) <= 0:
+		return "No resource left on this tile"
+	var allowed_types = config.get("allowed_resource_types", [])
+	if allowed_types is Array and not allowed_types.is_empty():
+		var resource_type: String = str(tile.get("resource_type", ""))
+		if resource_type not in allowed_types:
+			return "Requires %s resource on this tile" % _join_resource_types(allowed_types)
+	return "Unavailable on this tile"
+
+func _join_resource_types(resource_types: Array) -> String:
+	var names: Array[String] = []
+	for resource_type in resource_types:
+		names.append(str(resource_type))
+	return ", ".join(names)
 
 func _can_extract_from_current_cell(action_key: String) -> bool:
 	var cell: Vector2 = unit.cell

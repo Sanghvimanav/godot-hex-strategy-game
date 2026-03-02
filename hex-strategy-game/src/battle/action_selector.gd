@@ -44,13 +44,23 @@ func _rebuild_buttons() -> void:
 		return
 	var def: UnitDefinition = _current_unit.def
 	for key in def.move_action_keys:
-		if _current_unit.abilities_db.get_options_for_action_key(key).is_empty():
-			continue
-		_add_action_button(move_buttons, key, true)
+		var availability: Dictionary = _current_unit.abilities_db.get_action_availability(key)
+		_add_action_button(
+			move_buttons,
+			key,
+			true,
+			bool(availability.get("available", false)),
+			str(availability.get("reason", ""))
+		)
 	for key in def.ability_action_keys:
-		if _current_unit.abilities_db.get_options_for_action_key(key).is_empty():
-			continue
-		_add_action_button(ability_buttons, key, false)
+		var availability: Dictionary = _current_unit.abilities_db.get_action_availability(key)
+		_add_action_button(
+			ability_buttons,
+			key,
+			false,
+			bool(availability.get("available", false)),
+			str(availability.get("reason", ""))
+		)
 	for key in def.passive_action_keys:
 		var config: Dictionary = Actions.get_action_config(key)
 		var name_str: String = config.get("name", key)
@@ -64,7 +74,7 @@ func _clear_buttons(container: Control) -> void:
 	for c in container.get_children():
 		c.queue_free()
 
-func _add_action_button(parent: Control, action_key: String, _is_move: bool) -> void:
+func _add_action_button(parent: Control, action_key: String, _is_move: bool, is_available: bool, unavailable_reason: String) -> void:
 	var config: Dictionary = Actions.ACTION_CONFIGS.get(action_key, {})
 	var name_str: String = config.get("name", action_key)
 	var color_hex: String = config.get("color", "#888888")
@@ -72,6 +82,9 @@ func _add_action_button(parent: Control, action_key: String, _is_move: bool) -> 
 	btn.text = name_str
 	btn.custom_minimum_size = Vector2(90, 36)
 	btn.pressed.connect(_on_action_pressed.bind(action_key))
+	btn.disabled = not is_available
+	if btn.disabled:
+		btn.tooltip_text = unavailable_reason if not unavailable_reason.is_empty() else "Unavailable right now"
 	var bg := StyleBoxFlat.new()
 	bg.bg_color = Color(color_hex)
 	bg.corner_radius_top_left = 4
@@ -79,8 +92,16 @@ func _add_action_button(parent: Control, action_key: String, _is_move: bool) -> 
 	bg.corner_radius_bottom_right = 4
 	bg.corner_radius_bottom_left = 4
 	btn.add_theme_stylebox_override("normal", bg)
+	var disabled_bg := StyleBoxFlat.new()
+	disabled_bg.bg_color = Color(color_hex).darkened(0.45)
+	disabled_bg.corner_radius_top_left = 4
+	disabled_bg.corner_radius_top_right = 4
+	disabled_bg.corner_radius_bottom_right = 4
+	disabled_bg.corner_radius_bottom_left = 4
+	btn.add_theme_stylebox_override("disabled", disabled_bg)
 	btn.add_theme_color_override("font_color", Color.WHITE)
-	if action_key == _selected_action_key:
+	btn.add_theme_color_override("font_disabled_color", Color(0.8, 0.8, 0.8))
+	if action_key == _selected_action_key and is_available:
 		var sel := StyleBoxFlat.new()
 		sel.bg_color = Color(color_hex).lightened(0.2)
 		sel.corner_radius_top_left = 4
