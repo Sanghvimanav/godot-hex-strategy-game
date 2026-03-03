@@ -10,7 +10,6 @@ enum Type {
 	Zergling,
 	TerranBase,
 	Hydralisk,
-	SpawningPool,
 	Excavator,
 	InfantryCamp,
 	Fester,

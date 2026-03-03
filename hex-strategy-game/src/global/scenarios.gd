@@ -203,7 +203,6 @@ func _build_scenarios() -> void:
 				{"def_path": "res://src/unit/definitions/excavator.tres", "cell": Vector2i(3, 1)},
 			]},
 			{"name": "opponent", "ai": true, "resources": {"people": 0}, "units": [
-				{"def_path": "res://src/unit/definitions/spawning_pool.tres", "cell": Vector2i(-4, 0)},
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 1)},
 				{"def_path": "res://src/unit/definitions/fester.tres", "cell": Vector2i(-3, 1)},
 			]},
@@ -274,20 +273,6 @@ func _build_scenarios() -> void:
 			Vector2i(3, -2),
 		], 10),
 	})
-	# Spawning Pool: Pool + 2 Zerglings vs Marine (test spawn)
-	available_scenarios.append({
-		"id": "spawning_pool",
-		"display_name": "Spawning Pool (Pool + Zerglings vs Marine)",
-		"groups": [
-			{"name": "player", "units": [
-				{"def_path": "res://src/unit/definitions/spawning_pool.tres", "cell": Vector2i(0, 0)},
-				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(1, 0)},
-			]},
-			{"name": "opponent", "ai": true, "units": [
-				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(-1, 1)},
-			]},
-		],
-	})
 	# Fester debug: Fester on village to test consume (2→1 people, +1 heal) and spawn zergling (3 people, 3 HP)
 	available_scenarios.append({
 		"id": "fester_debug",
@@ -305,6 +290,22 @@ func _build_scenarios() -> void:
 
 func select_scenario(id: String) -> void:
 	selected_scenario_id = id
+
+## Returns true if scenario is a debug/test scenario (for UI grouping).
+func is_debug_scenario(s: Dictionary) -> bool:
+	var id: String = str(s.get("id", ""))
+	return "_debug" in id or "_test" in id
+
+## Returns main scenarios (non-debug) and debug scenarios as separate arrays.
+func get_scenarios_by_category() -> Dictionary:
+	var main: Array[Dictionary] = []
+	var debug: Array[Dictionary] = []
+	for s in available_scenarios:
+		if is_debug_scenario(s):
+			debug.append(s)
+		else:
+			main.append(s)
+	return {"main": main, "debug": debug}
 
 func get_selected_scenario() -> Dictionary:
 	return get_scenario_by_id(selected_scenario_id)

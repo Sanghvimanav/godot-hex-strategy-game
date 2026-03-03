@@ -203,7 +203,7 @@ static func _test_zerg_vs_terran_includes_medic(tests: Node) -> bool:
 	return true
 
 static func _test_zerg_vs_terran_v2_scenario_exists(tests: Node) -> bool:
-	tests._log("test_actions: zerg_vs_terran_v2 has base+marine+scout vs zergling+spawning_pool")
+	tests._log("test_actions: zerg_vs_terran_v2 has base+marine+scout vs zergling+fester")
 	var scenario: Dictionary = Scenarios.get_scenario_by_id("zerg_vs_terran_v2")
 	if scenario.is_empty():
 		tests._fail("zerg_vs_terran_v2 scenario should exist")
@@ -212,7 +212,7 @@ static func _test_zerg_vs_terran_v2_scenario_exists(tests: Node) -> bool:
 	var has_marine := false
 	var has_scout := false
 	var has_zergling := false
-	var has_spawning_pool := false
+	var has_fester := false
 	for g in scenario.get("groups", []):
 		var group_name: String = str(g.get("name", ""))
 		var units: Array = g.get("units", [])
@@ -230,8 +230,8 @@ static func _test_zerg_vs_terran_v2_scenario_exists(tests: Node) -> bool:
 				var def: String = str(u.get("def_path", ""))
 				if def == "res://src/unit/definitions/zergling.tres":
 					has_zergling = true
-				elif def == "res://src/unit/definitions/spawning_pool.tres":
-					has_spawning_pool = true
+				elif def == "res://src/unit/definitions/fester.tres":
+					has_fester = true
 	if not has_base:
 		tests._fail("zerg_vs_terran_v2 should include player terran base")
 		return false
@@ -244,10 +244,10 @@ static func _test_zerg_vs_terran_v2_scenario_exists(tests: Node) -> bool:
 	if not has_zergling:
 		tests._fail("zerg_vs_terran_v2 should include opponent zergling")
 		return false
-	if not has_spawning_pool:
-		tests._fail("zerg_vs_terran_v2 should include opponent spawning pool")
+	if not has_fester:
+		tests._fail("zerg_vs_terran_v2 should include opponent fester")
 		return false
-	tests._pass("zerg_vs_terran_v2 has base+marine+scout vs zergling+spawning_pool")
+	tests._pass("zerg_vs_terran_v2 has base+marine+scout vs zergling+fester")
 	return true
 
 static func _test_excavator_debug_scenario_exists(tests: Node) -> bool:
