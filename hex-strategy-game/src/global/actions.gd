@@ -73,10 +73,10 @@ const ACTION_CONFIGS: Dictionary = {
 		color = "#FF0000",
 		energy_consumption = 2,
 	},
-	"attack_viper": {
-		key = "attack_viper",
+	"attack_hydralisk": {
+		key = "attack_hydralisk",
 		type = "ability",
-		name = "Parasitic Bite",
+		name = "Needle Spine",
 		pattern = "target",
 		min_range = 2,
 		max_range = 2,
@@ -188,7 +188,7 @@ const ACTION_CONFIGS: Dictionary = {
 	},
 	"extract_tile": {
 		key = "extract_tile",
-		type = "extract",
+		type = "ability",
 		name = "Extract",
 		pattern = "self",
 		min_range = 0,
@@ -199,7 +199,7 @@ const ACTION_CONFIGS: Dictionary = {
 	},
 	"recruit_people": {
 		key = "recruit_people",
-		type = "extract",
+		type = "ability",
 		name = "Recruit",
 		pattern = "self",
 		min_range = 0,
@@ -210,9 +210,24 @@ const ACTION_CONFIGS: Dictionary = {
 		## Scout can only recruit people from villages, not crystals or other resources.
 		allowed_resource_types = ["people"],
 	},
+	"consume": {
+		key = "consume",
+		type = "ability",
+		name = "Consume",
+		pattern = "self",
+		min_range = 0,
+		max_range = 0,
+		color = "#8B4513",
+		energy_consumption = 0,
+		tile_resource_depletion = 2,
+		## Consume takes 2 from village but only adds 1 to Zerg people count.
+		group_resource_gain = 1,
+		heal_amount = 1,
+		allowed_resource_types = ["people"],
+	},
 	"mine_crystal": {
 		key = "mine_crystal",
-		type = "extract",
+		type = "ability",
 		name = "Mine",
 		pattern = "self",
 		min_range = 0,
@@ -230,6 +245,30 @@ const ACTION_CONFIGS: Dictionary = {
 		color = "#8B4513",
 		energy_consumption = 5,
 		spawn_unit = "res://src/unit/definitions/zergling.tres",
+	},
+	"spawn_fester_zergling": {
+		key = "spawn_fester_zergling",
+		type = "spawn",
+		name = "Spawn Zergling",
+		pattern = "self",
+		color = "#8B4513",
+		energy_consumption = 0,
+		spawn_unit = "res://src/unit/definitions/zergling.tres",
+		required_group_resource_type = "people",
+		required_group_resource_amount = 3,
+		spawn_self_damage_amount = 3,
+	},
+	"spawn_shardling": {
+		key = "spawn_shardling",
+		type = "spawn",
+		name = "Spawn Shardling",
+		pattern = "self",
+		color = "#9C27B0",
+		energy_consumption = 0,
+		spawn_unit = "res://src/unit/definitions/shardling.tres",
+		required_group_resource_type = "people",
+		required_group_resource_amount = 3,
+		spawn_self_damage_amount = 4,
 	},
 	"spawn_scout": {
 		key = "spawn_scout",
@@ -284,12 +323,34 @@ const ACTION_CONFIGS: Dictionary = {
 		required_group_resource_type = "crystal",
 		required_group_resource_amount = 2,
 	},
+	"evolve_baneling": {
+		key = "evolve_baneling",
+		type = "spawn",
+		name = "Evolve to Baneling",
+		pattern = "self",
+		color = "#FF69B4",
+		energy_consumption = 0,
+		spawn_unit = "res://src/unit/definitions/baneling.tres",
+		required_group_resources = [{"type": "people", "amount": 3}, {"type": "crystal", "amount": 1}],
+		spawn_self_damage_amount = 4,
+	},
+	"evolve_hydralisk": {
+		key = "evolve_hydralisk",
+		type = "spawn",
+		name = "Evolve to Hydralisk",
+		pattern = "self",
+		color = "#9C27B0",
+		energy_consumption = 0,
+		spawn_unit = "res://src/unit/definitions/hydralisk.tres",
+		required_group_resources = [{"type": "people", "amount": 2}, {"type": "crystal", "amount": 2}],
+		spawn_self_damage_amount = 4,
+	},
 }
 
-## Processing order: moves, then abilities by speed (fast / normal / slow), then spawn/extract.
+## Processing order: moves, then abilities by speed (fast / normal / slow), then spawn.
 const ACTION_ORDER: Array[String] = [
 	"fast move", "fast ability", "move", "ability", "slow move", "slow ability",
-	"spawn", "extract"
+	"spawn"
 ]
 
 func _ready() -> void:
@@ -354,7 +415,7 @@ func get_ability_definitions_for_action(action_key: String) -> Array[ActionDefin
 		for ad in result:
 			ad.action_key = action_key
 		return result
-	if action_key in ["spawn_zergling", "spawn_scout", "spawn_marine", "spawn_medic", "spawn_excavator"]:
+	if action_key in ["spawn_zergling", "spawn_fester_zergling", "spawn_shardling", "spawn_scout", "spawn_marine", "spawn_medic", "spawn_excavator", "evolve_baneling", "evolve_hydralisk"]:
 		var result: Array[ActionDefinition] = _build_self_definitions(config.get("name", "Spawn"))
 		for ad in result:
 			ad.action_key = action_key
@@ -374,11 +435,6 @@ func get_ability_definitions_for_action(action_key: String) -> Array[ActionDefin
 		for ad in result:
 			ad.action_key = action_key
 		return result
-	if atype == "extract":
-		var extract_defs: Array[ActionDefinition] = _build_self_definitions(config.get("name", "Extract"))
-		for ad in extract_defs:
-			ad.action_key = action_key
-		return extract_defs
 	if atype not in ["fast ability", "ability", "slow ability"]:
 		push_warning("Action %s is not an ability type (got %s)" % [action_key, atype])
 		return []

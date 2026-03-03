@@ -17,8 +17,8 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_get_damage_cells_non_self_uses_path(tests) and ok
 	ok = _test_get_damage_cells_target_pattern_only_end_point(tests) and ok
 	ok = _test_get_damage_cells_self_or_adjacent_uses_absolute_endpoint(tests) and ok
-	ok = _test_attack_viper_has_target_pattern(tests) and ok
-	ok = _test_target_damage_effect_spawns_for_scout_and_viper(tests) and ok
+	ok = _test_attack_hydralisk_has_target_pattern(tests) and ok
+	ok = _test_target_damage_effect_spawns_for_scout_and_hydralisk(tests) and ok
 	ok = _test_handle_support_heals_absolute_target_and_spawns_effect(tests) and ok
 	ok = _test_fast_ability_before_move(tests) and ok
 	ok = _test_phase_animations_complete_before_next(tests) and ok
@@ -98,7 +98,7 @@ static func _test_get_damage_cells_non_self_uses_path(tests: Node) -> bool:
 	return true
 
 static func _test_get_damage_cells_target_pattern_only_end_point(tests: Node) -> bool:
-	tests._log("test_turn_executor: get_damage_cells target pattern (Viper) only end_point")
+	tests._log("test_turn_executor: get_damage_cells target pattern (Hydralisk) only end_point")
 	var ac := ActionInstance.new(null, null)
 	ac.path = [Vector2(1, 0)]
 	ac.end_point = Vector2(2, 0)
@@ -129,13 +129,13 @@ static func _test_get_damage_cells_self_or_adjacent_uses_absolute_endpoint(tests
 	tests._pass("get_damage_cells self_or_adjacent uses absolute end_point")
 	return true
 
-static func _test_attack_viper_has_target_pattern(tests: Node) -> bool:
-	tests._log("test_turn_executor: attack_viper has pattern target")
-	var config: Dictionary = Actions.get_action_config("attack_viper")
+static func _test_attack_hydralisk_has_target_pattern(tests: Node) -> bool:
+	tests._log("test_turn_executor: attack_hydralisk has pattern target")
+	var config: Dictionary = Actions.get_action_config("attack_hydralisk")
 	if config.get("pattern", "") != "target":
-		tests._fail("attack_viper should have pattern=target (damage only target tile), got %s" % config.get("pattern", ""))
+		tests._fail("attack_hydralisk should have pattern=target (damage only target tile), got %s" % config.get("pattern", ""))
 		return false
-	tests._pass("attack_viper pattern=target")
+	tests._pass("attack_hydralisk pattern=target")
 	return true
 
 static func _count_target_damage_effect_nodes(parent: Node) -> int:
@@ -150,28 +150,28 @@ static func _clear_target_damage_effect_nodes(parent: Node) -> void:
 		if str(child.name).begins_with("target_damage_effect"):
 			child.free()
 
-static func _test_target_damage_effect_spawns_for_scout_and_viper(tests: Node) -> bool:
-	tests._log("test_turn_executor: target damage effect spawns for scout/viper attacks")
+static func _test_target_damage_effect_spawns_for_scout_and_hydralisk(tests: Node) -> bool:
+	tests._log("test_turn_executor: target damage effect spawns for scout/hydralisk attacks")
 	var root := Node2D.new()
 	tests.add_child(root)
 	var player := Node2D.new()
 	player.name = "player"
 	root.add_child(player)
 	var scout_def := load("res://src/unit/definitions/scout.tres") as UnitDefinition
-	var viper_def := load("res://src/unit/definitions/viper.tres") as UnitDefinition
+	var hydralisk_def := load("res://src/unit/definitions/hydralisk.tres") as UnitDefinition
 	var marine_def := load("res://src/unit/definitions/marine.tres") as UnitDefinition
-	if scout_def == null or viper_def == null or marine_def == null:
-		tests._fail("scout, viper, and marine definitions must load for target effect test")
+	if scout_def == null or hydralisk_def == null or marine_def == null:
+		tests._fail("scout, hydralisk, and marine definitions must load for target effect test")
 		root.free()
 		return false
 	var scout := UNIT_SCENE.instantiate() as Unit
 	scout.def = scout_def
 	scout.starting_cell = Vector2i(0, 0)
 	player.add_child(scout)
-	var viper := UNIT_SCENE.instantiate() as Unit
-	viper.def = viper_def
-	viper.starting_cell = Vector2i(1, 0)
-	player.add_child(viper)
+	var hydralisk := UNIT_SCENE.instantiate() as Unit
+	hydralisk.def = hydralisk_def
+	hydralisk.starting_cell = Vector2i(1, 0)
+	player.add_child(hydralisk)
 	var marine := UNIT_SCENE.instantiate() as Unit
 	marine.def = marine_def
 	marine.starting_cell = Vector2i(2, 0)
@@ -190,20 +190,20 @@ static func _test_target_damage_effect_spawns_for_scout_and_viper(tests: Node) -
 		root.free()
 		return false
 
-	var viper_attack_def := ActionDefinition.new()
-	viper_attack_def.action_key = "attack_viper"
-	var viper_ac := ActionInstance.new(viper_attack_def, viper)
-	viper_ac.path = []
-	viper_ac.end_point = Vector2(1, 1)
-	if not TurnExecutor._should_play_target_damage_effect(viper, viper_ac):
-		tests._fail("attack_viper should be eligible for target damage effect")
+	var hydralisk_attack_def := ActionDefinition.new()
+	hydralisk_attack_def.action_key = "attack_hydralisk"
+	var hydralisk_ac := ActionInstance.new(hydralisk_attack_def, hydralisk)
+	hydralisk_ac.path = []
+	hydralisk_ac.end_point = Vector2(1, 1)
+	if not TurnExecutor._should_play_target_damage_effect(hydralisk, hydralisk_ac):
+		tests._fail("attack_hydralisk should be eligible for target damage effect")
 		root.free()
 		return false
 	_clear_target_damage_effect_nodes(player)
-	TurnExecutor._play_target_damage_effect_for_attack(viper, viper_ac)
-	var count_after_viper := _count_target_damage_effect_nodes(player)
-	if count_after_viper != 1:
-		tests._fail("attack_viper should spawn one target_damage_effect, got %d" % count_after_viper)
+	TurnExecutor._play_target_damage_effect_for_attack(hydralisk, hydralisk_ac)
+	var count_after_hydralisk := _count_target_damage_effect_nodes(player)
+	if count_after_hydralisk != 1:
+		tests._fail("attack_hydralisk should spawn one target_damage_effect, got %d" % count_after_hydralisk)
 		root.free()
 		return false
 
@@ -220,7 +220,7 @@ static func _test_target_damage_effect_spawns_for_scout_and_viper(tests: Node) -
 		root.free()
 		return false
 
-	tests._pass("target damage effect spawns for scout/viper only")
+	tests._pass("target damage effect spawns for scout/hydralisk only")
 	root.free()
 	return true
 

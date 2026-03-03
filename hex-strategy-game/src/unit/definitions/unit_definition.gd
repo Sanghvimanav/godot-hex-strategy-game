@@ -9,10 +9,12 @@ enum Type {
 	Peasant,
 	Zergling,
 	TerranBase,
-	Viper,
+	Hydralisk,
 	SpawningPool,
 	Excavator,
-	InfantryCamp
+	InfantryCamp,
+	Fester,
+	Shardling
 }
 
 ## Faction for team identity, ally/enemy rules, and future content. Used alongside group assignment.

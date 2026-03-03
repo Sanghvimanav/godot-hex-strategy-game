@@ -29,6 +29,11 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_execute_turn_zergling_fast_move_hits_scout_before_scout_move(tests) and ok
 	ok = _test_execute_turn_zergling_moves_onto_marine_attack_tile_takes_one_damage(tests) and ok
 	ok = _test_execute_turn_summary_marks_cancelled_when_unit_eliminated_first(tests) and ok
+	ok = _test_execute_turn_consume_depletes_2_adds_1_heals_fester(tests) and ok
+	ok = _test_execute_turn_spawn_fester_zergling_costs_people_and_hp(tests) and ok
+	ok = _test_execute_turn_spawn_shardling_costs_4_hp(tests) and ok
+	ok = _test_execute_turn_evolve_shardling_to_baneling(tests) and ok
+	ok = _test_execute_turn_evolve_shardling_to_hydralisk(tests) and ok
 	ok = _test_check_win_condition_one_alive(tests) and ok
 	ok = _test_check_win_condition_both_alive(tests) and ok
 	ok = _test_check_win_condition_both_dead(tests) and ok
@@ -395,7 +400,7 @@ static func _test_execute_turn_heal_and_incoming_damage_same_turn_maintains_heal
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 3, "max_health": 4, "energy": 4, "max_energy": 4 }
 			]},
 			{ "name": "opponent", "ai": true, "units": [
-				{ "unit_id": 3, "def_path": "res://src/unit/definitions/viper.tres", "cell": [-1, 1], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
+				{ "unit_id": 3, "def_path": "res://src/unit/definitions/hydralisk.tres", "cell": [-1, 1], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
 			]}
 		]
 	}
@@ -404,7 +409,7 @@ static func _test_execute_turn_heal_and_incoming_damage_same_turn_maintains_heal
 			{ "unit_id": 1, "action_key": "heal_adjacent", "path": [], "end_point": [1, 0] },
 		],
 		"opponent": [
-			{ "unit_id": 3, "action_key": "attack_viper", "path": [], "end_point": [1, 0] },
+			{ "unit_id": 3, "action_key": "attack_hydralisk", "path": [], "end_point": [1, 0] },
 		]
 	}
 	TurnExecutionCore.execute_turn(game_state, player_actions)
@@ -830,4 +835,208 @@ static func _test_stunned_unit_cannot_move(tests: Node) -> bool:
 		tests._fail("unit should move once stun expires; expected [2,0], got %s" % cell_after_expire)
 		return false
 	tests._pass("stunned unit cannot move and stun expires after turn")
+	return true
+
+static func _test_execute_turn_consume_depletes_2_adds_1_heals_fester(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: consume depletes 2 from village, adds 1 to group, heals Fester by 1")
+	var target_key := HexGrid.get_cell_key(0, 0)
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "resources": {"people": 0}, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/fester.tres", "cell": [0, 0], "health": 4, "max_health": 6, "energy": 0, "max_energy": 0 }
+			]}
+		],
+		"tile_resources": {
+			target_key: { "amount": 5, "max_amount": 5, "resource_type": "people" }
+		}
+	}
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "consume", "path": [], "end_point": [0, 0] }
+		]
+	}
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var tile_entry: Dictionary = game_state.get("tile_resources", {}).get(target_key, {})
+	var tile_amount: int = int(tile_entry.get("amount", -1))
+	if tile_amount != 3:
+		tests._fail("consume should deplete 2 from village (5->3), got amount %d" % tile_amount)
+		return false
+	var group_resources: Dictionary = game_state.get("groups", [{}])[0].get("resources", {})
+	var people_after: int = int(group_resources.get("people", 0))
+	if people_after != 1:
+		tests._fail("consume should add 1 to group people (not 2), got %d" % people_after)
+		return false
+	var fester_found := TurnExecutionCore.find_unit_by_id(game_state, 1)
+	if fester_found.is_empty():
+		tests._fail("Fester should exist after consume")
+		return false
+	var fester_health: int = fester_found.unit.get("health", 0)
+	if fester_health != 5:
+		tests._fail("consume should heal Fester by 1 (4->5), got health %d" % fester_health)
+		return false
+	tests._pass("consume depletes 2 adds 1 heals Fester")
+	return true
+
+static func _test_execute_turn_spawn_fester_zergling_costs_people_and_hp(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: spawn_fester_zergling costs 3 people and 3 HP")
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "resources": {"people": 5}, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/fester.tres", "cell": [0, 0], "health": 6, "max_health": 6, "energy": 0, "max_energy": 0 }
+			]}
+		]
+	}
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "spawn_fester_zergling", "path": [], "end_point": [0, 0] }
+		]
+	}
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var group: Dictionary = game_state.get("groups", [{}])[0]
+	var people_after: int = int(group.get("resources", {}).get("people", 0))
+	if people_after != 2:
+		tests._fail("spawn_fester_zergling should consume 3 people (5->2), got %d" % people_after)
+		return false
+	var fester_found := TurnExecutionCore.find_unit_by_id(game_state, 1)
+	if fester_found.is_empty():
+		tests._fail("Fester should exist after spawn (with 3 HP)")
+		return false
+	var fester_health: int = fester_found.unit.get("health", 0)
+	if fester_health != 3:
+		tests._fail("spawn_fester_zergling should cost Fester 3 HP (6->3), got health %d" % fester_health)
+		return false
+	var units: Array = group.get("units", [])
+	var zergling_count: int = 0
+	for u in units:
+		if str(u.get("def_path", "")) == "res://src/unit/definitions/zergling.tres":
+			zergling_count += 1
+	if zergling_count != 1:
+		tests._fail("spawn_fester_zergling should spawn 1 zergling, got %d" % zergling_count)
+		return false
+	tests._pass("spawn_fester_zergling costs 3 people and 3 HP")
+	return true
+
+static func _test_execute_turn_spawn_shardling_costs_4_hp(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: spawn_shardling costs 3 people + 4 HP, spawns 4-HP Shardling")
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "resources": {"people": 5}, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/fester.tres", "cell": [0, 0], "health": 6, "max_health": 6, "energy": 0, "max_energy": 0 }
+			]}
+		]
+	}
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "spawn_shardling", "path": [], "end_point": [0, 0] }
+		]
+	}
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var fester_found := TurnExecutionCore.find_unit_by_id(game_state, 1)
+	if fester_found.is_empty():
+		tests._fail("Fester should exist after spawn_shardling (with 2 HP)")
+		return false
+	var fester_health: int = fester_found.unit.get("health", 0)
+	if fester_health != 2:
+		tests._fail("spawn_shardling should cost Fester 4 HP (6->2), got health %d" % fester_health)
+		return false
+	var people_after: int = int(game_state.get("groups", [{}])[0].get("resources", {}).get("people", 0))
+	if people_after != 2:
+		tests._fail("spawn_shardling should consume 3 people (5->2), got %d" % people_after)
+		return false
+	var units: Array = game_state.get("groups", [{}])[0].get("units", [])
+	var shardling_count: int = 0
+	var shardling_health: int = 0
+	for u in units:
+		if str(u.get("def_path", "")) == "res://src/unit/definitions/shardling.tres":
+			shardling_count += 1
+			shardling_health = int(u.get("health", 0))
+	if shardling_count != 1:
+		tests._fail("spawn_shardling should spawn 1 Shardling, got %d" % shardling_count)
+		return false
+	if shardling_health != 4:
+		tests._fail("spawned Shardling should have 4 HP, got %d" % shardling_health)
+		return false
+	tests._pass("spawn_shardling costs 3 people + 4 HP, spawns 4-HP Shardling")
+	return true
+
+static func _test_execute_turn_evolve_shardling_to_baneling(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: evolve_baneling consumes 3 people + 1 crystal, replaces Shardling with Baneling")
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "resources": {"people": 5, "crystal": 3}, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/shardling.tres", "cell": [0, 0], "health": 4, "max_health": 4, "energy": 0, "max_energy": 0 }
+			]}
+		]
+	}
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "evolve_baneling", "path": [], "end_point": [0, 0] }
+		]
+	}
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var group: Dictionary = game_state.get("groups", [{}])[0]
+	var resources: Dictionary = group.get("resources", {})
+	if int(resources.get("people", 0)) != 2:
+		tests._fail("evolve_baneling should consume 3 people (5->2), got %d" % int(resources.get("people", 0)))
+		return false
+	if int(resources.get("crystal", 0)) != 2:
+		tests._fail("evolve_baneling should consume 1 crystal (3->2), got %d" % int(resources.get("crystal", 0)))
+		return false
+	var units: Array = group.get("units", [])
+	var baneling_count: int = 0
+	var shardling_count: int = 0
+	for u in units:
+		var path: String = str(u.get("def_path", ""))
+		if path == "res://src/unit/definitions/baneling.tres":
+			baneling_count += 1
+		elif path == "res://src/unit/definitions/shardling.tres":
+			shardling_count += 1
+	if baneling_count != 1:
+		tests._fail("evolve_baneling should spawn 1 Baneling, got %d" % baneling_count)
+		return false
+	if shardling_count != 0:
+		tests._fail("evolve_baneling should replace Shardling (it dies), got %d Shardlings" % shardling_count)
+		return false
+	tests._pass("evolve_baneling consumes 3 people + 1 crystal, replaces Shardling with Baneling")
+	return true
+
+static func _test_execute_turn_evolve_shardling_to_hydralisk(tests: Node) -> bool:
+	tests._log("test_turn_execution_core: evolve_hydralisk consumes 2 people + 2 crystals, replaces Shardling with Hydralisk")
+	var game_state := {
+		"groups": [
+			{ "name": "player", "ai": false, "resources": {"people": 5, "crystal": 5}, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/shardling.tres", "cell": [0, 0], "health": 4, "max_health": 4, "energy": 0, "max_energy": 0 }
+			]}
+		]
+	}
+	var player_actions := {
+		"player": [
+			{ "unit_id": 1, "action_key": "evolve_hydralisk", "path": [], "end_point": [0, 0] }
+		]
+	}
+	TurnExecutionCore.execute_turn(game_state, player_actions)
+	var group: Dictionary = game_state.get("groups", [{}])[0]
+	var resources: Dictionary = group.get("resources", {})
+	if int(resources.get("people", 0)) != 3:
+		tests._fail("evolve_hydralisk should consume 2 people (5->3), got %d" % int(resources.get("people", 0)))
+		return false
+	if int(resources.get("crystal", 0)) != 3:
+		tests._fail("evolve_hydralisk should consume 2 crystals (5->3), got %d" % int(resources.get("crystal", 0)))
+		return false
+	var units: Array = group.get("units", [])
+	var hydralisk_count: int = 0
+	var shardling_count: int = 0
+	for u in units:
+		var path: String = str(u.get("def_path", ""))
+		if path == "res://src/unit/definitions/hydralisk.tres":
+			hydralisk_count += 1
+		elif path == "res://src/unit/definitions/shardling.tres":
+			shardling_count += 1
+	if hydralisk_count != 1:
+		tests._fail("evolve_hydralisk should spawn 1 Hydralisk, got %d" % hydralisk_count)
+		return false
+	if shardling_count != 0:
+		tests._fail("evolve_hydralisk should replace Shardling (it dies), got %d Shardlings" % shardling_count)
+		return false
+	tests._pass("evolve_hydralisk consumes 2 people + 2 crystals, replaces Shardling with Hydralisk")
 	return true

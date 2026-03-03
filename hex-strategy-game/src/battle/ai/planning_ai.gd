@@ -24,6 +24,11 @@ static func pick_action(unit: Unit, groups: Array, get_units_at_cell: Callable) 
 		var entry = _pick_zergling_move(unit, options, enemies, groups)
 		if not entry.is_empty():
 			return entry
+	# Fester: consume on village, spawn when ready, move to village, avoid enemies
+	if _is_fester(unit):
+		var entry = _pick_fester_action(unit, options, enemies, groups)
+		if not entry.is_empty():
+			return entry
 	# Default: prefer move toward nearest enemy; when equidistant, pick randomly
 	var best_moves: Array = []
 	var best_dist := INF
@@ -101,6 +106,9 @@ static func _is_zergling(unit: Unit) -> bool:
 
 static func _is_baneling(unit: Unit) -> bool:
 	return unit.def != null and unit.def.name == "Baneling"
+
+static func _is_fester(unit: Unit) -> bool:
+	return unit.def != null and unit.def.name == "Fester"
 
 static func _get_allies(unit: Unit, groups: Array) -> Array:
 	var my_group: Node = unit.get_parent()
@@ -204,3 +212,110 @@ static func _pick_zergling_move(unit: Unit, options: Array, enemies: Array, grou
 			return entry
 	# Fall through to default
 	return {}
+
+## Fester AI: consume on village, spawn when ready, move to village, avoid enemies.
+static func _pick_fester_action(unit: Unit, options: Array, enemies: Array, groups: Array) -> Dictionary:
+	# 1. Consume when on village with 2+ people
+	if _cell_has_village_with_people(unit.cell, 2):
+		for entry in options:
+			if not entry.is_move and entry.ac.definition and entry.ac.definition.action_key == "consume":
+				return entry
+	# 2. Spawn zergling when has 3+ people and 4+ HP (need >3 HP to survive the 3 HP cost)
+	var people: int = _get_group_people(unit)
+	if people >= 3 and unit.health >= 4:
+		for entry in options:
+			if not entry.is_move and entry.ac.definition and entry.ac.definition.action_key == "spawn_fester_zergling":
+				return entry
+	# 2b. Spawn Shardling when 3+ people and 5+ HP (need >4 HP to survive the 4 HP cost)
+	if people >= 3 and unit.health >= 5:
+		for entry in options:
+			if not entry.is_move and entry.ac.definition and entry.ac.definition.action_key == "spawn_shardling":
+				return entry
+	# 3. Move toward nearest village with 2+ people, staying away from enemies (min dist 2)
+	var villages: Array = _get_village_cells_with_people(2)
+	if not villages.is_empty():
+		var min_enemy_dist := 2
+		var best_moves: Array = []
+		var best_village_dist := INF
+		for entry in options:
+			if not entry.is_move:
+				continue
+			var dest: Vector2 = entry.ac.end_point
+			var enemy_d: float = _dist_to_nearest_enemy(dest, enemies)
+			if enemy_d < min_enemy_dist:
+				continue  # Don't move too close to enemies
+			var village_d: float = _dist_to_nearest_cell(dest, villages)
+			if village_d < best_village_dist:
+				best_village_dist = village_d
+				best_moves = [entry]
+			elif village_d == best_village_dist:
+				best_moves.append(entry)
+		if not best_moves.is_empty():
+			return best_moves[randi_range(0, best_moves.size() - 1)]
+	# 4. If on village but can't consume (e.g. only 1 left), or nowhere to go: move away from enemies or Rest
+	var cur_enemy_d: float = _dist_to_nearest_enemy(unit.cell, enemies)
+	if cur_enemy_d < 2:
+		# Too close to enemies - move away
+		var move_options: Array = []
+		for entry in options:
+			if entry.is_move:
+				var d := _dist_to_nearest_enemy(entry.ac.end_point, enemies)
+				if d > cur_enemy_d:
+					move_options.append(entry)
+		if not move_options.is_empty():
+			return move_options[randi_range(0, move_options.size() - 1)]
+	# 5. Rest as fallback
+	for entry in options:
+		if not entry.is_move and entry.ac.definition and entry.ac.definition.action_key in ["reload", "rest_no_energy"]:
+			return entry
+	return {}
+
+static func _cell_has_village_with_people(cell: Vector2, min_amount: int) -> bool:
+	var key := HexGrid.get_cell_key(int(cell.x), int(cell.y))
+	if not Navigation.grid.has(key):
+		return false
+	var tile: Dictionary = Navigation.grid[key]
+	if str(tile.get("resource_type", "")) != "people":
+		return false
+	return int(tile.get("resource_amount", 0)) >= min_amount
+
+static func _get_village_cells_with_people(min_amount: int) -> Array:
+	var result: Array = []
+	for key in Navigation.grid:
+		var tile: Dictionary = Navigation.grid[key]
+		if str(tile.get("resource_type", "")) != "people":
+			continue
+		if int(tile.get("resource_amount", 0)) < min_amount:
+			continue
+		if tile.has("q") and tile.has("r"):
+			result.append(Vector2(tile.q, tile.r))
+		else:
+			var parts: Array = key.split(",")
+			if parts.size() >= 2:
+				result.append(Vector2(int(parts[0]), int(parts[1])))
+	return result
+
+static func _get_group_people(unit: Unit) -> int:
+	var group_node: Node = unit.get_parent()
+	if group_node == null or not group_node.has_meta("resource_inventory"):
+		return 0
+	var inv = group_node.get_meta("resource_inventory")
+	if not (inv is Dictionary):
+		return 0
+	return int(inv.get("people", 0))
+
+static func _dist_to_nearest_cell(cell: Vector2, targets: Array) -> float:
+	if targets.is_empty():
+		return INF
+	var min_d := INF
+	for t in targets:
+		var d: float
+		if t is Vector2:
+			d = HexGrid.hex_distance_vec(cell, t)
+		elif t is Vector2i:
+			d = HexGrid.hex_distance_vec(cell, Vector2(t.x, t.y))
+		else:
+			continue
+		if d < min_d:
+			min_d = d
+	return float(min_d)

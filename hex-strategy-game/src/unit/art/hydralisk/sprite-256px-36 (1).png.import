@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bhsephio6xfr4"
-path="res://.godot/imported/A-16-bit-pixel-art-game-sprite-of-an-alien-serpent-256px-36.png-49eb8bbdbd076c7c4ad7fb1790f2b0dd.ctex"
+uid="uid://btjlcbuhym5ir"
+path="res://.godot/imported/sprite-256px-36 (1).png-0db153a9e61b58d693e54dcd461660aa.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://src/unit/art/viper/A-16-bit-pixel-art-game-sprite-of-an-alien-serpent-256px-36.png"
-dest_files=["res://.godot/imported/A-16-bit-pixel-art-game-sprite-of-an-alien-serpent-256px-36.png-49eb8bbdbd076c7c4ad7fb1790f2b0dd.ctex"]
+source_file="res://src/unit/art/hydralisk/sprite-256px-36 (1).png"
+dest_files=["res://.godot/imported/sprite-256px-36 (1).png-0db153a9e61b58d693e54dcd461660aa.ctex"]
 
 [params]
 

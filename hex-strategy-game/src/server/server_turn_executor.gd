@@ -18,9 +18,10 @@ static func _has_extractable_resource(game_state: Dictionary, q: int, r: int) ->
 
 static func _has_extractable_resource_for_config(entry: Variant, action_config: Dictionary) -> bool:
 	var allowed_types = action_config.get("allowed_resource_types", [])
+	var required: int = maxi(1, int(action_config.get("tile_resource_depletion", 1)))
 	if entry is Dictionary:
 		var amount: int = int(entry.get("amount", entry.get("resource_amount", 0)))
-		if amount <= 0:
+		if amount < required:
 			return false
 		if allowed_types is Array and not allowed_types.is_empty():
 			var resource_type: String = str(entry.get("resource_type", ""))
@@ -30,7 +31,7 @@ static func _has_extractable_resource_for_config(entry: Variant, action_config: 
 		return false
 	if allowed_types is Array and not allowed_types.is_empty():
 		return false
-	return int(entry) > 0
+	return int(entry) >= required
 
 static func _required_resource_error(config: Dictionary) -> String:
 	var multi: Array = config.get("required_group_resources", [])
@@ -94,7 +95,7 @@ static func validate_action(game_state: Dictionary, action: Dictionary, group_na
 			return { valid = false, error = "Not enough energy" }
 
 	var atype: String = config.get("type", "")
-	if atype == "extract":
+	if int(config.get("tile_resource_depletion", 0)) > 0:
 		var tile_resources = game_state.get("tile_resources", {})
 		var key := HexGrid.get_cell_key(uq, ur)
 		var entry = tile_resources.get(key) if tile_resources is Dictionary else null
@@ -103,6 +104,9 @@ static func validate_action(game_state: Dictionary, action: Dictionary, group_na
 	if atype == "spawn":
 		if not TurnExecutionCore.has_required_group_resources(group, config):
 			return { valid = false, error = _required_resource_error(config) }
+		var spawn_self_dmg: int = int(config.get("spawn_self_damage_amount", 0))
+		if spawn_self_dmg > 0 and unit.get("health", 0) < spawn_self_dmg:
+			return { valid = false, error = "Requires at least %d HP to spawn" % spawn_self_dmg }
 		if str(action_key) == "create_infantry_camp":
 			var dist: int = HexGrid.hex_distance(uq, ur, end_cell.x, end_cell.y)
 			if dist > 1:

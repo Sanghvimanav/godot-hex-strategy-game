@@ -17,6 +17,8 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_zerg_vs_terran_v2_scenario_exists(tests) and ok
 	ok = _test_excavator_debug_scenario_exists(tests) and ok
 	ok = _test_medic_heal_debug_scenario_exists(tests) and ok
+	ok = _test_fester_debug_scenario_exists(tests) and ok
+	ok = _test_shardling_debug_scenario_exists(tests) and ok
 	ok = _test_extract_tile_action_config(tests) and ok
 	ok = _test_recruit_people_action_config(tests) and ok
 	ok = _test_spawn_scout_action_config(tests) and ok
@@ -106,8 +108,8 @@ static func _test_reload_recharge_slow_ability(tests: Node) -> bool:
 
 static func _test_attack_support_ability_types(tests: Node) -> bool:
 	tests._log("test_actions: attack and support map to ability phases")
-	if Actions.get_action_type("attack_viper") != "ability":
-		tests._fail("attack_viper should be ability")
+	if Actions.get_action_type("attack_hydralisk") != "ability":
+		tests._fail("attack_hydralisk should be ability")
 		return false
 	if Actions.get_action_type("resupply_adjacent") != "ability":
 		tests._fail("resupply_adjacent should be ability")
@@ -278,14 +280,14 @@ static func _test_excavator_debug_scenario_exists(tests: Node) -> bool:
 	return true
 
 static func _test_medic_heal_debug_scenario_exists(tests: Node) -> bool:
-	tests._log("test_actions: medic_heal_debug includes medic, damaged marine, and attacking viper")
+	tests._log("test_actions: medic_heal_debug includes medic, damaged marine, and attacking hydralisk")
 	var scenario: Dictionary = Scenarios.get_scenario_by_id("medic_heal_debug")
 	if scenario.is_empty():
 		tests._fail("medic_heal_debug scenario should exist")
 		return false
 	var has_medic := false
 	var has_damaged_marine := false
-	var has_ai_viper := false
+	var has_ai_hydralisk := false
 	for g in scenario.get("groups", []):
 		var group_name: String = str(g.get("name", ""))
 		var units: Array = g.get("units", [])
@@ -297,28 +299,85 @@ static func _test_medic_heal_debug_scenario_exists(tests: Node) -> bool:
 					has_damaged_marine = true
 		if group_name == "opponent" and bool(g.get("ai", false)):
 			for u in units:
-				if str(u.get("def_path", "")) == "res://src/unit/definitions/viper.tres":
-					has_ai_viper = true
+				if str(u.get("def_path", "")) == "res://src/unit/definitions/hydralisk.tres":
+					has_ai_hydralisk = true
 	if not has_medic:
 		tests._fail("medic_heal_debug should include a player medic")
 		return false
 	if not has_damaged_marine:
 		tests._fail("medic_heal_debug should include a marine with starting health 3")
 		return false
-	if not has_ai_viper:
-		tests._fail("medic_heal_debug should include an AI viper attacker")
+	if not has_ai_hydralisk:
+		tests._fail("medic_heal_debug should include an AI hydralisk attacker")
 		return false
-	tests._pass("medic_heal_debug includes medic, damaged marine, and attacking viper")
+	tests._pass("medic_heal_debug includes medic, damaged marine, and attacking hydralisk")
+	return true
+
+static func _test_fester_debug_scenario_exists(tests: Node) -> bool:
+	tests._log("test_actions: fester_debug scenario exists")
+	var scenario: Dictionary = Scenarios.get_scenario_by_id("fester_debug")
+	if scenario.is_empty():
+		tests._fail("fester_debug scenario should exist")
+		return false
+	var has_fester := false
+	for g in scenario.get("groups", []):
+		for u in g.get("units", []):
+			if str(u.get("def_path", "")) == "res://src/unit/definitions/fester.tres":
+				has_fester = true
+				break
+	if not has_fester:
+		tests._fail("fester_debug should include Fester unit")
+		return false
+	var tile_resources: Dictionary = scenario.get("tile_resources", {})
+	if tile_resources.is_empty():
+		tests._fail("fester_debug should have village tile for consume")
+		return false
+	tests._pass("fester_debug scenario exists")
+	return true
+
+static func _test_shardling_debug_scenario_exists(tests: Node) -> bool:
+	tests._log("test_actions: shardling_debug has Shardling on crystal tile with resources for evolve")
+	var scenario: Dictionary = Scenarios.get_scenario_by_id("shardling_debug")
+	if scenario.is_empty():
+		tests._fail("shardling_debug scenario should exist")
+		return false
+	var has_shardling := false
+	var has_crystal := false
+	var has_resources := false
+	for g in scenario.get("groups", []):
+		if str(g.get("name", "")) == "player":
+			for u in g.get("units", []):
+				if str(u.get("def_path", "")) == "res://src/unit/definitions/shardling.tres":
+					has_shardling = true
+			var res: Dictionary = g.get("resources", {})
+			if int(res.get("crystal", 0)) >= 1 and int(res.get("people", 0)) >= 2:
+				has_resources = true
+	var tile_resources: Dictionary = scenario.get("tile_resources", {})
+	for key in tile_resources:
+		var entry = tile_resources[key]
+		if entry is Dictionary and str(entry.get("resource_type", "")) == "crystal":
+			has_crystal = true
+			break
+	if not has_shardling:
+		tests._fail("shardling_debug should include player Shardling")
+		return false
+	if not has_crystal:
+		tests._fail("shardling_debug should include crystal tile for mining")
+		return false
+	if not has_resources:
+		tests._fail("shardling_debug should give player resources for evolve (people + crystal)")
+		return false
+	tests._pass("shardling_debug has Shardling on crystal tile with resources for evolve")
 	return true
 
 static func _test_extract_tile_action_config(tests: Node) -> bool:
-	tests._log("test_actions: extract_tile action exists and uses extract type")
+	tests._log("test_actions: extract_tile action exists and uses ability type")
 	var c: Dictionary = Actions.get_action_config("extract_tile")
 	if c.is_empty():
 		tests._fail("extract_tile config should exist")
 		return false
-	if c.get("type", "") != "extract":
-		tests._fail("extract_tile type should be extract, got %s" % c.get("type", ""))
+	if c.get("type", "") != "ability":
+		tests._fail("extract_tile type should be ability, got %s" % c.get("type", ""))
 		return false
 	if int(c.get("tile_resource_depletion", 0)) != 1:
 		tests._fail("extract_tile should deplete 1 resource per use")
@@ -332,8 +391,8 @@ static func _test_recruit_people_action_config(tests: Node) -> bool:
 	if c.is_empty():
 		tests._fail("recruit_people config should exist")
 		return false
-	if c.get("type", "") != "extract":
-		tests._fail("recruit_people type should be extract, got %s" % c.get("type", ""))
+	if c.get("type", "") != "ability":
+		tests._fail("recruit_people type should be ability, got %s" % c.get("type", ""))
 		return false
 	if c.get("name", "") != "Recruit":
 		tests._fail("recruit_people display name should be Recruit")

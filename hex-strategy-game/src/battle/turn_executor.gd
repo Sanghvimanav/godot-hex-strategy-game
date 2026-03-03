@@ -78,11 +78,11 @@ static func _get_handler_for_type(action_type: String) -> Callable:
 		return _handle_abilities
 	if action_type in SPAWN_TYPES:
 		return _handle_spawn
-	# extract: no-op
 	return Callable()
 
 static func _handle_abilities(action_type: String, entries: Array, ctx: ExecutionContext) -> void:
 	var reload_entries: Array = []
+	var extract_entries: Array = []
 	var support_entries: Array = []
 	var attack_entries: Array = []
 	for entry in entries:
@@ -90,14 +90,17 @@ static func _handle_abilities(action_type: String, entries: Array, ctx: Executio
 		var action_key: String = ac.definition.action_key if ac.definition else ""
 		if action_key in ["reload", "recharge", "rest_no_energy"]:
 			reload_entries.append(entry)
+		elif action_key in ["extract_tile", "recruit_people", "consume", "mine_crystal"]:
+			extract_entries.append(entry)
 		elif action_key in ["heal_adjacent", "support_adjacent", "resupply_adjacent"]:
 			support_entries.append(entry)
 		else:
 			attack_entries.append(entry)
-	# Reload first, then attacks, then support so resupply/heal can restore energy/health
-	# after units that attacked or spent energy this turn.
+	# Reload first, then extract, then attacks, then support.
 	if not reload_entries.is_empty():
 		await _handle_reload.call(action_type, reload_entries, ctx)
+	if not extract_entries.is_empty():
+		await _handle_extract.call(action_type, extract_entries, ctx)
 	if not attack_entries.is_empty():
 		await _handle_attacks.call(action_type, attack_entries, ctx)
 	if not support_entries.is_empty():
@@ -161,6 +164,22 @@ static func _handle_support(_action_type: String, entries: Array, ctx: Execution
 		var play_animation: bool = ctx.tree != null
 		await supporter.play_ability_animation(ac, play_animation)
 
+static func _handle_extract(_action_type: String, entries: Array, ctx: ExecutionContext) -> void:
+	for entry in entries:
+		var extractor = entry.unit
+		if not _valid_unit(extractor):
+			continue
+		var ac: ActionInstance = entry.ac
+		var config: Dictionary = Actions.get_action_config(ac.definition.action_key) if ac.definition else {}
+		var heal_amount: int = int(config.get("heal_amount", 0))
+		if ctx.apply_damage:
+			if heal_amount > 0:
+				_queue_health_delta(ctx, extractor, heal_amount)
+			ctx.recording.actions.append({ "type": _action_type, "unit": extractor, "unit_id": _recording_unit_id(extractor), "ac": ac })
+		if heal_amount > 0:
+			var effect: Node2D = HEAL_EFFECT_SCENE.instantiate()
+			extractor.add_child(effect)
+
 static func _handle_spawn(action_type: String, entries: Array, ctx: ExecutionContext) -> void:
 	for entry in entries:
 		var spawner = entry.unit
@@ -184,6 +203,9 @@ static func _handle_spawn(action_type: String, entries: Array, ctx: ExecutionCon
 		var power: int = int(config.get("energy_consumption", 0))
 		if ctx.apply_damage and power > 0 and spawner.max_energy > 0:
 			_queue_energy_delta(ctx, spawner, -power)
+		var spawn_self_dmg: int = int(config.get("spawn_self_damage_amount", 0))
+		if ctx.apply_damage and spawn_self_dmg > 0 and spawner.health >= spawn_self_dmg:
+			_queue_health_delta(ctx, spawner, -spawn_self_dmg)
 		var def: Resource = load(spawn_path) as UnitDefinition
 		if def == null:
 			continue
@@ -323,7 +345,7 @@ static func _should_play_target_damage_effect(attacker: Unit, ac: ActionInstance
 	if not _valid_unit(attacker) or ac == null or ac.definition == null:
 		return false
 	var action_key: String = ac.definition.action_key
-	return action_key == "attack_ray" or action_key == "attack_viper"
+	return action_key == "attack_ray" or action_key == "attack_hydralisk"
 
 static func _apply_stun_effect(ctx: ExecutionContext, target_unit: Unit, duration: int) -> void:
 	var effect := UnitEffect.new(UnitEffect.Kind.Stun, duration, {})

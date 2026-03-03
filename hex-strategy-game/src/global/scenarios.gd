@@ -95,8 +95,8 @@ func _build_scenarios() -> void:
 				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(1, 0), "health": 3, "energy": 4},
 			]},
 			{"name": "opponent", "ai": true, "units": [
-				# Placed at distance 2 from the Marine so AI Viper can damage Marine this turn.
-				{"def_path": "res://src/unit/definitions/viper.tres", "cell": Vector2i(-1, 1)},
+				# Placed at distance 2 from the Marine so AI Hydralisk can damage Marine this turn.
+				{"def_path": "res://src/unit/definitions/hydralisk.tres", "cell": Vector2i(-1, 1)},
 			]},
 		]
 	})
@@ -128,6 +128,20 @@ func _build_scenarios() -> void:
 				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(-2, 0)},
 			]},
 		]
+	})
+	# Shardling debug: mine crystals, rest, evolve to Baneling (3 people, 1 crystal) or Hydralisk (2 people, 2 crystals)
+	available_scenarios.append({
+		"id": "shardling_debug",
+		"display_name": "Shardling Debug (Mine + Evolve)",
+		"groups": [
+			{"name": "player", "resources": {"crystal": 5, "people": 5}, "units": [
+				{"def_path": "res://src/unit/definitions/shardling.tres", "cell": Vector2i(0, 0)},
+			]},
+			{"name": "opponent", "ai": true, "units": [
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-3, 2)},
+			]},
+		],
+		"tile_resources": _crystal_tile_resources([Vector2i(0, 0)], 5),
 	})
 	# Terran with Base: Base + Marine + Scout vs Zerglings (base heals/resupplies adjacent)
 	available_scenarios.append({
@@ -161,19 +175,19 @@ func _build_scenarios() -> void:
 		],
 		"tile_resources": _merge_tile_resources(
 			_crystal_tile_resources([Vector2i(-1, 0), Vector2i(2, 0)], 5),
-			_village_tile_resources([Vector2i(1, 0), Vector2i(-1, 1)], 5),
+			_village_tile_resources([Vector2i(1, 0), Vector2i(-1, 1)], 10),
 		),
 	})
 	# Stun debug: verify stun is shown on the next planning turn and after replay.
 	available_scenarios.append({
 		"id": "stun_replay_debug",
-		"display_name": "Stun Replay Debug (Base vs Viper)",
+		"display_name": "Stun Replay Debug (Base vs Hydralisk)",
 		"groups": [
 			{"name": "player", "units": [
 				{"def_path": "res://src/unit/definitions/terran_base.tres", "cell": Vector2i(0, 0)},
 			]},
 			{"name": "opponent", "ai": true, "units": [
-				{"def_path": "res://src/unit/definitions/viper.tres", "cell": Vector2i(2, 0)},
+				{"def_path": "res://src/unit/definitions/hydralisk.tres", "cell": Vector2i(2, 0)},
 			]},
 		]
 	})
@@ -188,22 +202,23 @@ func _build_scenarios() -> void:
 				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(4, 1)},
 				{"def_path": "res://src/unit/definitions/excavator.tres", "cell": Vector2i(3, 1)},
 			]},
-			{"name": "opponent", "ai": true, "units": [
+			{"name": "opponent", "ai": true, "resources": {"people": 0}, "units": [
 				{"def_path": "res://src/unit/definitions/spawning_pool.tres", "cell": Vector2i(-4, 0)},
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 1)},
+				{"def_path": "res://src/unit/definitions/fester.tres", "cell": Vector2i(-3, 1)},
 			]},
 		],
 		"tile_resources": _merge_tile_resources(
 			_crystal_tile_resources([
-				Vector2i(2, 0), Vector2i(-2, 0), Vector2i(0, 2), Vector2i(0, -2),
+				Vector2i(3, 0), Vector2i(-3, 0), Vector2i(0, 3), Vector2i(0, -3),
 				Vector2i(2, -2), Vector2i(-2, 2),
 			], 20),
 			_village_tile_resources([
-				Vector2i(1, 1), Vector2i(-1, -1), Vector2i(2, -1), Vector2i(-2, 1),
-			], 5),
+				Vector2i(2, 2), Vector2i(-2, -2), Vector2i(3, -1), Vector2i(-3, 1),
+			], 10),
 		),
 	})
-	# Zerg vs Terran: Base + 2 Marines + Scout + Medic vs 5 Zerglings + Baneling + Viper (randomized positions)
+	# Zerg vs Terran: Base + 2 Marines + Scout + Medic vs 5 Zerglings + Baneling + Hydralisk (randomized positions)
 	available_scenarios.append({
 		"id": "zerg_vs_terran",
 		"display_name": "Zerg vs Terran",
@@ -240,7 +255,7 @@ func _build_scenarios() -> void:
 					{"def_path": "res://src/unit/definitions/zergling.tres"},
 					{"def_path": "res://src/unit/definitions/zergling.tres"},
 					{"def_path": "res://src/unit/definitions/baneling.tres"},
-					{"def_path": "res://src/unit/definitions/viper.tres"},
+					{"def_path": "res://src/unit/definitions/hydralisk.tres"},
 				],
 				"cell_pool": [
 					Vector2i(-5, 0), Vector2i(-5, 1), Vector2i(-5, 2), Vector2i(-5, 3), Vector2i(-5, 4), Vector2i(-5, 5),
@@ -257,7 +272,7 @@ func _build_scenarios() -> void:
 			Vector2i(-1, 2),
 			Vector2i(1, -2),
 			Vector2i(3, -2),
-		], 5),
+		], 10),
 	})
 	# Spawning Pool: Pool + 2 Zerglings vs Marine (test spawn)
 	available_scenarios.append({
@@ -273,18 +288,19 @@ func _build_scenarios() -> void:
 			]},
 		],
 	})
-	# 1v1 Knight
+	# Fester debug: Fester on village to test consume (2→1 people, +1 heal) and spawn zergling (3 people, 3 HP)
 	available_scenarios.append({
-		"id": "knight_1v1",
-		"display_name": "1v1 Knight vs Mage",
+		"id": "fester_debug",
+		"display_name": "Fester Debug (Consume + Spawn Zergling)",
 		"groups": [
-			{"name": "player", "units": [
-				{"def_path": "res://src/unit/definitions/knight.tres", "cell": Vector2i(1, 0)},
+			{"name": "player", "resources": {"people": 0}, "units": [
+				{"def_path": "res://src/unit/definitions/fester.tres", "cell": Vector2i(0, 0), "health": 6},
 			]},
 			{"name": "opponent", "ai": true, "units": [
-				{"def_path": "res://src/unit/definitions/mage.tres", "cell": Vector2i(-1, 1)},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(-3, 2)},
 			]},
-		]
+		],
+		"tile_resources": _village_tile_resources([Vector2i(0, 0)], 10),
 	})
 
 func select_scenario(id: String) -> void:
@@ -300,7 +316,7 @@ func _default_tile_resources() -> Dictionary:
 func _random_village_tiles_for_zerg_vs_terran() -> Dictionary:
 	const HEX_RADIUS := 6
 	const NUM_VILLAGES := 5
-	const VILLAGE_AMOUNT := 3
+	const VILLAGE_AMOUNT := 10
 	var excluded: Dictionary = {}
 	for g in [{
 		"cell_pool": [
@@ -359,7 +375,7 @@ func _crystal_tile_resources(cells: Array, amount_per_tile: int = 20) -> Diction
 		crystal[key] = { amount = capped_amount, max_amount = capped_amount, resource_type = "crystal", resource_color = crystal_color }
 	return crystal
 
-func _village_tile_resources(cells: Array, amount_per_village: int = 5) -> Dictionary:
+func _village_tile_resources(cells: Array, amount_per_village: int = 10) -> Dictionary:
 	var villages: Dictionary = {}
 	var capped_amount: int = maxi(1, amount_per_village)
 	for raw_cell in cells:
@@ -380,7 +396,7 @@ func _merge_tile_resources(base: Dictionary, extra: Dictionary) -> Dictionary:
 		merged[key] = extra[key]
 	return merged
 
-func _with_village_resources(cells: Array, amount_per_village: int = 5) -> Dictionary:
+func _with_village_resources(cells: Array, amount_per_village: int = 10) -> Dictionary:
 	return _merge_tile_resources(_default_tile_resources(), _village_tile_resources(cells, amount_per_village))
 
 func _with_tile_resources(s: Dictionary) -> Dictionary:

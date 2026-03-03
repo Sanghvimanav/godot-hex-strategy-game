@@ -67,7 +67,10 @@ func _get_ability_unavailability_reason(action_key: String) -> String:
 	var config: Dictionary = Actions.get_action_config(action_key)
 	if not _has_required_group_resources(config):
 		return _format_required_group_resources_reason(config)
-	if Actions.get_action_type(action_key) == "extract" and not _can_extract_from_current_cell(action_key):
+	var spawn_self_dmg: int = int(config.get("spawn_self_damage_amount", 0))
+	if spawn_self_dmg > 0 and unit.health < spawn_self_dmg:
+		return "Requires at least %d HP" % spawn_self_dmg
+	if int(Actions.get_action_config(action_key).get("tile_resource_depletion", 0)) > 0 and not _can_extract_from_current_cell(action_key):
 		return _format_extract_unavailability_reason(config)
 	var power: int = int(config.get("energy_consumption", 0))
 	if power > 0 and unit.max_energy > 0 and unit.energy < power:
@@ -75,6 +78,20 @@ func _get_ability_unavailability_reason(action_key: String) -> String:
 	return ""
 
 func _format_required_group_resources_reason(config: Dictionary) -> String:
+	var multi: Array = config.get("required_group_resources", [])
+	if multi.size() > 0:
+		var parts: Array[String] = []
+		for req in multi:
+			if not (req is Dictionary):
+				continue
+			var rtype: String = str(req.get("type", ""))
+			var ramt: int = int(req.get("amount", 0))
+			if rtype.is_empty() or ramt <= 0:
+				continue
+			parts.append("%d %s" % [ramt, rtype])
+		if parts.is_empty():
+			return "Insufficient group resources"
+		return "Requires " + ", ".join(parts)
 	var required_type: String = str(config.get("required_group_resource_type", "resource"))
 	var required_amount: int = int(config.get("required_group_resource_amount", 0))
 	if required_amount <= 0:
@@ -108,9 +125,10 @@ func _can_extract_from_current_cell(action_key: String) -> bool:
 	if not Navigation.grid.has(key):
 		return false
 	var tile: Dictionary = Navigation.grid[key]
-	if int(tile.get("resource_amount", 0)) <= 0:
-		return false
 	var config: Dictionary = Actions.get_action_config(action_key)
+	var required: int = maxi(1, int(config.get("tile_resource_depletion", 1)))
+	if int(tile.get("resource_amount", 0)) < required:
+		return false
 	var allowed_types = config.get("allowed_resource_types", [])
 	if allowed_types is Array and not allowed_types.is_empty():
 		var resource_type: String = str(tile.get("resource_type", ""))

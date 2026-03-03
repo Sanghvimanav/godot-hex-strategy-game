@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://ch7usnhgi6asw"]
 
-[ext_resource type="Script" path="res://src/unit/art/effects/target_damage_effect.gd" id="1_script"]
+[ext_resource type="Script" uid="uid://cf3egaw66l18r" path="res://src/unit/art/effects/target_damage_effect.gd" id="1_script"]
 [ext_resource type="SpriteFrames" uid="uid://cclmanbdvfajc" path="res://src/unit/art/effects/target_damage_effect_spriteframes.tres" id="2_frames"]
 
 [node name="target_damage_effect" type="Node2D" unique_id=632476977]

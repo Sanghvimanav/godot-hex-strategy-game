@@ -12,7 +12,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_stun_registers_and_persists_to_next_turn(tests) and ok
 	ok = _test_stun_replay_roundtrip_matches_next_turn_state(tests) and ok
 	ok = _test_stun_debug_scenario_exists(tests) and ok
-	ok = _test_attack_viper_stun_blocks_next_turn_move(tests) and ok
+	ok = _test_attack_hydralisk_stun_blocks_next_turn_move(tests) and ok
 	return ok
 
 static func _make_execution_context(tests: Node) -> TurnExecutor.ExecutionContext:
@@ -94,7 +94,7 @@ static func _test_stun_debug_scenario_exists(tests: Node) -> bool:
 		tests._fail("stun_replay_debug scenario should exist")
 		return false
 	var has_player_base := false
-	var has_ai_viper := false
+	var has_ai_hydralisk := false
 	for g in scenario.get("groups", []):
 		var group_name: String = str(g.get("name", ""))
 		var is_ai: bool = bool(g.get("ai", false))
@@ -102,26 +102,26 @@ static func _test_stun_debug_scenario_exists(tests: Node) -> bool:
 			var def_path: String = str(u.get("def_path", ""))
 			if group_name == "player" and def_path == "res://src/unit/definitions/terran_base.tres":
 				has_player_base = true
-			if group_name == "opponent" and is_ai and def_path == "res://src/unit/definitions/viper.tres":
-				has_ai_viper = true
+			if group_name == "opponent" and is_ai and def_path == "res://src/unit/definitions/hydralisk.tres":
+				has_ai_hydralisk = true
 	if not has_player_base:
 		tests._fail("stun_replay_debug should include a player Terran Base")
 		return false
-	if not has_ai_viper:
-		tests._fail("stun_replay_debug should include an AI Viper opponent")
+	if not has_ai_hydralisk:
+		tests._fail("stun_replay_debug should include an AI Hydralisk opponent")
 		return false
 	tests._pass("stun replay debug scenario exists")
 	return true
 
-## End-to-end Core behavior: attack_viper applies stun, next turn is blocked, then stun expires.
-static func _test_attack_viper_stun_blocks_next_turn_move(tests: Node) -> bool:
-	tests._log("test_stun_effects: attack_viper stun starts next turn and expires after one blocked turn")
-	# Turn 1: Viper at (0,0), target at (2,0). Viper attacks and stuns.
+## End-to-end Core behavior: attack_hydralisk applies stun, next turn is blocked, then stun expires.
+static func _test_attack_hydralisk_stun_blocks_next_turn_move(tests: Node) -> bool:
+	tests._log("test_stun_effects: attack_hydralisk stun starts next turn and expires after one blocked turn")
+	# Turn 1: Hydralisk at (0,0), target at (2,0). Hydralisk attacks and stuns.
 	# Target also uses a slow action this turn, which should still execute.
 	var game_state_t1 := {
 		"groups": [
 			{ "name": "player", "ai": false, "units": [
-				{ "unit_id": 1, "def_path": "res://src/unit/definitions/viper.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/hydralisk.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
 			]},
 			{ "name": "opponent", "ai": false, "units": [
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [2, 0], "health": 3, "max_health": 3, "energy": 2, "max_energy": 4 }
@@ -129,7 +129,7 @@ static func _test_attack_viper_stun_blocks_next_turn_move(tests: Node) -> bool:
 		]
 	}
 	var actions_t1 := {
-		"player": [{ "unit_id": 1, "action_key": "attack_viper", "path": [], "end_point": [2, 0] }],
+		"player": [{ "unit_id": 1, "action_key": "attack_hydralisk", "path": [], "end_point": [2, 0] }],
 		"opponent": [{ "unit_id": 2, "action_key": "reload", "path": [], "end_point": [0, 0] }]
 	}
 	TurnExecutionCore.execute_turn(game_state_t1, actions_t1)
@@ -143,7 +143,7 @@ static func _test_attack_viper_stun_blocks_next_turn_move(tests: Node) -> bool:
 		return false
 	var effects_after_t1: Array = target_found.unit.get("effects", [])
 	if effects_after_t1.is_empty():
-		tests._fail("attack_viper should apply stun effect to target for next turn")
+		tests._fail("attack_hydralisk should apply stun effect to target for next turn")
 		return false
 	# Turn 2: Stunned target tries to move.
 	var move_path: Array = []
@@ -176,5 +176,5 @@ static func _test_attack_viper_stun_blocks_next_turn_move(tests: Node) -> bool:
 	if cell_after_expire != [3, 0]:
 		tests._fail("target should move after stun expires; expected [3,0], got %s" % cell_after_expire)
 		return false
-	tests._pass("attack_viper stun blocks next-turn move")
+	tests._pass("attack_hydralisk stun blocks next-turn move")
 	return true

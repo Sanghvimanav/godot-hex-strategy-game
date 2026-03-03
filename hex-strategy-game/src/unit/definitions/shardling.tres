@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="UnitDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://r4e3cec6no81" path="res://src/unit/definitions/unit_definition.gd" id="1_script"]
+[ext_resource type="Resource" path="res://src/unit/art/shardling/shardling_spriteframes.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_script")
+name = "Shardling"
+type = 12
+faction = 1
+frames = ExtResource("2_frames")
+sprite_scale = Vector2(0.10, 0.10)
+sprite_offset = Vector2(0, 10)
+max_health = 4
+sight_range = 2
+move_action_keys = Array[String](["move_short", "rest_no_energy"])
+ability_action_keys = Array[String](["mine_crystal", "evolve_baneling", "evolve_hydralisk"])

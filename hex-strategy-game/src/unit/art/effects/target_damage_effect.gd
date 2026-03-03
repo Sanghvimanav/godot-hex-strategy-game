@@ -1,5 +1,5 @@
 extends Node2D
-## One-shot target tile damage VFX for Scout/Viper attacks.
+## One-shot target tile damage VFX for Scout/Hydralisk attacks.
 
 @onready var sprite: AnimatedSprite2D = $sprite
 

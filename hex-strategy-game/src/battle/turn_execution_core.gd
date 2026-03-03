@@ -493,42 +493,10 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 						path = path
 					})
 					_mark_submitted_action_executed(submitted_by_id, int(entry.get("submission_id", -1)))
-		elif action_type == "extract":
-			for entry in entries:
-				var unit: Dictionary = entry.unit
-				if unit.get("health", 0) <= 0:
-					_mark_submitted_action_cancelled(submitted_by_id, int(entry.get("submission_id", -1)), CANCELLED_REASON_ELIMINATED_BEFORE_PHASE)
-					continue
-				if _unit_has_stun(unit):
-					continue
-				var action: Dictionary = entry.action
-				var action_key: String = str(action.get("action_key", ""))
-				var config: Dictionary = Actions.get_action_config(action_key)
-				if config.is_empty():
-					continue
-				var extract_amount: int = maxi(1, int(config.get("tile_resource_depletion", 1)))
-				var unit_cell: Array = unit.get("cell", [0, 0])
-				var tile_resource_type: String = _get_tile_resource_type(game_state, unit_cell)
-				if not _resource_type_allowed(config, tile_resource_type):
-					continue
-				var extraction: Dictionary = _extract_tile_resource(game_state, unit_cell, extract_amount)
-				var consumed: int = int(extraction.get("consumed", 0))
-				var resource_type: String = str(extraction.get("resource_type", ""))
-				if consumed > 0:
-					_add_group_resource(entry.group, resource_type, consumed)
-				recording.actions.append({
-					type = "extract",
-					unit_id = unit.get("unit_id", -1),
-					action_key = action_key,
-					cell = [int(unit_cell[0]), int(unit_cell[1])],
-					resource_type = resource_type,
-					amount = consumed
-				})
-				_mark_submitted_action_executed(submitted_by_id, int(entry.get("submission_id", -1)))
 		elif action_type in ABILITY_TYPES:
-			# Process reload first, then attacks, then support so resupply/heal can restore energy/health
-			# after units that attacked or spent energy this turn.
+			# Process reload first, then extract, then attacks, then support.
 			var reload_entries: Array = []
+			var extract_entries: Array = []
 			var attack_entries: Array = []
 			var support_entries: Array = []
 			var phase_health_delta_by_id: Dictionary = {}
@@ -537,11 +505,13 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 				var action_key: String = str(entry.action.get("action_key", ""))
 				if action_key in ["reload", "recharge", "rest_no_energy"]:
 					reload_entries.append(entry)
+				elif action_key in ["extract_tile", "recruit_people", "consume", "mine_crystal"]:
+					extract_entries.append(entry)
 				elif action_key in ["heal_adjacent", "support_adjacent", "resupply_adjacent"]:
 					support_entries.append(entry)
 				else:
 					attack_entries.append(entry)
-			var ordered_entries: Array = reload_entries + attack_entries + support_entries
+			var ordered_entries: Array = reload_entries + extract_entries + attack_entries + support_entries
 			for entry in ordered_entries:
 				var unit: Dictionary = entry.unit
 				if unit.get("health", 0) <= 0:
@@ -569,6 +539,31 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 						unit_id = unit.get("unit_id", -1),
 						action_key = action.get("action_key", ""),
 						ac = action
+					})
+					_mark_submitted_action_executed(submitted_by_id, int(entry.get("submission_id", -1)))
+					continue
+				if action_key in ["extract_tile", "recruit_people", "consume", "mine_crystal"]:
+					var extract_amount: int = maxi(1, int(config.get("tile_resource_depletion", 1)))
+					var unit_cell: Array = unit.get("cell", [0, 0])
+					var tile_resource_type: String = _get_tile_resource_type(game_state, unit_cell)
+					if not _resource_type_allowed(config, tile_resource_type):
+						continue
+					var extraction: Dictionary = _extract_tile_resource(game_state, unit_cell, extract_amount)
+					var consumed: int = int(extraction.get("consumed", 0))
+					var resource_type: String = str(extraction.get("resource_type", ""))
+					if consumed > 0:
+						var group_gain: int = int(config.get("group_resource_gain", consumed))
+						_add_group_resource(entry.group, resource_type, group_gain)
+						var heal_amount: int = int(config.get("heal_amount", 0))
+						if heal_amount > 0:
+							_add_stat_delta(phase_health_delta_by_id, int(unit.get("unit_id", -1)), heal_amount)
+					recording.actions.append({
+						type = action_type,
+						unit_id = unit.get("unit_id", -1),
+						action_key = action_key,
+						cell = [int(unit_cell[0]), int(unit_cell[1])],
+						resource_type = resource_type,
+						amount = consumed
 					})
 					_mark_submitted_action_executed(submitted_by_id, int(entry.get("submission_id", -1)))
 					continue
@@ -626,6 +621,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 
 		if action_type in SPAWN_TYPES:
 			var phase_spawn_energy_delta_by_id: Dictionary = {}
+			var phase_spawn_health_delta_by_id: Dictionary = {}
 			for entry in entries:
 				var unit: Dictionary = entry.unit
 				if unit.get("health", 0) <= 0:
@@ -647,6 +643,12 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 					if unit.get("energy", 0) < ec:
 						continue
 					_add_stat_delta(phase_spawn_energy_delta_by_id, int(unit.get("unit_id", -1)), -ec)
+				var spawn_self_dmg: int = int(config.get("spawn_self_damage_amount", 0))
+				if spawn_self_dmg > 0:
+					var unit_id: int = int(unit.get("unit_id", -1))
+					if unit.get("health", 1) < spawn_self_dmg:
+						continue  # Must have at least 3 HP to pay the cost
+					_add_stat_delta(phase_spawn_health_delta_by_id, unit_id, -spawn_self_dmg)
 				var def_dict: Dictionary = get_unit_def(spawn_path)
 				if def_dict.is_empty():
 					continue
@@ -683,7 +685,7 @@ static func execute_turn(game_state: Dictionary, player_actions: Dictionary) -> 
 					cell = spawn_cell.duplicate()
 				})
 				_mark_submitted_action_executed(submitted_by_id, int(entry.get("submission_id", -1)))
-			_apply_phase_stat_deltas(game_state, {}, phase_spawn_energy_delta_by_id, recording)
+			_apply_phase_stat_deltas(game_state, phase_spawn_health_delta_by_id, phase_spawn_energy_delta_by_id, recording)
 
 	for group in game_state.get("groups", []):
 		var units: Array = group.get("units", [])
