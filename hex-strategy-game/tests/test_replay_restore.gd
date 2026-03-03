@@ -14,6 +14,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_apply_scenario_uses_health_and_energy_overrides(tests) and ok
 	ok = _test_replay_summary_panel_hides_after_replay_finished(tests) and ok
 	ok = _test_replay_summary_lines_group_by_phase_and_mark_cancelled(tests) and ok
+	ok = _test_replay_summary_filters_hidden_units_by_visibility(tests) and ok
 	return ok
 
 static func _make_container() -> UnitsContainer:
@@ -347,5 +348,64 @@ static func _test_replay_summary_lines_group_by_phase_and_mark_cancelled(tests: 
 		container.free()
 		return false
 	tests._pass("replay summary groups by phase and marks cancelled actions")
+	container.free()
+	return true
+
+static func _test_replay_summary_filters_hidden_units_by_visibility(tests: Node) -> bool:
+	tests._log("test_replay_restore: replay summary hides hidden-unit actions when visibility filter is provided")
+	var container := _make_container()
+	tests.add_child(container)
+	var replay_recording := {
+		"summary": [
+			{
+				"unit_id": 1,
+				"unit_name": "Marine",
+				"action_name": "Attack",
+				"action_type": "ability",
+				"cancelled": false
+			},
+			{
+				"unit_id": 2,
+				"unit_name": "Zergling",
+				"action_name": "Move",
+				"action_type": "move",
+				"cancelled": false
+			}
+		],
+		"before_state": {
+			1: {"health": 5, "unit_name": "Marine"},
+			2: {"health": 3, "unit_name": "Zergling"}
+		},
+		"damage_by_id": {1: 2, 2: 1},
+		"died_ids": []
+	}
+	var visible_unit_ids := {1: true}
+	var lines: Array = container._build_replay_summary_lines(replay_recording, visible_unit_ids)
+	if not lines.has("  Marine: Attack"):
+		tests._fail("replay summary should include visible unit action")
+		container.free()
+		return false
+	if lines.has("  Zergling: Move"):
+		tests._fail("replay summary should hide hidden unit action")
+		container.free()
+		return false
+	if lines.has("Move"):
+		tests._fail("replay summary should not include hidden-only phase headers")
+		container.free()
+		return false
+	var has_visible_damage_line := false
+	for line in lines:
+		var s: String = str(line)
+		if s.begins_with("  Marine: 5 HP"):
+			has_visible_damage_line = true
+		if s.begins_with("  Zergling: 3 HP"):
+			tests._fail("replay summary should hide hidden unit damage details")
+			container.free()
+			return false
+	if not has_visible_damage_line:
+		tests._fail("replay summary should keep visible unit damage details")
+		container.free()
+		return false
+	tests._pass("replay summary hides hidden-unit actions when visibility filter is provided")
 	container.free()
 	return true
