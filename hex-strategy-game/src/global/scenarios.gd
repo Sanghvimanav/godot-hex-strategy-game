@@ -2,11 +2,18 @@ extends Node
 ## Scenario registry and selection. Used for quick debug setups and future multiplayer.
 ## Select a scenario before loading battle; battle reads selected_scenario_id and applies it.
 
+const CUSTOM_SCENARIO_ID := "custom"
+const CUSTOM_TERRAN_STACK_CELL := Vector2i(1, 0)
+const CUSTOM_ZERG_STACK_CELL := Vector2i(-1, 0)
+const _UNIT_DEFINITIONS_DIR := "res://src/unit/definitions"
+
 var selected_scenario_id: String = "default"
 var available_scenarios: Array[Dictionary] = []
+var _custom_unit_counts: Dictionary = {}
 
 func _ready() -> void:
 	_build_scenarios()
+	_ensure_custom_counts_initialized()
 
 func _build_scenarios() -> void:
 	available_scenarios.clear()
@@ -30,6 +37,15 @@ func _build_scenarios() -> void:
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-1, 1)},
 			]
 		},
+		]
+	})
+	# Custom builder scenario: configurable Terran-vs-Zerg unit stacks for quick balancing/debug.
+	available_scenarios.append({
+		"id": CUSTOM_SCENARIO_ID,
+		"display_name": "Custom (Scenario Builder)",
+		"groups": [
+			{"name": "player", "units": []},
+			{"name": "opponent", "ai": true, "units": []},
 		]
 	})
 	# Scout energy debug: Scout vs Marine at Shoot range (distance 2)
@@ -310,6 +326,132 @@ func get_scenarios_by_category() -> Dictionary:
 func get_selected_scenario() -> Dictionary:
 	return get_scenario_by_id(selected_scenario_id)
 
+func is_custom_scenario_id(id: String) -> bool:
+	return id == CUSTOM_SCENARIO_ID
+
+func get_custom_scenario_counts() -> Dictionary:
+	_ensure_custom_counts_initialized()
+	return _custom_unit_counts.duplicate(true)
+
+func get_default_custom_scenario_counts() -> Dictionary:
+	return _build_default_custom_scenario_counts()
+
+func reset_custom_scenario_counts() -> void:
+	_custom_unit_counts = _build_default_custom_scenario_counts()
+
+func set_custom_scenario_counts(counts: Dictionary) -> void:
+	_custom_unit_counts = _normalize_custom_scenario_counts(counts)
+
+func get_custom_scenario_unit_counts_for_faction(faction_key: String) -> Array[Dictionary]:
+	var normalized_faction: String = _normalize_custom_faction_key(faction_key)
+	if normalized_faction.is_empty():
+		return []
+	_ensure_custom_counts_initialized()
+	var counts: Dictionary = _custom_unit_counts.get(normalized_faction, {})
+	var out: Array[Dictionary] = []
+	for entry in _get_custom_unit_definitions_for_faction(normalized_faction):
+		var def_path: String = str(entry.get("def_path", ""))
+		out.append({
+			"def_path": def_path,
+			"name": str(entry.get("name", def_path)),
+			"count": int(counts.get(def_path, 0)),
+		})
+	return out
+
+func _normalize_custom_faction_key(faction_key: String) -> String:
+	var lower: String = faction_key.to_lower()
+	if lower in ["terran", "zerg"]:
+		return lower
+	return ""
+
+func _ensure_custom_counts_initialized() -> void:
+	if not (_custom_unit_counts is Dictionary) or _custom_unit_counts.is_empty():
+		_custom_unit_counts = _build_default_custom_scenario_counts()
+		return
+	_custom_unit_counts = _normalize_custom_scenario_counts(_custom_unit_counts)
+
+func _normalize_custom_scenario_counts(raw_counts: Dictionary) -> Dictionary:
+	var normalized: Dictionary = _build_default_custom_scenario_counts()
+	for faction in ["terran", "zerg"]:
+		var faction_counts: Dictionary = normalized.get(faction, {})
+		for def_path in faction_counts.keys():
+			faction_counts[def_path] = 0
+		var input_counts = raw_counts.get(faction, {})
+		if input_counts is Dictionary:
+			for def_path in input_counts:
+				if faction_counts.has(def_path):
+					faction_counts[def_path] = maxi(0, int(input_counts[def_path]))
+		normalized[faction] = faction_counts
+	return normalized
+
+func _build_default_custom_scenario_counts() -> Dictionary:
+	var defaults: Dictionary = {
+		"terran": {},
+		"zerg": {},
+	}
+	for faction in ["terran", "zerg"]:
+		var faction_defaults: Dictionary = {}
+		for entry in _get_custom_unit_definitions_for_faction(faction):
+			var def_path: String = str(entry.get("def_path", ""))
+			faction_defaults[def_path] = 0
+		defaults[faction] = faction_defaults
+	_set_default_custom_unit_count(defaults["terran"], "res://src/unit/definitions/marine.tres")
+	_set_default_custom_unit_count(defaults["zerg"], "res://src/unit/definitions/zergling.tres")
+	return defaults
+
+func _set_default_custom_unit_count(counts: Dictionary, preferred_def_path: String) -> void:
+	if counts.has(preferred_def_path):
+		counts[preferred_def_path] = 1
+		return
+	var keys: Array = counts.keys()
+	if keys.is_empty():
+		return
+	keys.sort()
+	counts[keys[0]] = 1
+
+func _get_custom_unit_definitions_for_faction(faction_key: String) -> Array[Dictionary]:
+	var target_faction: int = UnitDefinition.Faction.Terran if faction_key == "terran" else UnitDefinition.Faction.Zerg
+	var defs: Array[Dictionary] = []
+	var file_names: PackedStringArray = DirAccess.get_files_at(_UNIT_DEFINITIONS_DIR)
+	for file_name in file_names:
+		if not str(file_name).ends_with(".tres"):
+			continue
+		var def_path := "%s/%s" % [_UNIT_DEFINITIONS_DIR, file_name]
+		var unit_def: UnitDefinition = load(def_path) as UnitDefinition
+		if unit_def == null:
+			continue
+		if int(unit_def.faction) != target_faction:
+			continue
+		var unit_name: String = unit_def.name if not unit_def.name.is_empty() else str(file_name).get_basename().capitalize()
+		defs.append({
+			"def_path": def_path,
+			"name": unit_name,
+		})
+	defs.sort_custom(func(a, b): return str(a.get("name", "")) < str(b.get("name", "")))
+	return defs
+
+func _build_custom_units_for_faction(faction_key: String, stack_cell: Vector2i) -> Array[Dictionary]:
+	var units: Array[Dictionary] = []
+	for entry in get_custom_scenario_unit_counts_for_faction(faction_key):
+		var count: int = maxi(0, int(entry.get("count", 0)))
+		var def_path: String = str(entry.get("def_path", ""))
+		if def_path.is_empty():
+			continue
+		for _i in count:
+			units.append({"def_path": def_path, "cell": stack_cell})
+	return units
+
+func _build_custom_scenario() -> Dictionary:
+	return {
+		"id": CUSTOM_SCENARIO_ID,
+		"display_name": "Custom (Scenario Builder)",
+		"custom_builder": true,
+		"groups": [
+			{"name": "player", "units": _build_custom_units_for_faction("terran", CUSTOM_TERRAN_STACK_CELL)},
+			{"name": "opponent", "ai": true, "units": _build_custom_units_for_faction("zerg", CUSTOM_ZERG_STACK_CELL)},
+		]
+	}
+
 func _default_tile_resources() -> Dictionary:
 	return {}
 
@@ -410,6 +552,8 @@ func _with_tile_resources(s: Dictionary) -> Dictionary:
 	return decorated
 
 func get_scenario_by_id(id: String) -> Dictionary:
+	if is_custom_scenario_id(id):
+		return _with_tile_resources(_build_custom_scenario())
 	for s in available_scenarios:
 		if s.id == id:
 			return _with_tile_resources(s)

@@ -1,0 +1,116 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/battle/custom_scenario_builder_popup.gd" id="1_script"]
+
+[node name="custom_scenario_builder_popup" type="CanvasLayer"]
+visible = false
+layer = 20
+script = ExtResource("1_script")
+
+[node name="backdrop" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.72)
+
+[node name="panel" type="PanelContainer" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -420.0
+offset_top = -260.0
+offset_right = 420.0
+offset_bottom = 260.0
+
+[node name="margin" type="MarginContainer" parent="panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="vbox" type="VBoxContainer" parent="panel/margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="title" type="Label" parent="panel/margin/vbox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "Custom Scenario Builder"
+horizontal_alignment = 1
+
+[node name="subtitle" type="Label" parent="panel/margin/vbox"]
+layout_mode = 2
+text = "Set unit counts. Terran units stack on one tile, Zerg units stack on the opposite tile."
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="columns" type="HBoxContainer" parent="panel/margin/vbox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="terran_column" type="VBoxContainer" parent="panel/margin/vbox/columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="title" type="Label" parent="panel/margin/vbox/columns/terran_column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Terran (Player)"
+horizontal_alignment = 1
+
+[node name="scroll" type="ScrollContainer" parent="panel/margin/vbox/columns/terran_column"]
+custom_minimum_size = Vector2(0, 280)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="list" type="VBoxContainer" parent="panel/margin/vbox/columns/terran_column/scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="zerg_column" type="VBoxContainer" parent="panel/margin/vbox/columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 6
+
+[node name="title" type="Label" parent="panel/margin/vbox/columns/zerg_column"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "Zerg (Opponent)"
+horizontal_alignment = 1
+
+[node name="scroll" type="ScrollContainer" parent="panel/margin/vbox/columns/zerg_column"]
+custom_minimum_size = Vector2(0, 280)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="list" type="VBoxContainer" parent="panel/margin/vbox/columns/zerg_column/scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="buttons" type="HBoxContainer" parent="panel/margin/vbox"]
+layout_mode = 2
+alignment = 2
+theme_override_constants/separation = 8
+
+[node name="reset_btn" type="Button" parent="panel/margin/vbox/buttons"]
+layout_mode = 2
+text = "Reset defaults"
+
+[node name="cancel_btn" type="Button" parent="panel/margin/vbox/buttons"]
+layout_mode = 2
+text = "Cancel"
+
+[node name="apply_btn" type="Button" parent="panel/margin/vbox/buttons"]
+layout_mode = 2
+text = "Apply"
