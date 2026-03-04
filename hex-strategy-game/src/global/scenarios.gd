@@ -317,7 +317,7 @@ func is_debug_scenario(s: Dictionary) -> bool:
 	var id: String = str(s.get("id", ""))
 	return "_debug" in id or "_test" in id
 
-## Returns main scenarios (non-debug) and debug scenarios as separate arrays.
+## Returns campaign, main (non-debug), and debug scenarios as separate arrays.
 func get_scenarios_by_category() -> Dictionary:
 	var campaign: Array[Dictionary] = []
 	var main: Array[Dictionary] = []
