@@ -15,6 +15,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_medic_definition_stats_and_actions(tests) and ok
 	ok = _test_zerg_vs_terran_includes_medic(tests) and ok
 	ok = _test_zerg_vs_terran_v2_scenario_exists(tests) and ok
+	ok = _test_scenario_intro_text_is_configurable(tests) and ok
 	ok = _test_excavator_debug_scenario_exists(tests) and ok
 	ok = _test_medic_heal_debug_scenario_exists(tests) and ok
 	ok = _test_fester_debug_scenario_exists(tests) and ok
@@ -248,6 +249,26 @@ static func _test_zerg_vs_terran_v2_scenario_exists(tests: Node) -> bool:
 		tests._fail("zerg_vs_terran_v2 should include opponent fester")
 		return false
 	tests._pass("zerg_vs_terran_v2 has base+marine+scout vs zergling+fester")
+	return true
+
+static func _test_scenario_intro_text_is_configurable(tests: Node) -> bool:
+	tests._log("test_actions: scenario intro text supports per-scenario overrides")
+	var default_intro: String = Scenarios.get_scenario_intro_text("default")
+	if default_intro.strip_edges().is_empty():
+		tests._fail("default scenario intro_text should not be empty")
+		return false
+	var fallback_intro: String = Scenarios.get_scenario_intro_text("scout_debug")
+	if fallback_intro != default_intro:
+		tests._fail("scenario without intro_text override should use default intro text")
+		return false
+	var custom_intro: String = Scenarios.get_scenario_intro_text("zerg_vs_terran_v2")
+	if custom_intro.strip_edges().is_empty():
+		tests._fail("zerg_vs_terran_v2 intro_text should not be empty")
+		return false
+	if custom_intro == default_intro:
+		tests._fail("zerg_vs_terran_v2 intro_text should override default intro text")
+		return false
+	tests._pass("scenario intro text supports per-scenario overrides")
 	return true
 
 static func _test_excavator_debug_scenario_exists(tests: Node) -> bool:

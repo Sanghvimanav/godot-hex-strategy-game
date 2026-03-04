@@ -4,6 +4,7 @@ extends Node
 
 var selected_scenario_id: String = "default"
 var available_scenarios: Array[Dictionary] = []
+const DEFAULT_SCENARIO_INTRO_TEXT := "This is just the beginning Of the conflict between the Zerg, whose goal is to wipe out all intelligent life deemed destructive, and the Terran who are fighting for their survival."
 
 func _ready() -> void:
 	_build_scenarios()
@@ -14,6 +15,7 @@ func _build_scenarios() -> void:
 	available_scenarios.append({
 		"id": "default",
 		"display_name": "Default (Knight, Scout, Mage vs Zergling)",
+		"intro_text": DEFAULT_SCENARIO_INTRO_TEXT,
 		"groups": [
 			{
 				"name": "player",
@@ -195,6 +197,7 @@ func _build_scenarios() -> void:
 	available_scenarios.append({
 		"id": "zerg_vs_terran_v2",
 		"display_name": "Zerg vs Terran v2",
+		"intro_text": "Terran forward forces clash with an evolving Zerg brood; every crystal and every recruit can decide who survives this escalation.",
 		"groups": [
 			{"name": "player", "resources": {"crystal": 0, "people": 0}, "units": [
 				{"def_path": "res://src/unit/definitions/terran_base.tres", "cell": Vector2i(4, 0)},
@@ -310,6 +313,16 @@ func get_scenarios_by_category() -> Dictionary:
 func get_selected_scenario() -> Dictionary:
 	return get_scenario_by_id(selected_scenario_id)
 
+func get_selected_scenario_intro_text() -> String:
+	return get_scenario_intro_text(selected_scenario_id)
+
+func get_scenario_intro_text(id: String) -> String:
+	var scenario: Dictionary = get_scenario_by_id(id)
+	var intro_text: String = str(scenario.get("intro_text", DEFAULT_SCENARIO_INTRO_TEXT))
+	if intro_text.strip_edges().is_empty():
+		return DEFAULT_SCENARIO_INTRO_TEXT
+	return intro_text
+
 func _default_tile_resources() -> Dictionary:
 	return {}
 
@@ -407,6 +420,8 @@ func _with_tile_resources(s: Dictionary) -> Dictionary:
 			decorated["tile_resources"] = _random_village_tiles_for_zerg_vs_terran()
 		else:
 			decorated["tile_resources"] = _default_tile_resources()
+	if not decorated.has("intro_text") or str(decorated.get("intro_text", "")).strip_edges().is_empty():
+		decorated["intro_text"] = DEFAULT_SCENARIO_INTRO_TEXT
 	return decorated
 
 func get_scenario_by_id(id: String) -> Dictionary:
