@@ -2,6 +2,7 @@ extends CanvasLayer
 ## Scenario selection UI shown at game start. Pick a scenario and start battle.
 
 @onready var main_list: VBoxContainer = $panel/margin/vbox/columns/main_column/main_list
+@onready var campaign_list: VBoxContainer = $panel/margin/vbox/columns/campaign_column/campaign_list
 @onready var debug_list: VBoxContainer = $panel/margin/vbox/columns/debug_column/debug_list
 @onready var start_btn: Button = $panel/margin/vbox/start_btn
 
@@ -11,16 +12,20 @@ func _ready() -> void:
 		start_btn.pressed.connect(_on_start_pressed)
 
 func _rebuild_buttons() -> void:
-	if not main_list or not debug_list:
+	if not main_list or not campaign_list or not debug_list:
 		return
 	for c in main_list.get_children():
+		c.queue_free()
+	for c in campaign_list.get_children():
 		c.queue_free()
 	for c in debug_list.get_children():
 		c.queue_free()
 	var by_category: Dictionary = Scenarios.get_scenarios_by_category()
-	for s in by_category.main:
+	for s in by_category.get("campaign", []):
+		_add_scenario_button(campaign_list, s)
+	for s in by_category.get("main", []):
 		_add_scenario_button(main_list, s)
-	for s in by_category.debug:
+	for s in by_category.get("debug", []):
 		_add_scenario_button(debug_list, s)
 
 func _add_scenario_button(container: VBoxContainer, s: Dictionary) -> void:

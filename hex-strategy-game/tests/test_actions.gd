@@ -15,6 +15,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_medic_definition_stats_and_actions(tests) and ok
 	ok = _test_zerg_vs_terran_includes_medic(tests) and ok
 	ok = _test_zerg_vs_terran_v2_scenario_exists(tests) and ok
+	ok = _test_campaign_opening_scenario_exists(tests) and ok
 	ok = _test_excavator_debug_scenario_exists(tests) and ok
 	ok = _test_medic_heal_debug_scenario_exists(tests) and ok
 	ok = _test_fester_debug_scenario_exists(tests) and ok
@@ -248,6 +249,60 @@ static func _test_zerg_vs_terran_v2_scenario_exists(tests: Node) -> bool:
 		tests._fail("zerg_vs_terran_v2 should include opponent fester")
 		return false
 	tests._pass("zerg_vs_terran_v2 has base+marine+scout vs zergling+fester")
+	return true
+
+static func _test_campaign_opening_scenario_exists(tests: Node) -> bool:
+	tests._log("test_actions: campaign_opening is in campaign category and matches requested unit layout")
+	var scenario: Dictionary = Scenarios.get_scenario_by_id("campaign_opening")
+	if scenario.is_empty():
+		tests._fail("campaign_opening scenario should exist")
+		return false
+	var by_category: Dictionary = Scenarios.get_scenarios_by_category()
+	var in_campaign := false
+	for entry in by_category.get("campaign", []):
+		if str(entry.get("id", "")) == "campaign_opening":
+			in_campaign = true
+			break
+	if not in_campaign:
+		tests._fail("campaign_opening should be categorized as campaign")
+		return false
+	var total_zerglings := 0
+	var left_zerglings := 0
+	var total_scout := 0
+	var right_scout := 0
+	var total_marines := 0
+	var right_marines := 0
+	for g in scenario.get("groups", []):
+		for u in g.get("units", []):
+			var def_path: String = str(u.get("def_path", ""))
+			var cell_variant: Variant = u.get("cell", Vector2i.ZERO)
+			var cell := Vector2i.ZERO
+			if cell_variant is Vector2i:
+				cell = cell_variant
+			elif cell_variant is Vector2:
+				cell = Vector2i(int(cell_variant.x), int(cell_variant.y))
+			if def_path == "res://src/unit/definitions/zergling.tres":
+				total_zerglings += 1
+				if cell.x < 0:
+					left_zerglings += 1
+			elif def_path == "res://src/unit/definitions/scout.tres":
+				total_scout += 1
+				if cell.x > 0:
+					right_scout += 1
+			elif def_path == "res://src/unit/definitions/marine.tres":
+				total_marines += 1
+				if cell.x > 0:
+					right_marines += 1
+	if total_zerglings != 5 or left_zerglings != 5:
+		tests._fail("campaign_opening should include 5 zerglings on the left side")
+		return false
+	if total_scout != 1 or right_scout != 1:
+		tests._fail("campaign_opening should include 1 scout on the right side")
+		return false
+	if total_marines != 3 or right_marines != 3:
+		tests._fail("campaign_opening should include 3 marines on the right side")
+		return false
+	tests._pass("campaign_opening scenario is categorized and configured correctly")
 	return true
 
 static func _test_excavator_debug_scenario_exists(tests: Node) -> bool:
