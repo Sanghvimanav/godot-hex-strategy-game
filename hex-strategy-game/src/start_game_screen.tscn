@@ -1,0 +1,43 @@
+[gd_scene load_steps=2 format=3 uid="uid://dvkp16b4ja4ic"]
+
+[ext_resource type="Script" path="res://src/start_game_screen.gd" id="1_script"]
+
+[node name="StartGameScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_script")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.0941176, 0.121569, 0.160784, 1)
+
+[node name="CenterContainer" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="VBox" type="VBoxContainer" parent="CenterContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+theme_override_constants/separation = 56
+
+[node name="NarrativeText" type="Label" parent="CenterContainer/VBox"]
+custom_minimum_size = Vector2(1360, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 38
+text = "This is just the beginning Of the conflict between the Zerg, whose goal is to wipe out all intelligent life deemed destructive, and the Terran who are fighting for their survival."
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="StartButton" type="Button" parent="CenterContainer/VBox"]
+custom_minimum_size = Vector2(760, 170)
+layout_mode = 2
+theme_override_font_sizes/font_size = 64
+text = "START GAME"
