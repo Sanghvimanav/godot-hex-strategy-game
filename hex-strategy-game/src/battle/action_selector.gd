@@ -43,7 +43,7 @@ func _rebuild_buttons() -> void:
 	if _current_unit == null:
 		return
 	var def: UnitDefinition = _current_unit.def
-	for key in def.move_action_keys:
+	for key in def.get_move_action_keys_resolved():
 		var availability: Dictionary = _current_unit.abilities_db.get_action_availability(key)
 		_add_action_button(
 			move_buttons,
@@ -52,7 +52,7 @@ func _rebuild_buttons() -> void:
 			bool(availability.get("available", false)),
 			str(availability.get("reason", ""))
 		)
-	for key in def.ability_action_keys:
+	for key in def.get_ability_action_keys_resolved():
 		var availability: Dictionary = _current_unit.abilities_db.get_action_availability(key)
 		_add_action_button(
 			ability_buttons,

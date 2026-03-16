@@ -32,17 +32,25 @@ static func get_units_at_cell(game_state: Dictionary, cell: Vector2i) -> Array:
 
 static func get_unit_def(def_path: String) -> Dictionary:
 	var def: Resource = load(def_path) as Resource
-	var move_keys = def.get("move_action_keys") if def else null
-	if def == null or move_keys == null:
+	if def == null:
 		return {}
-	var ab_keys = def.get("ability_action_keys")
+	var move_keys = def.get("move_action_keys") if def else null
+	if move_keys == null:
+		return {}
+	var ab_keys: Array
 	var pass_keys = def.get("passive_action_keys")
+	# Use resolved keys (includes default Rest) when def is UnitDefinition
+	if def is UnitDefinition:
+		move_keys = def.get_move_action_keys_resolved()
+		ab_keys = def.get_ability_action_keys_resolved()
+	else:
+		ab_keys = def.get("ability_action_keys") if def.get("ability_action_keys") != null else []
 	var max_h = def.get("max_health")
 	var max_e = def.get("max_energy")
 	var start_e = def.get("start_energy")
 	return {
 		move_action_keys = move_keys,
-		ability_action_keys = ab_keys if ab_keys != null else [],
+		ability_action_keys = ab_keys,
 		passive_action_keys = pass_keys if pass_keys != null else [],
 		max_health = int(max_h) if max_h != null and int(max_h) > 0 else 2,
 		max_energy = int(max_e) if max_e != null else 0,

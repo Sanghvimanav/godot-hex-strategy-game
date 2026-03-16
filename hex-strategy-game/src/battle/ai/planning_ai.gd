@@ -50,9 +50,9 @@ static func _collect_all_options(unit: Unit) -> Array:
 	var db = unit.abilities_db
 	if db == null:
 		return []
-	for key in unit.def.move_action_keys:
+	for key in unit.def.get_move_action_keys_resolved():
 		result.append_array(db.get_options_for_action_key(key))
-	for key in unit.def.ability_action_keys:
+	for key in unit.def.get_ability_action_keys_resolved():
 		result.append_array(db.get_options_for_action_key(key))
 	return result
 

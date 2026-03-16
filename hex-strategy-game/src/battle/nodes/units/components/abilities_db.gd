@@ -28,7 +28,7 @@ func get_action_availability(action_key: String) -> Dictionary:
 			"reason": "No unit selected",
 		}
 	var result: Array = []
-	if action_key in unit.def.move_action_keys:
+	if action_key in unit.def.get_move_action_keys_resolved():
 		var defs_arr: Array = Actions.get_move_definitions_for_action(action_key)
 		for def in defs_arr:
 			var ac: ActionInstance = def.to_action_instance(unit) as ActionInstance
@@ -39,7 +39,7 @@ func get_action_availability(action_key: String) -> Dictionary:
 			"options": move_options,
 			"reason": "No valid targets" if move_options.is_empty() else "",
 		}
-	elif action_key in unit.def.ability_action_keys:
+	elif action_key in unit.def.get_ability_action_keys_resolved():
 		var reason: String = _get_ability_unavailability_reason(action_key)
 		if not reason.is_empty():
 			return {

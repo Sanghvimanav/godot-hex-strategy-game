@@ -614,9 +614,13 @@ func _run_ai_planning() -> void:
 	var entry = PlanningAI.pick_action(current_unit, groups, _get_units_at_cell_for_planning)
 	if entry.is_empty():
 		# No valid action (shouldn't happen) - pick Rest if available
-		var options = current_unit.abilities_db.get_options_for_action_key("reload")
+		var options: Array = []
+		for key in current_unit.def.get_move_action_keys_resolved():
+			options = current_unit.abilities_db.get_options_for_action_key(key)
+			if not options.is_empty():
+				break
 		if options.is_empty():
-			for key in current_unit.def.move_action_keys:
+			for key in current_unit.def.get_ability_action_keys_resolved():
 				options = current_unit.abilities_db.get_options_for_action_key(key)
 				if not options.is_empty():
 					break
