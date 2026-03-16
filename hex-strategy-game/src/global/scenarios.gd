@@ -3,8 +3,8 @@ extends Node
 ## Select a scenario before loading battle; battle reads selected_scenario_id and applies it.
 
 const CUSTOM_SCENARIO_ID := "custom"
-const CUSTOM_TERRAN_STACK_CELL := Vector2i(1, 0)
-const CUSTOM_ZERG_STACK_CELL := Vector2i(-1, 0)
+const CUSTOM_TERRAN_STACK_CELL := Vector2i(4, 0)
+const CUSTOM_ZERG_STACK_CELL := Vector2i(-4, 0)
 const _UNIT_DEFINITIONS_DIR := "res://src/unit/definitions"
 
 var selected_scenario_id: String = "default"
