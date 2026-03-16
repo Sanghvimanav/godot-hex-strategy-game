@@ -20,6 +20,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_fester_debug_scenario_exists(tests) and ok
 	ok = _test_shardling_debug_scenario_exists(tests) and ok
 	ok = _test_custom_scenario_exists(tests) and ok
+	ok = _test_custom_builder_has_single_scout_definition(tests) and ok
 	ok = _test_custom_scenario_counts_apply_and_stack(tests) and ok
 	ok = _test_extract_tile_action_config(tests) and ok
 	ok = _test_recruit_people_action_config(tests) and ok
@@ -383,6 +384,30 @@ static func _test_custom_scenario_exists(tests: Node) -> bool:
 		tests._fail("custom scenario should have exactly 2 groups")
 		return false
 	tests._pass("custom scenario exists")
+	return true
+
+static func _test_custom_builder_has_single_scout_definition(tests: Node) -> bool:
+	tests._log("test_actions: custom builder terran menu exposes only one scout definition")
+	if ResourceLoader.exists("res://src/unit/definitions/ghost.tres"):
+		tests._fail("legacy ghost.tres should not exist; scout should be the only scout-like terran unit definition")
+		return false
+	var terran_rows: Array[Dictionary] = Scenarios.get_custom_scenario_unit_counts_for_faction("terran")
+	var scout_def_count: int = 0
+	var scout_name_count: int = 0
+	for row in terran_rows:
+		var def_path: String = str(row.get("def_path", ""))
+		var name: String = str(row.get("name", ""))
+		if def_path == "res://src/unit/definitions/scout.tres":
+			scout_def_count += 1
+		if name == "Scout":
+			scout_name_count += 1
+	if scout_def_count != 1:
+		tests._fail("terran builder should include scout.tres exactly once, got %d" % scout_def_count)
+		return false
+	if scout_name_count != 1:
+		tests._fail("terran builder should show exactly one unit named Scout, got %d" % scout_name_count)
+		return false
+	tests._pass("custom builder terran menu exposes only one scout definition")
 	return true
 
 static func _test_custom_scenario_counts_apply_and_stack(tests: Node) -> bool:
