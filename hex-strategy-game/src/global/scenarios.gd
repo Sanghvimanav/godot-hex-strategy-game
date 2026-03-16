@@ -32,6 +32,27 @@ func _build_scenarios() -> void:
 		},
 		]
 	})
+	# Campaign 1: Terran patrol faces scattered zerglings.
+	available_scenarios.append({
+		"id": "campaign_opening",
+		"display_name": "Campaign 1 (Scout + 3 Marines vs 5 Zerglings)",
+		"category": "campaign",
+		"groups": [
+			{"name": "player", "units": [
+				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(4, 0)},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(4, 0)},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(4, 0)},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(4, 0)},
+			]},
+			{"name": "opponent", "ai": true, "units": [
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
+			]},
+		]
+	})
 	# Scout energy debug: Scout vs Marine at Shoot range (distance 2)
 	available_scenarios.append({
 		"id": "scout_debug",
@@ -296,16 +317,21 @@ func is_debug_scenario(s: Dictionary) -> bool:
 	var id: String = str(s.get("id", ""))
 	return "_debug" in id or "_test" in id
 
-## Returns main scenarios (non-debug) and debug scenarios as separate arrays.
+## Returns campaign, main (non-debug), and debug scenarios as separate arrays.
 func get_scenarios_by_category() -> Dictionary:
+	var campaign: Array[Dictionary] = []
 	var main: Array[Dictionary] = []
 	var debug: Array[Dictionary] = []
 	for s in available_scenarios:
 		if is_debug_scenario(s):
 			debug.append(s)
+			continue
+		var category: String = str(s.get("category", "main"))
+		if category == "campaign":
+			campaign.append(s)
 		else:
 			main.append(s)
-	return {"main": main, "debug": debug}
+	return {"campaign": campaign, "main": main, "debug": debug}
 
 func get_selected_scenario() -> Dictionary:
 	return get_scenario_by_id(selected_scenario_id)

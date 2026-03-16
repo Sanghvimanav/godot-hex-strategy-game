@@ -17,9 +17,9 @@ anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -280.0
+offset_left = -390.0
 offset_top = -200.0
-offset_right = 280.0
+offset_right = 390.0
 offset_bottom = 200.0
 
 [node name="margin" type="MarginContainer" parent="panel"]
@@ -43,6 +43,22 @@ horizontal_alignment = 1
 [node name="columns" type="HBoxContainer" parent="panel/margin/vbox"]
 layout_mode = 2
 theme_override_constants/separation = 24
+
+[node name="campaign_column" type="VBoxContainer" parent="panel/margin/vbox/columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="campaign_label" type="Label" parent="panel/margin/vbox/columns/campaign_column"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
+theme_override_font_sizes/font_size = 14
+text = "Campaign"
+horizontal_alignment = 1
+
+[node name="campaign_list" type="VBoxContainer" parent="panel/margin/vbox/columns/campaign_column"]
+layout_mode = 2
+theme_override_constants/separation = 8
 
 [node name="main_column" type="VBoxContainer" parent="panel/margin/vbox/columns"]
 layout_mode = 2
