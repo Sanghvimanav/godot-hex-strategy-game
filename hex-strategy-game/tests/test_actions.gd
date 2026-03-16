@@ -20,6 +20,9 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_medic_heal_debug_scenario_exists(tests) and ok
 	ok = _test_fester_debug_scenario_exists(tests) and ok
 	ok = _test_shardling_debug_scenario_exists(tests) and ok
+	ok = _test_custom_scenario_exists(tests) and ok
+	ok = _test_custom_builder_has_single_scout_definition(tests) and ok
+	ok = _test_custom_scenario_counts_apply_and_stack(tests) and ok
 	ok = _test_extract_tile_action_config(tests) and ok
 	ok = _test_recruit_people_action_config(tests) and ok
 	ok = _test_spawn_scout_action_config(tests) and ok
@@ -451,6 +454,115 @@ static func _test_shardling_debug_scenario_exists(tests: Node) -> bool:
 		tests._fail("shardling_debug should give player resources for evolve (people + crystal)")
 		return false
 	tests._pass("shardling_debug has Shardling on crystal tile with resources for evolve")
+	return true
+
+static func _test_custom_scenario_exists(tests: Node) -> bool:
+	tests._log("test_actions: custom scenario exists for scenario builder")
+	var scenario: Dictionary = Scenarios.get_scenario_by_id(Scenarios.CUSTOM_SCENARIO_ID)
+	if scenario.is_empty():
+		tests._fail("custom scenario should exist")
+		return false
+	var groups: Array = scenario.get("groups", [])
+	if groups.size() != 2:
+		tests._fail("custom scenario should have exactly 2 groups")
+		return false
+	tests._pass("custom scenario exists")
+	return true
+
+static func _test_custom_builder_has_single_scout_definition(tests: Node) -> bool:
+	tests._log("test_actions: custom builder terran menu exposes only one scout definition")
+	if ResourceLoader.exists("res://src/unit/definitions/ghost.tres"):
+		tests._fail("legacy ghost.tres should not exist; scout should be the only scout-like terran unit definition")
+		return false
+	var terran_rows: Array[Dictionary] = Scenarios.get_custom_scenario_unit_counts_for_faction("terran")
+	var scout_def_count: int = 0
+	var scout_name_count: int = 0
+	for row in terran_rows:
+		var def_path: String = str(row.get("def_path", ""))
+		var name: String = str(row.get("name", ""))
+		if def_path == "res://src/unit/definitions/scout.tres":
+			scout_def_count += 1
+		if name == "Scout":
+			scout_name_count += 1
+	if scout_def_count != 1:
+		tests._fail("terran builder should include scout.tres exactly once, got %d" % scout_def_count)
+		return false
+	if scout_name_count != 1:
+		tests._fail("terran builder should show exactly one unit named Scout, got %d" % scout_name_count)
+		return false
+	tests._pass("custom builder terran menu exposes only one scout definition")
+	return true
+
+static func _test_custom_scenario_counts_apply_and_stack(tests: Node) -> bool:
+	tests._log("test_actions: custom scenario applies configured counts and stacked spawn cells")
+	var success := true
+	var original_counts: Dictionary = Scenarios.get_custom_scenario_counts()
+	var terran_rows: Array[Dictionary] = Scenarios.get_custom_scenario_unit_counts_for_faction("terran")
+	var zerg_rows: Array[Dictionary] = Scenarios.get_custom_scenario_unit_counts_for_faction("zerg")
+	if terran_rows.is_empty():
+		tests._fail("custom scenario should expose at least one terran unit in builder")
+		success = false
+	if zerg_rows.is_empty():
+		tests._fail("custom scenario should expose at least one zerg unit in builder")
+		success = false
+	if not success:
+		Scenarios.set_custom_scenario_counts(original_counts)
+		return false
+
+	var terran_def_path: String = str(terran_rows[0].get("def_path", ""))
+	var zerg_def_path: String = str(zerg_rows[0].get("def_path", ""))
+	var terran_counts: Dictionary = {}
+	var zerg_counts: Dictionary = {}
+	terran_counts[terran_def_path] = 2
+	zerg_counts[zerg_def_path] = 3
+	Scenarios.set_custom_scenario_counts({
+		"terran": terran_counts,
+		"zerg": zerg_counts,
+	})
+
+	var scenario: Dictionary = Scenarios.get_scenario_by_id(Scenarios.CUSTOM_SCENARIO_ID)
+	var player_units: Array = []
+	var opponent_units: Array = []
+	for g in scenario.get("groups", []):
+		var group_name: String = str(g.get("name", ""))
+		if group_name == "player":
+			player_units = g.get("units", [])
+		elif group_name == "opponent":
+			opponent_units = g.get("units", [])
+
+	var terran_count := 0
+	for u in player_units:
+		var def_path: String = str(u.get("def_path", ""))
+		if def_path == terran_def_path:
+			terran_count += 1
+		var cell = u.get("cell", Vector2i.ZERO)
+		if not (cell is Vector2i and cell == Scenarios.CUSTOM_TERRAN_STACK_CELL):
+			tests._fail("all terran custom units should spawn on terran stack cell")
+			success = false
+			break
+
+	var zerg_count := 0
+	for u in opponent_units:
+		var def_path: String = str(u.get("def_path", ""))
+		if def_path == zerg_def_path:
+			zerg_count += 1
+		var cell = u.get("cell", Vector2i.ZERO)
+		if not (cell is Vector2i and cell == Scenarios.CUSTOM_ZERG_STACK_CELL):
+			tests._fail("all zerg custom units should spawn on zerg stack cell")
+			success = false
+			break
+
+	if terran_count != 2:
+		tests._fail("expected 2 configured terran units, got %d" % terran_count)
+		success = false
+	if zerg_count != 3:
+		tests._fail("expected 3 configured zerg units, got %d" % zerg_count)
+		success = false
+
+	Scenarios.set_custom_scenario_counts(original_counts)
+	if not success:
+		return false
+	tests._pass("custom scenario applies configured counts and stacked spawn cells")
 	return true
 
 static func _test_extract_tile_action_config(tests: Node) -> bool:

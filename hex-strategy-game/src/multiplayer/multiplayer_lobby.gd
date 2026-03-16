@@ -21,11 +21,14 @@ extends Control
 @onready var game_state_label: Label = $VBox/GamePanel/Margin/VBox/GameStateLabel
 @onready var launch_battle_btn: Button = $VBox/GamePanel/Margin/VBox/LaunchBattleButton
 @onready var waiting_for_host_label: Label = $VBox/GamePanel/Margin/VBox/WaitingForHostLabel
+@onready var edit_custom_btn: Button = $VBox/LobbyPanel/Margin/VBox/EditCustomButton
+@onready var custom_builder_popup: CustomScenarioBuilderPopup = $custom_builder_popup
 
 var _gs: Node
 var _is_host: bool = false
 var _my_group: String = ""
 var _current_state: Dictionary = {}
+var _suppress_scenario_option_signal: bool = false
 
 func _ready() -> void:
 	_gs = get_node_or_null("/root/GameServer")
@@ -56,10 +59,17 @@ func _setup_host() -> void:
 		launch_battle_btn.pressed.connect(_on_launch_battle_pressed)
 	if create_btn:
 		create_btn.pressed.connect(_on_create_pressed)
+	if scenario_option:
+		scenario_option.item_selected.connect(_on_scenario_option_selected)
+	if edit_custom_btn:
+		edit_custom_btn.pressed.connect(_on_edit_custom_pressed)
+		edit_custom_btn.visible = false
 	if username_ok:
 		username_ok.pressed.connect(_on_username_submitted)
 	if username_edit:
 		username_edit.text_submitted.connect(_on_username_submitted_str)
+	if custom_builder_popup and custom_builder_popup.has_signal("configuration_applied"):
+		custom_builder_popup.configuration_applied.connect(_on_custom_builder_applied)
 	connect_panel.visible = false
 	username_panel.visible = true
 	lobby_panel.visible = false
@@ -82,6 +92,8 @@ func _setup_client() -> void:
 		connect_btn.pressed.connect(_on_connect_pressed)
 	if connected_players_label:
 		connected_players_label.visible = false
+	if edit_custom_btn:
+		edit_custom_btn.visible = false
 	connect_panel.visible = true
 	username_panel.visible = false
 	lobby_panel.visible = false
@@ -174,6 +186,7 @@ func _on_server_message(obj: Dictionary) -> void:
 				scenario_option.visible = _is_host
 				if _is_host:
 					_populate_scenario_option()
+			_update_custom_builder_controls()
 		"lobby":
 			_populate_games_list(obj.get("games", []))
 		"game_created":
@@ -260,6 +273,7 @@ func _update_game_state_label(state: Dictionary) -> void:
 func _populate_scenario_option() -> void:
 	if not scenario_option:
 		return
+	_suppress_scenario_option_signal = true
 	scenario_option.clear()
 	var scenarios: Array[Dictionary] = Scenarios.get_multiplayer_scenarios()
 	for i in scenarios.size():
@@ -267,6 +281,37 @@ func _populate_scenario_option() -> void:
 		scenario_option.add_item(str(s.get("display_name", s.get("id", "?"))), i)
 		scenario_option.set_item_metadata(i, s.get("id", ""))
 	scenario_option.selected = 0
+	_suppress_scenario_option_signal = false
+	_update_custom_builder_controls()
+
+func _on_scenario_option_selected(_index: int) -> void:
+	if _suppress_scenario_option_signal:
+		return
+	_update_custom_builder_controls()
+	if _is_host and _is_custom_scenario_selected():
+		_open_custom_builder()
+
+func _is_custom_scenario_selected() -> bool:
+	return Scenarios.is_custom_scenario_id(_get_selected_scenario_id())
+
+func _on_edit_custom_pressed() -> void:
+	_open_custom_builder()
+
+func _open_custom_builder() -> void:
+	if not _is_host:
+		return
+	if custom_builder_popup and custom_builder_popup.has_method("open_builder"):
+		custom_builder_popup.open_builder()
+
+func _on_custom_builder_applied() -> void:
+	if status_label:
+		status_label.text = "Custom scenario updated."
+
+func _update_custom_builder_controls() -> void:
+	var has_option: bool = scenario_option != null
+	var should_show: bool = _is_host and has_option and scenario_option.visible and _is_custom_scenario_selected()
+	if edit_custom_btn:
+		edit_custom_btn.visible = should_show
 
 func _get_selected_scenario_id() -> String:
 	if not scenario_option or scenario_option.selected < 0:

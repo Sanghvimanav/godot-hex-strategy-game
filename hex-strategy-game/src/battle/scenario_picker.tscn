@@ -1,6 +1,7 @@
-[gd_scene format=3 uid="uid://b3m8k2n5qx1wr"]
+[gd_scene load_steps=3 format=3 uid="uid://b3m8k2n5qx1wr"]
 
 [ext_resource type="Script" path="res://src/battle/scenario_picker.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://src/battle/custom_scenario_builder_popup.tscn" id="2_custom_builder"]
 
 [node name="scenario_picker" type="CanvasLayer"]
 script = ExtResource("1_script")
@@ -95,3 +96,10 @@ theme_override_constants/separation = 8
 [node name="start_btn" type="Button" parent="panel/margin/vbox"]
 layout_mode = 2
 text = "Start Battle"
+
+[node name="custom_builder_btn" type="Button" parent="panel/margin/vbox"]
+visible = false
+layout_mode = 2
+text = "Configure Custom Scenario"
+
+[node name="custom_builder_popup" parent="." instance=ExtResource("2_custom_builder")]
