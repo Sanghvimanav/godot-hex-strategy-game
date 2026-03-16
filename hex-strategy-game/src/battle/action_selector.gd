@@ -101,9 +101,18 @@ func _add_action_button(parent: Control, action_key: String, _is_move: bool, is_
 	btn.add_theme_stylebox_override("disabled", disabled_bg)
 	btn.add_theme_color_override("font_color", Color.WHITE)
 	btn.add_theme_color_override("font_disabled_color", Color(0.8, 0.8, 0.8))
-	if action_key == _selected_action_key and is_available:
+	var planned_key: String = ""
+	if _current_unit and _current_unit.planned_action and _current_unit.planned_action.definition:
+		planned_key = _current_unit.planned_action.definition.action_key
+	var is_planned_action: bool = (action_key == planned_key)
+	var border_color: Color = Color.TRANSPARENT
+	if is_planned_action:
+		border_color = Color(0.2, 0.9, 0.2)
+	elif action_key == _selected_action_key and is_available:
+		border_color = Color.WHITE
+	if border_color != Color.TRANSPARENT:
 		var sel := StyleBoxFlat.new()
-		sel.bg_color = Color(color_hex).lightened(0.2)
+		sel.bg_color = Color(color_hex).lightened(0.1) if action_key == _selected_action_key and is_available else Color(color_hex)
 		sel.corner_radius_top_left = 4
 		sel.corner_radius_top_right = 4
 		sel.corner_radius_bottom_right = 4
@@ -112,8 +121,21 @@ func _add_action_button(parent: Control, action_key: String, _is_move: bool, is_
 		sel.border_width_right = 2
 		sel.border_width_top = 2
 		sel.border_width_bottom = 2
-		sel.border_color = Color.WHITE
+		sel.border_color = border_color
 		btn.add_theme_stylebox_override("normal", sel)
+	if is_planned_action:
+		var planned_disabled := StyleBoxFlat.new()
+		planned_disabled.bg_color = Color(color_hex).darkened(0.45)
+		planned_disabled.corner_radius_top_left = 4
+		planned_disabled.corner_radius_top_right = 4
+		planned_disabled.corner_radius_bottom_right = 4
+		planned_disabled.corner_radius_bottom_left = 4
+		planned_disabled.border_width_left = 2
+		planned_disabled.border_width_right = 2
+		planned_disabled.border_width_top = 2
+		planned_disabled.border_width_bottom = 2
+		planned_disabled.border_color = Color(0.2, 0.9, 0.2)
+		btn.add_theme_stylebox_override("disabled", planned_disabled)
 	parent.add_child(btn)
 
 func _on_action_pressed(action_key: String) -> void:
