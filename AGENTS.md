@@ -4,7 +4,7 @@
 
 ### Project Overview
 
-This is a **Godot 4.6 hex strategy game** (`hex-strategy-game/`). The legacy `godot/` directory is an older WebSocket-based prototype and is not actively developed. The root `package.json` is a leftover from the Node.js era and has no meaningful dependencies.
+This is a **Godot 4.6 hex strategy game** (`hex-strategy-game/`).
 
 ### Running the Game
 

@@ -16,4 +16,4 @@ max_energy = 5
 start_energy = 0
 sight_range = 2
 move_action_keys = Array[String]([])
-ability_action_keys = Array[String](["heal_adjacent", "resupply_adjacent", "recharge", "spawn_scout", "spawn_marine", "spawn_medic"])
+ability_action_keys = Array[String](["recharge", "spawn_marine", "spawn_medic"])

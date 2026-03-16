@@ -1,6 +1,0 @@
-{
-  "name": "strategy-game-multiplayer",
-  "version": "1.0.0",
-  "description": "Hex strategy game – multiplayer via Godot server",
-  "private": true
-}
