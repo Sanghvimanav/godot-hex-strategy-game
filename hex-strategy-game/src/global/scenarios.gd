@@ -39,17 +39,17 @@ func _build_scenarios() -> void:
 		"category": "campaign",
 		"groups": [
 			{"name": "player", "units": [
-				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(3, 0)},
-				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(2, -1)},
-				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(2, 1)},
-				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(4, -1)},
+				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(4, 0)},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(4, 0)},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(4, 0)},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(4, 0)},
 			]},
 			{"name": "opponent", "ai": true, "units": [
-				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 1)},
-				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-3, -1)},
-				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-3, 2)},
-				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-2, -2)},
-				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-1, 3)},
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
+				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
 			]},
 		]
 	})
