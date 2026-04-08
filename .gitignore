@@ -1,3 +1,11 @@
 # Godot 4+ editor and export cache (regenerated locally)
 .godot/
+
+# ngrok binary (downloaded for multiplayer tunneling)
+ngrok
+
+# Godot macOS export artifacts (large binaries; regenerate from export presets)
+hex-strategy-game/Hex Strategy Game.app/
+hex-strategy-game/Hex Strategy Game.zip
+
 *.import.bak

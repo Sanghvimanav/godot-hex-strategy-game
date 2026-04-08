@@ -1,11 +1,14 @@
 extends CanvasLayer
 const BattlePhase = preload("res://src/battle/battle_phase.gd")
 
+@onready var turn_panel: PanelContainer = $turn_panel
 @onready var execute_button: Button = $turn_panel/vbox/execute_button
 @onready var replay_button: Button = $turn_panel/vbox/replay_button
 @onready var replay_turn_picker: OptionButton = $turn_panel/vbox/replay_turn_picker
 @onready var turn_label: Label = $turn_panel/vbox/turn_label
+@onready var llm_status_label: Label = $turn_panel/vbox/llm_status_label
 @onready var scenarios_button: Button = $turn_panel/vbox/scenarios_button
+@onready var end_game_button: Button = $turn_panel/vbox/end_game_button
 @onready var resources_panel: PanelContainer = $resources_panel
 @onready var resources_label: Label = $resources_panel/margin/vbox/resources_label
 @onready var hovered_tile_label: Label = $resources_panel/margin/vbox/hovered_tile_label
@@ -18,6 +21,8 @@ var _replay_available: bool = false
 var _replay_in_progress: bool = false
 var _updating_replay_picker: bool = false
 var _resources_panel_base_height := 0.0
+## Pixels between viewport bottom and turn panel bottom (kept fixed; panel grows upward).
+var _turn_panel_bottom_margin := 12.0
 
 func _ready() -> void:
 	execute_button.pressed.connect(_on_execute_pressed)
@@ -28,6 +33,9 @@ func _ready() -> void:
 		scenarios_button.pressed.connect(_on_scenarios_pressed)
 		if MultiplayerState.is_multiplayer:
 			scenarios_button.visible = false
+	if end_game_button:
+		end_game_button.pressed.connect(_on_end_game_pressed)
+		end_game_button.visible = not MultiplayerState.is_multiplayer
 	if replay_button:
 		replay_button.pressed.connect(_on_replay_pressed)
 	if replay_turn_picker:
@@ -35,6 +43,7 @@ func _ready() -> void:
 		replay_turn_picker.disabled = true
 	EventBus.planning_started.connect(_on_planning_started)
 	EventBus.planning_complete.connect(_on_planning_complete)
+	EventBus.llm_planning_status.connect(_on_llm_planning_status)
 	EventBus.turn_changed.connect(_on_turn_changed)
 	EventBus.replay_available_changed.connect(_on_replay_available_changed)
 	EventBus.replay_history_changed.connect(_on_replay_history_changed)
@@ -47,6 +56,11 @@ func _ready() -> void:
 	_update_resource_inventory()
 	_update_hovered_tile_resource()
 	_fit_resources_panel_to_content()
+	if turn_panel:
+		get_viewport().size_changed.connect(_fit_turn_panel_to_content)
+		if llm_status_label:
+			llm_status_label.resized.connect(_fit_turn_panel_to_content)
+		call_deferred("_fit_turn_panel_to_content")
 	set_process(true)
 
 func _on_turn_changed(turn_number: int) -> void:
@@ -54,8 +68,33 @@ func _on_turn_changed(turn_number: int) -> void:
 		turn_label.text = "Turn %d" % turn_number
 	_update_resource_inventory()
 
+func _on_llm_planning_status(status: String, detail: String) -> void:
+	if llm_status_label == null:
+		return
+	if status.is_empty() or status == "idle":
+		llm_status_label.text = ""
+		call_deferred("_fit_turn_panel_to_content")
+		return
+	var line := status.capitalize()
+	if not detail.is_empty():
+		line = "%s: %s" % [line, detail]
+	llm_status_label.text = line
+	call_deferred("_fit_turn_panel_to_content")
+
+func _fit_turn_panel_to_content() -> void:
+	if turn_panel == null:
+		return
+	turn_panel.offset_bottom = -_turn_panel_bottom_margin
+	var min_h: float = turn_panel.get_combined_minimum_size().y
+	var h: float = maxf(min_h, turn_panel.size.y)
+	h = maxf(h, 80.0)
+	turn_panel.offset_top = turn_panel.offset_bottom - h
+
 func _on_planning_started() -> void:
 	execute_button.disabled = true
+	if llm_status_label:
+		llm_status_label.text = ""
+	call_deferred("_fit_turn_panel_to_content")
 	if MultiplayerState.is_multiplayer:
 		execute_button.text = "Submit"
 	_update_replay_controls()
@@ -134,6 +173,13 @@ func _on_tile_resource_changed(_q: int, _r: int, _resource_type: String, _amount
 	_update_hovered_tile_resource()
 
 func _on_scenarios_pressed() -> void:
+	get_tree().change_scene_to_file("res://src/battle/scenario_picker.tscn")
+
+
+func _on_end_game_pressed() -> void:
+	if MultiplayerState.is_multiplayer:
+		return
+	LlmPostGame.capture_from_battle(_units_node)
 	get_tree().change_scene_to_file("res://src/battle/scenario_picker.tscn")
 
 func _process(_delta: float) -> void:

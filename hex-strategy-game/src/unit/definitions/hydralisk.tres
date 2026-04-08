@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_script")
 name = "Hydralisk"
+description = "Ranged zerg: move or reload; needle spine at medium range with damage and short stun."
 type = 7
 faction = 1
 frames = ExtResource("2_frames")

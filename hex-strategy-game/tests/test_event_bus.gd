@@ -6,6 +6,9 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_show_units_panel_signal_exists(tests) and ok
 	ok = _test_show_units_panel_connect_and_emit(tests) and ok
 	ok = _test_tile_resource_deplete_requested_signal_exists(tests) and ok
+	ok = _test_llm_planning_status_signal_exists(tests) and ok
+	ok = _test_llm_planning_status_connect_and_emit(tests) and ok
+	ok = _test_post_game_learning_message_signal_exists(tests) and ok
 	return ok
 
 static func _test_show_units_panel_signal_exists(tests: Node) -> bool:
@@ -50,4 +53,50 @@ static func _test_tile_resource_deplete_requested_signal_exists(tests: Node) -> 
 		tests._fail("EventBus should have signal tile_resource_deplete_requested")
 		return false
 	tests._pass("tile_resource_deplete_requested signal exists")
+	return true
+
+static func _test_llm_planning_status_signal_exists(tests: Node) -> bool:
+	tests._log("test_event_bus: llm_planning_status signal exists")
+	var list: Array = EventBus.get_signal_list()
+	var found := false
+	for sig in list:
+		if sig["name"] == "llm_planning_status":
+			found = true
+			break
+	if not found:
+		tests._fail("EventBus should have signal llm_planning_status")
+		return false
+	tests._pass("llm_planning_status signal exists")
+	return true
+
+static func _test_llm_planning_status_connect_and_emit(tests: Node) -> bool:
+	tests._log("test_event_bus: llm_planning_status can connect and emit")
+	var received: Array = []
+	var cb := func(status: String, detail: String) -> void:
+		received.append([status, detail])
+	var err: int = EventBus.llm_planning_status.connect(cb)
+	if err != OK:
+		tests._fail("connect llm_planning_status failed: %d" % err)
+		return false
+	EventBus.llm_planning_status.emit("waiting", "test detail")
+	EventBus.llm_planning_status.disconnect(cb)
+	if received.size() != 1 or received[0][0] != "waiting" or received[0][1] != "test detail":
+		tests._fail("emit should have been received once with pair, got %s" % received)
+		return false
+	tests._pass("llm_planning_status connect and emit")
+	return true
+
+
+static func _test_post_game_learning_message_signal_exists(tests: Node) -> bool:
+	tests._log("test_event_bus: post_game_learning_message signal exists")
+	var list: Array = EventBus.get_signal_list()
+	var found := false
+	for sig in list:
+		if sig["name"] == "post_game_learning_message":
+			found = true
+			break
+	if not found:
+		tests._fail("EventBus should have signal post_game_learning_message")
+		return false
+	tests._pass("post_game_learning_message signal exists")
 	return true

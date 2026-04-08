@@ -364,6 +364,14 @@ static func debug_actions_source() -> String:
 static func get_action_config(action_key: String) -> Dictionary:
 	return ACTION_CONFIGS.get(action_key, {})
 
+## Sorted list of every action key in ACTION_CONFIGS (for LLM rules catalog, tooling).
+static func get_all_action_keys() -> Array[String]:
+	var keys: Array[String] = []
+	for k in ACTION_CONFIGS.keys():
+		keys.append(str(k))
+	keys.sort()
+	return keys
+
 ## Returns phase name for pipeline ordering (fast ability, ability, slow ability, move, etc.).
 static func get_action_type(action_key: String) -> String:
 	return get_action_config(action_key).get("type", "")

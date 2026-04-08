@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_script")
 name = "Zergling"
+description = "Fast melee: quick move; passive attack damages units on the same tile as the zergling. Best used in groups just large enough to eliminate an enemy quickly via the fast passive attack."
 type = 5
 faction = 1
 frames = ExtResource("2_frames")

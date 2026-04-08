@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_5ng7a")
 name = "Knight"
+description = "Heavy melee: moves 1 or 2 hexes; melee strike and extract tile resources (crystals/people) from its own hex."
 frames = ExtResource("1_yne5v")
 move_action_keys = Array[String](["move_short", "move_long"])
 ability_action_keys = Array[String](["attack_short", "extract_tile"])

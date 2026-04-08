@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_script")
 name = "Terran Base"
+description = "Immobile HQ: heals, resupplies, recharges, spawns Scouts and Excavators, and places Infantry Camps"
 type = 6
 faction = 2
 frames = ExtResource("2_frames")

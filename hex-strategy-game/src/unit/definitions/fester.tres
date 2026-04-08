@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_script")
 name = "Fester"
+description = "Zerg support: move or zero-energy rest; consumes village people for heal and group resources; spawns zerglings and shardlings from stockpiles."
 type = 11
 faction = 1
 frames = ExtResource("2_frames")

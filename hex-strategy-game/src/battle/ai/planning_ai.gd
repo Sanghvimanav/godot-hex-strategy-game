@@ -5,6 +5,8 @@ extends RefCounted
 
 ## Returns {ac: ActionInstance, is_move: bool} or null if no valid action.
 static func pick_action(unit: Unit, groups: Array, get_units_at_cell: Callable) -> Dictionary:
+	if unit == null or not is_instance_valid(unit):
+		return {}
 	var options: Array = _collect_all_options(unit)
 	if options.is_empty():
 		return {}
@@ -47,6 +49,8 @@ static func pick_action(unit: Unit, groups: Array, get_units_at_cell: Callable) 
 
 static func _collect_all_options(unit: Unit) -> Array:
 	var result: Array = []
+	if unit == null or not is_instance_valid(unit):
+		return []
 	var db = unit.abilities_db
 	if db == null:
 		return []

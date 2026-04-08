@@ -364,6 +364,81 @@ func _compute_visible_cell_keys() -> Dictionary:
 			result[k] = true
 	return result
 
+
+## Fog from **AI** groups' sight (spec §5.4). Used for LLM planning snapshots only.
+func compute_visible_cell_keys_for_ai_groups(units_node: Node) -> Dictionary:
+	var result: Dictionary = {}
+	if units_node == null or not ("groups" in units_node) or not ("ai_group_names" in units_node):
+		return result
+	var groups: Array = units_node.groups
+	var ai_names: Array = units_node.ai_group_names
+	if groups.is_empty() or ai_names.is_empty():
+		return result
+	for g in groups:
+		var gn: String = str(g.name)
+		if gn not in ai_names:
+			continue
+		for child in g.get_children():
+			if not child is Unit:
+				continue
+			var u: Unit = child
+			if not u.is_active or not u.def:
+				continue
+			var range_limit: int = u.def.sight_range
+			if range_limit < 0:
+				continue
+			if range_limit == 0:
+				continue
+			var cell := u.cell
+			var q := int(cell.x)
+			var r := int(cell.y)
+			var hexes := HexGrid.get_hexes_in_range(q, r, range_limit)
+			for h in hexes:
+				var key := HexGrid.get_cell_key(h.x, h.y)
+				if grid.has(key):
+					result[key] = true
+	if result.is_empty():
+		for k in grid:
+			result[k] = true
+	return result
+
+
+## JSON-safe board size for LLM planning (reference; legal_options are engine-filtered). Coordinates match unit cell (q,r).
+func get_map_bounds_for_llm() -> Dictionary:
+	if grid.is_empty():
+		return {}
+	var min_q: int
+	var max_q: int
+	var min_r: int
+	var max_r: int
+	var first := true
+	for k in grid:
+		var t: Dictionary = grid[k]
+		var q := int(t.get("q", 0))
+		var r := int(t.get("r", 0))
+		if first:
+			min_q = q
+			max_q = q
+			min_r = r
+			max_r = r
+			first = false
+		else:
+			min_q = mini(min_q, q)
+			max_q = maxi(max_q, q)
+			min_r = mini(min_r, r)
+			max_r = maxi(max_r, r)
+	return {
+		"coordinate_system": "axial_q_r_same_as_snapshot_cell_xy",
+		"hex_radius": hex_radius,
+		"q_range": [min_q, max_q],
+		"r_range": [min_r, max_r],
+		"walkability": (
+			"legal_options are the only valid choices; each path/end is engine-valid. "
+			+ "hex_radius is the board radius from (0,0); q_range and r_range are min/max of existing tiles (not every pair in that box is a tile)."
+		),
+	}
+
+
 ## Hides enemy units (non-observer groups) when their cell is not in visible_cell_keys.
 ## Observer group = multiplayer_my_group in multiplayer, else first group. Dead units always hidden.
 func _update_enemy_visibility(visible_cell_keys: Dictionary) -> void:

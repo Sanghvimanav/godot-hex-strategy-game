@@ -5,6 +5,10 @@ const BattlePhase = preload("res://src/battle/battle_phase.gd")
 const TurnExecutor = preload("res://src/battle/turn_executor.gd")
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 const PlanningAI = preload("res://src/battle/ai/planning_ai.gd")
+const LlmPlanningSnapshot = preload("res://src/llm_ai/llm_planning_snapshot.gd")
+const LlmPlanningPrompts = preload("res://src/llm_ai/llm_planning_prompts.gd")
+const LlmPlanningResponseParser = preload("res://src/llm_ai/llm_planning_response_parser.gd")
+const LlmPlanningPayloadLog = preload("res://src/llm_ai/llm_planning_payload_log.gd")
 const UNIT_SCENE := preload("res://src/unit/unit.tscn")
 const MAX_REPLAY_TURN_HISTORY: int = 8
 
@@ -21,8 +25,23 @@ var turn_number: int = 1
 
 var last_turn_recording: Dictionary = {}  # { actions: [], died_ids: [], summary: [] }
 var replay_turn_history: Array = []  # [{ turn: int, recording: Dictionary }]
+## Every executed turn for the whole match (not capped); used for post-game LLM. Replay UI still uses replay_turn_history (last MAX_REPLAY_TURN_HISTORY).
+var match_full_turn_history: Array = []
+
+## Phase 2 LLM: legal option tables for current planning phase (unit_id -> Array of {ac, is_move}).
+var _llm_option_tables: Dictionary = {}
+var _llm_http: HTTPRequest
+var _llm_openai: LlmOpenAiClient
+var _llm_batch_running: bool = false
+var _llm_batch_generation: int = 0
+## Set true when at least one AI action was applied from a validated LLM choice this match (Phase 3 gate).
+var match_had_llm_validated_plan: bool = false
 
 func _ready() -> void:
+	_llm_http = HTTPRequest.new()
+	_llm_http.name = "LlmHttpRequest"
+	add_child(_llm_http)
+	_llm_openai = LlmOpenAiClient.new()
 	_refresh_groups()
 	EventBus.execute_turn_requested.connect(_on_execute_turn_requested)
 	EventBus.replay_turn_requested.connect(_on_replay_turn_requested)
@@ -42,6 +61,13 @@ func _on_action_key_selected(action_key: String) -> void:
 			EventBus.action_key_selected.emit("")
 
 func _on_execute_turn_requested() -> void:
+	# If LLM still computing, cancel and classic-fill AI so the player is never blocked (spec §2.1).
+	if _llm_batch_running:
+		_llm_openai.cancel_inflight(_llm_http)
+		_llm_batch_generation += 1
+		_llm_batch_running = false
+		_apply_classic_plans_all_ai_units()
+		EventBus.llm_planning_status.emit("classic", "Turn submitted while LLM was running — classic AI for opponent.")
 	if battle_phase != BattlePhase.Phase.PLANNING or not _all_units_have_planned_action():
 		return
 	if MultiplayerState.is_multiplayer:
@@ -258,10 +284,12 @@ func _submit_actions_to_server() -> void:
 
 func start_battle() -> void:
 	turn_number = 1
+	match_had_llm_validated_plan = false
 	battle_phase = BattlePhase.Phase.PLANNING
 	_clear_all_planned_actions()
 	last_turn_recording = {}
 	replay_turn_history.clear()
+	match_full_turn_history.clear()
 	EventBus.turn_changed.emit(turn_number)
 	EventBus.replay_available_changed.emit(false)
 	EventBus.replay_history_changed.emit([], 0)
@@ -478,8 +506,234 @@ func _convert_applied_effects_to_stable(applied_effects: Array) -> Array:
 	return converted
 
 func _clear_all_planned_actions() -> void:
+	_llm_option_tables.clear()
 	for u in get_active_units():
 		u.planned_action = null
+
+
+func _should_run_llm_batch_for_sp() -> bool:
+	if MultiplayerState.is_multiplayer:
+		return false
+	if ai_group_names.is_empty():
+		return false
+	var settings := LlmAiSettings.new()
+	settings.load_from_disk()
+	return settings.has_configured_key()
+
+
+func _get_planning_units_ordered() -> Array[Unit]:
+	var active: Array[Unit] = get_active_units()
+	var human_first: Array[Unit] = []
+	var ai_list: Array[Unit] = []
+	for u in active:
+		var gname: String = u.get_parent().name if u.get_parent() else ""
+		if gname in ai_group_names:
+			ai_list.append(u)
+		else:
+			human_first.append(u)
+	var out: Array[Unit] = []
+	out.append_array(human_first)
+	out.append_array(ai_list)
+	return out
+
+
+func _apply_classic_plans_all_ai_units() -> void:
+	for u in get_active_units():
+		if not (is_instance_valid(u) and u is Unit and u.is_active):
+			continue
+		var gname: String = u.get_parent().name if u.get_parent() else ""
+		if gname not in ai_group_names:
+			continue
+		if u.planned_action != null:
+			continue
+		var entry: Dictionary = PlanningAI.pick_action(u, groups, _get_units_at_cell_for_planning)
+		if not entry.is_empty():
+			_store_planned_action(u, entry.ac, entry.is_move)
+
+
+func _apply_llm_choice_map(by_unit_id: Dictionary) -> Dictionary:
+	var any_llm := false
+	var partial := false
+	for u in get_active_units():
+		if not (is_instance_valid(u) and u is Unit and u.is_active):
+			continue
+		var gname: String = u.get_parent().name if u.get_parent() else ""
+		if gname not in ai_group_names:
+			continue
+		var uid: int = _get_unit_stable_id(u)
+		var opts: Array = _llm_option_tables.get(uid, []) as Array
+		if not by_unit_id.has(uid):
+			partial = true
+			continue
+		var idx: int = int(by_unit_id[uid])
+		if idx < 0 or idx >= opts.size():
+			partial = true
+			continue
+		var raw: Variant = opts[idx]
+		if typeof(raw) != TYPE_DICTIONARY:
+			partial = true
+			continue
+		var entry: Dictionary = raw
+		var ac: ActionInstance = entry.get("ac") as ActionInstance
+		if ac == null:
+			partial = true
+			continue
+		_store_planned_action(u, ac, bool(entry.get("is_move", false)))
+		any_llm = true
+	for u2 in get_active_units():
+		if not (is_instance_valid(u2) and u2 is Unit and u2.is_active):
+			continue
+		var gn2: String = u2.get_parent().name if u2.get_parent() else ""
+		if gn2 not in ai_group_names:
+			continue
+		if u2.planned_action != null:
+			continue
+		partial = true
+		var e2: Dictionary = PlanningAI.pick_action(u2, groups, _get_units_at_cell_for_planning)
+		if not e2.is_empty():
+			_store_planned_action(u2, e2.ac, e2.is_move)
+	return { "any_llm": any_llm, "partial": partial }
+
+
+func _debug_print_llm_chosen_actions(by_unit_id: Dictionary) -> void:
+	if not OS.is_debug_build():
+		return
+	for u in get_active_units():
+		if not (is_instance_valid(u) and u is Unit and u.is_active):
+			continue
+		var gname: String = u.get_parent().name if u.get_parent() else ""
+		if gname not in ai_group_names:
+			continue
+		var uid: int = _get_unit_stable_id(u)
+		if not by_unit_id.has(uid):
+			continue
+		var idx: int = int(by_unit_id[uid])
+		var uname: String = u.def.name if u.def else "unit"
+		var opts: Array = _llm_option_tables.get(uid, []) as Array
+		if idx < 0 or idx >= opts.size():
+			print("[LLM action] unit_id=%d (%s) option_index=%d — invalid index (fallback will apply)" % [uid, uname, idx])
+			continue
+		var raw: Variant = opts[idx]
+		if typeof(raw) != TYPE_DICTIONARY:
+			print("[LLM action] unit_id=%d (%s) option_index=%d — bad option entry" % [uid, uname, idx])
+			continue
+		var entry: Dictionary = raw
+		var ac: ActionInstance = entry.get("ac") as ActionInstance
+		var is_move: bool = bool(entry.get("is_move", false))
+		if ac == null or ac.definition == null:
+			print("[LLM action] unit_id=%d (%s) option_index=%d — missing ActionInstance" % [uid, uname, idx])
+			continue
+		var ak: String = str(ac.definition.action_key)
+		var ex := int(ac.end_point.x)
+		var ey := int(ac.end_point.y)
+		print(
+			"[LLM action] unit_id=%d (%s) option_index=%d %s end=[%d,%d] move=%s"
+			% [uid, uname, idx, ak, ex, ey, str(is_move)]
+		)
+
+
+func _log_llm_failure_result(http_result: Dictionary) -> void:
+	var err: String = str(http_result.get("error", "?"))
+	var detail: String = str(http_result.get("detail", "")).strip_edges()
+	print("[LLM] request failed: error=%s" % err)
+	if not detail.is_empty():
+		print("[LLM] detail: %s" % detail)
+	if http_result.has("http_status"):
+		print("[LLM] http_status: %s" % str(http_result.get("http_status")))
+	if http_result.has("result_code"):
+		print("[LLM] result_code: %s" % str(http_result.get("result_code")))
+	var snip: String = str(http_result.get("body_snippet", "")).strip_edges()
+	if not snip.is_empty():
+		print("[LLM] body_snippet: %s" % snip)
+
+
+func _llm_batch_run_async(schedule_gen: int) -> void:
+	if schedule_gen != _llm_batch_generation:
+		return
+	_llm_batch_running = true
+	EventBus.llm_planning_status.emit("requesting", "Calling model…")
+	var settings := LlmAiSettings.new()
+	settings.load_from_disk()
+	if not settings.has_configured_key():
+		_llm_batch_running = false
+		EventBus.llm_planning_status.emit("idle", "")
+		return
+	var snapshot: Dictionary = LlmPlanningSnapshot.build_for_llm(self)
+	var user_json := JSON.stringify(snapshot)
+	if user_json.is_empty():
+		_llm_batch_running = false
+		_apply_classic_plans_all_ai_units()
+		EventBus.llm_planning_status.emit("classic", "Snapshot encode failed — classic AI.")
+		_llm_after_batch_apply()
+		return
+	LlmPlanningPayloadLog.write_turn_if_enabled(turn_number, snapshot, settings)
+	var system_prompt: String = LlmPlanningPrompts.system_prompt()
+	var http_result: Dictionary
+	EventBus.llm_planning_status.emit("waiting", "Waiting for API…")
+	if settings.use_responses_api:
+		http_result = await _llm_openai.responses_create(
+			_llm_http,
+			settings.get_effective_base_url(),
+			settings.api_key,
+			settings.model,
+			system_prompt,
+			user_json,
+			settings.reasoning_effort,
+			settings.planning_max_tokens,
+		)
+	else:
+		var messages: Array = [
+			{"role": "system", "content": system_prompt},
+			{"role": "user", "content": user_json},
+		]
+		http_result = await _llm_openai.chat_completions(
+			_llm_http,
+			settings.get_effective_base_url(),
+			settings.api_key,
+			settings.model,
+			messages,
+			LlmOpenAiClient.Profile.PLANNING,
+			settings.planning_max_tokens,
+		)
+	_llm_batch_running = false
+	if schedule_gen != _llm_batch_generation:
+		return
+	if not http_result.get("ok", false):
+		_log_llm_failure_result(http_result)
+		_apply_classic_plans_all_ai_units()
+		EventBus.llm_planning_status.emit("classic", "LLM error: %s" % str(http_result.get("error", "?")))
+		_llm_after_batch_apply()
+		return
+	EventBus.llm_planning_status.emit("parsing", "Validating…")
+	var parse: Dictionary = LlmPlanningResponseParser.parse_json_actions(str(http_result.get("content", "")))
+	if not parse.get("ok", false):
+		print("[LLM] parse_json_actions: %s" % str(parse))
+		_apply_classic_plans_all_ai_units()
+		EventBus.llm_planning_status.emit("classic", "Bad JSON: %s" % str(parse.get("error", "?")))
+		_llm_after_batch_apply()
+		return
+	if OS.is_debug_build():
+		var summary: String = str(parse.get("reasoning_summary", "")).strip_edges()
+		if not summary.is_empty():
+			print("[LLM reasoning] ", summary)
+	var by_id: Dictionary = parse.get("by_unit_id", {}) as Dictionary
+	if OS.is_debug_build():
+		_debug_print_llm_chosen_actions(by_id)
+	var apply: Dictionary = _apply_llm_choice_map(by_id)
+	if bool(apply.get("any_llm", false)):
+		match_had_llm_validated_plan = true
+	if bool(apply.get("partial", false)):
+		EventBus.llm_planning_status.emit("partial", "Some opponent moves used classic fallback.")
+	else:
+		EventBus.llm_planning_status.emit("ready", "Opponent plan ready.")
+	_llm_after_batch_apply()
+
+
+func _llm_after_batch_apply() -> void:
+	if _all_units_have_planned_action():
+		EventBus.planning_complete.emit()
+	else:
+		_select_planning_unit()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if battle_phase == BattlePhase.Phase.EXECUTING:
@@ -502,9 +756,24 @@ func _unhandled_input(event: InputEvent) -> void:
 				_store_planned_action(current_unit, entry.ac, entry.is_move)
 				_advance_planning()
 				return
+		var units_at_cell = _get_units_at_cell_for_planning(cell)
+		var friendly_at_cell: Array = []
+		for u in units_at_cell:
+			var gname: String = u.get_parent().name if u.get_parent() else ""
+			if gname not in ai_group_names:
+				friendly_at_cell.append(u)
+		# Switch units even when Move/Ability is armed (otherwise stuck after last human plans while LLM loads).
+		if friendly_at_cell.size() > 1:
+			EventBus.show_units_panel.emit(friendly_at_cell)
+			return
+		if friendly_at_cell.size() == 1:
+			var picked: Unit = friendly_at_cell[0]
+			if current_unit == null or picked != current_unit or not selected_action_key.is_empty():
+				EventBus.show_units_panel.emit([])
+				_select_unit_for_planning(picked)
+				return
 		# No action selected: allow clicking a unit to select it for planning
 		if selected_action_key.is_empty():
-			var units_at_cell = _get_units_at_cell_for_planning(cell)
 			if units_at_cell.size() > 1:
 				EventBus.show_units_panel.emit(units_at_cell)
 			elif units_at_cell.size() == 1:
@@ -537,9 +806,15 @@ func _all_units_have_planned_action() -> bool:
 
 func _begin_planning() -> void:
 	battle_phase = BattlePhase.Phase.PLANNING
+	_llm_openai.cancel_inflight(_llm_http)
+	_llm_batch_generation += 1
+	var schedule_gen: int = _llm_batch_generation
 	_clear_all_planned_actions()
 	planning_unit_index = 0
 	EventBus.planning_started.emit()
+	EventBus.llm_planning_status.emit("idle", "")
+	if _should_run_llm_batch_for_sp():
+		call_deferred("_llm_batch_run_async", schedule_gen)
 	_select_planning_unit()
 
 func _get_unit_at_cell(cell: Vector2) -> Unit:
@@ -555,7 +830,7 @@ func _get_units_at_cell_for_planning(cell: Vector2) -> Array:
 	return result
 
 func _select_unit_for_planning(unit: Unit) -> void:
-	var active = get_active_units()
+	var active = _get_planning_units_ordered()
 	var idx = active.find(unit)
 	if idx >= 0:
 		planning_unit_index = idx
@@ -564,7 +839,7 @@ func _select_unit_for_planning(unit: Unit) -> void:
 			EventBus.planning_complete.emit()
 
 func _cycle_planning_unit(delta: int) -> void:
-	var active = get_active_units()
+	var active = _get_planning_units_ordered()
 	if active.is_empty():
 		return
 	planning_unit_index = wrapi(planning_unit_index + delta, 0, active.size())
@@ -573,7 +848,7 @@ func _cycle_planning_unit(delta: int) -> void:
 		EventBus.planning_complete.emit()
 
 func _advance_planning() -> void:
-	var active = get_active_units()
+	var active = _get_planning_units_ordered()
 	if active.is_empty():
 		return
 	# Find next unit without a planned action (wrap from current index)
@@ -593,7 +868,7 @@ func _advance_planning() -> void:
 		EventBus.planning_complete.emit()
 
 func _select_planning_unit() -> void:
-	var active = get_active_units()
+	var active = _get_planning_units_ordered()
 	if active.is_empty():
 		current_unit = null
 		current_acs = []
@@ -601,33 +876,50 @@ func _select_planning_unit() -> void:
 		_update_highlights()
 		EventBus.unit_selected_for_planning.emit(null)
 		return
-	current_unit = active[planning_unit_index]
-	var unit_group_name: String = current_unit.get_parent().name if current_unit.get_parent() else ""
+	var next_unit: Unit = active[planning_unit_index]
+	var unit_group_name: String = next_unit.get_parent().name if next_unit.get_parent() else ""
+	# Do not assign current_unit to AI: keeps action selector, highlights, and click-to-commit on the player.
 	if unit_group_name in ai_group_names:
-		_run_ai_planning()
+		# Clear last human's move/ability selection so map clicks can switch units while LLM runs (see _unhandled_input).
+		current_unit = null
+		selected_action_key = ""
+		EventBus.unit_selected_for_planning.emit(null)
+		EventBus.action_key_selected.emit("")
+		_run_ai_planning_for(next_unit)
 		return
+	current_unit = next_unit
 	selected_action_key = ""
 	EventBus.unit_selected_for_planning.emit(current_unit)
 	_build_combined_acs()
 
-func _run_ai_planning() -> void:
-	var entry = PlanningAI.pick_action(current_unit, groups, _get_units_at_cell_for_planning)
+func _run_ai_planning_for(unit: Unit) -> void:
+	if _should_run_llm_batch_for_sp():
+		if _llm_batch_running:
+			EventBus.llm_planning_status.emit("waiting", "Waiting for opponent model…")
+			while _llm_batch_running:
+				await get_tree().process_frame
+		if is_instance_valid(unit) and unit.planned_action != null:
+			_advance_planning()
+			return
+	if not is_instance_valid(unit):
+		return
+	var entry = PlanningAI.pick_action(unit, groups, _get_units_at_cell_for_planning)
 	if entry.is_empty():
 		# No valid action (shouldn't happen) - pick Rest if available
 		var options: Array = []
-		for key in current_unit.def.get_move_action_keys_resolved():
-			options = current_unit.abilities_db.get_options_for_action_key(key)
+		for key in unit.def.get_move_action_keys_resolved():
+			options = unit.abilities_db.get_options_for_action_key(key)
 			if not options.is_empty():
 				break
 		if options.is_empty():
-			for key in current_unit.def.get_ability_action_keys_resolved():
-				options = current_unit.abilities_db.get_options_for_action_key(key)
+			for key in unit.def.get_ability_action_keys_resolved():
+				options = unit.abilities_db.get_options_for_action_key(key)
 				if not options.is_empty():
 					break
 		if not options.is_empty():
 			entry = options[0]
 	if not entry.is_empty():
-		_store_planned_action(current_unit, entry.ac, entry.is_move)
+		_store_planned_action(unit, entry.ac, entry.is_move)
 	_advance_planning()
 
 func _build_combined_acs() -> void:
@@ -858,6 +1150,10 @@ func _store_replay_recording_for_turn(turn_played: int, recording: Dictionary) -
 	})
 	while replay_turn_history.size() > MAX_REPLAY_TURN_HISTORY:
 		replay_turn_history.remove_at(0)
+	match_full_turn_history.append({
+		"turn": turn_played,
+		"recording": cloned_recording.duplicate(true),
+	})
 	EventBus.replay_available_changed.emit(not replay_turn_history.is_empty())
 	_emit_replay_history_changed(turn_played)
 

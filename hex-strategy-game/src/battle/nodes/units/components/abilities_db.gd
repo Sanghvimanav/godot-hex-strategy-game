@@ -2,8 +2,33 @@ extends Node
 
 var unit: Unit
 
+## Drop moves/abilities whose path, end, or AoE splash would leave the loaded hex map (Navigation.grid).
 func _filter_acs(acs: Array) -> Array:
-	return acs
+	if Navigation == null or Navigation.grid.is_empty():
+		return acs
+	var out: Array = []
+	for ac in acs:
+		if ac is ActionInstance and _action_instance_stays_on_map(ac):
+			out.append(ac)
+	return out
+
+
+func _action_instance_stays_on_map(ac: ActionInstance) -> bool:
+	for c in ac.full_path:
+		if not Navigation.is_valid_cell(c):
+			return false
+	var config: Dictionary = {}
+	if ac.definition != null and str(ac.definition.action_key) != "":
+		config = Actions.get_action_config(ac.definition.action_key)
+	var aoe: Dictionary = config.get("area_of_effect", {})
+	if not aoe.is_empty():
+		var from_cell: Vector2 = ac.unit.cell if ac.unit != null else Vector2.ZERO
+		var aoe_cells: Array = HexGrid.get_aoe_tiles(from_cell, ac.end_point, aoe)
+		for aoe_cell in aoe_cells:
+			var v := Vector2(float(aoe_cell.x), float(aoe_cell.y))
+			if not Navigation.is_valid_cell(v):
+				return false
+	return true
 
 func get_attack_paths() -> Array:
 	var defs: Array = unit.def.get_ability_definitions_resolved()

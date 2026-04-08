@@ -7,6 +7,7 @@
 [resource]
 script = ExtResource("1_script")
 name = "Baneling"
+description = "Suicide unit: short move or reload; explodes adjacent hexes for heavy damage and usually dies in the process."
 type = 5
 faction = 1
 frames = ExtResource("2_frames")

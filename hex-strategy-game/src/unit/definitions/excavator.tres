@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_script")
 name = "Excavator"
+description = "Terran worker: short move; mines crystal on its hex and resupplies energy to adjacent friendlies."
 type = 9
 faction = 2
 frames = ExtResource("1_frames")

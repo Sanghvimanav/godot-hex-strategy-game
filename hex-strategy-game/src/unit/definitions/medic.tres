@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_script")
 name = "Medic"
+description = "Support: short move or reload; spends energy to heal adjacent allies (self or one neighboring hex)."
 type = 1
 faction = 2
 frames = ExtResource("1_frames")

@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_8i5pk")
 name = "Peasant"
+description = "Cheap worker: one-step move and basic adjacent melee—no passives, minimal combat value."
 type = 4
 frames = ExtResource("1_qubse")
 move_action_keys = Array[String](["move_short"])

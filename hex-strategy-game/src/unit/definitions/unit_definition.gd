@@ -24,6 +24,8 @@ enum Faction {
 }
 
 @export var name: String
+## Brief tactical summary: what the unit is and how it plays given its move, ability, and passive actions (LLM payloads, UI).
+@export_multiline var description: String = ""
 @export var type: Type
 @export var faction: Faction = Faction.None
 @export var frames: SpriteFrames

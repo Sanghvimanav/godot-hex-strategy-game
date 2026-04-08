@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_script")
 name = "Marine Corp"
+description = "Immobile barracks: recharge energy, train Marines and Medics; no movement."
 type = 10
 faction = 2
 frames = ExtResource("2_frames")

@@ -15,8 +15,8 @@ This is a **Godot 4.6 hex strategy game** (`hex-strategy-game/`).
 
 - From repo root: `cd hex-strategy-game && godot --headless --path . res://tests/test_runner.tscn`
 - Or use: `hex-strategy-game/tests/run_tests.sh`
-- All 7 test suites (44 tests) run headlessly. See `hex-strategy-game/tests/README.md` for details.
-- **PR requirement:** before creating any PR, run the full test suite (all 7 suites) locally and confirm it passes.
+- All 12 test suites run headlessly. See `hex-strategy-game/tests/README.md` for details.
+- **PR requirement:** before creating any PR, run the full test suite locally and confirm it passes.
 
 ### New Units / Abilities: Debug Scenario Requirement
 

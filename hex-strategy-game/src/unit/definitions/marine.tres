@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_script")
 name = "Marine"
+description = "Core ranged infantry: short move or reload; single-tile gun attack that damages two adjacent tiles; passive normal-phase strike fires automatically each turn and damages units on the same tile as the marine."
 type = 1
 faction = 2
 frames = ExtResource("1_frames")

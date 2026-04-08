@@ -18,6 +18,10 @@ signal turn_changed(turn_number)
 signal replay_available_changed(available: bool)
 signal replay_history_changed(turn_numbers: Array, selected_turn: int)
 signal replay_finished
+## LLM opponent planning (Phase 2). `status` examples: idle, requesting, waiting, parsing, ready, classic, partial.
+signal llm_planning_status(status: String, detail: String)
+## Phase 4 post-game learnings (scenario picker may show a short status line).
+signal post_game_learning_message(text: String)
 ## Resource events: supports unit-driven and scripted/environmental depletion.
 signal tile_resource_deplete_requested(q: int, r: int, amount: int, reason: String)
 signal tile_resource_changed(q: int, r: int, resource_type: String, amount: int, max_amount: int, reason: String)

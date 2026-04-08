@@ -96,10 +96,10 @@ anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -140.0
-offset_top = -160.0
-offset_right = -20.0
-offset_bottom = -90.0
+offset_left = -160.0
+offset_top = -220.0
+offset_right = -12.0
+offset_bottom = -12.0
 
 [node name="vbox" type="VBoxContainer" parent="turn_ui/turn_panel"]
 layout_mode = 2
@@ -108,6 +108,14 @@ layout_mode = 2
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 text = "Turn 1"
+horizontal_alignment = 1
+
+[node name="llm_status_label" type="Label" parent="turn_ui/turn_panel/vbox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.75, 0.8, 0.95, 1)
+theme_override_font_sizes/font_size = 11
+text = ""
+autowrap_mode = 3
 horizontal_alignment = 1
 
 [node name="execute_button" type="Button" parent="turn_ui/turn_panel/vbox"]
@@ -125,6 +133,10 @@ disabled = true
 [node name="scenarios_button" type="Button" parent="turn_ui/turn_panel/vbox"]
 layout_mode = 2
 text = "Scenarios"
+
+[node name="end_game_button" type="Button" parent="turn_ui/turn_panel/vbox"]
+layout_mode = 2
+text = "End game"
 
 [node name="resources_panel" type="PanelContainer" parent="turn_ui"]
 anchors_preset = 6

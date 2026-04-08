@@ -147,6 +147,8 @@ func get_attack_paths() -> Array:
 func get_disabled_action_types() -> Array:
 	for e in active_effects:
 		if e is UnitEffect and e.kind == UnitEffect.Kind.Stun:
+			if e.pending_first_tick:
+				continue
 			return Actions.ACTION_ORDER.duplicate()
 	return []
 

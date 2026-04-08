@@ -6,6 +6,7 @@
 [resource]
 script = ExtResource("1_script")
 name = "Shardling"
+description = "Zerg worker: move or zero-energy rest; mines crystal on its tile; can evolve into a Baneling or Hydralisk when costs are met."
 type = 12
 faction = 1
 frames = ExtResource("2_frames")

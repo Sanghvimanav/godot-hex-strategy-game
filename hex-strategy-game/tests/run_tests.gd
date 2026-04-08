@@ -16,6 +16,10 @@ func _ready() -> void:
 	var TestUnifiedPipeline = load("res://tests/test_unified_pipeline.gd") as GDScript
 	var TestStunEffects = load("res://tests/test_stun_effects.gd") as GDScript
 	var TestReplayRestore = load("res://tests/test_replay_restore.gd") as GDScript
+	var TestLlmPlanning = load("res://tests/test_llm_planning.gd") as GDScript
+	var TestLlmLearningsIngest = load("res://tests/test_llm_learnings_ingest.gd") as GDScript
+	var TestLlmPlanningRecentTurns = load("res://tests/test_llm_planning_recent_turns.gd") as GDScript
+	var TestLlmPostGame = load("res://tests/test_llm_post_game.gd") as GDScript
 
 	if not TestActions.run_all(self):
 		_fail_count += 1
@@ -50,6 +54,22 @@ func _ready() -> void:
 	else:
 		_pass_count += 1
 	if not TestReplayRestore.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestLlmPlanning.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestLlmLearningsIngest.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestLlmPlanningRecentTurns.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestLlmPostGame.run_all(self):
 		_fail_count += 1
 	else:
 		_pass_count += 1
