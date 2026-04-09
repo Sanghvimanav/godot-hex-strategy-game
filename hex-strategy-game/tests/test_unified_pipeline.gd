@@ -77,7 +77,7 @@ static func _test_execute_turn_recording_structure(tests: Node) -> bool:
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [0, 0], "health": 1, "max_health": 1, "energy": 0, "max_energy": 0 }
 			]},
 			{ "name": "opponent", "ai": false, "units": [
-				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 2, "max_health": 3, "energy": 0, "max_energy": 4 }
+				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 2, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]}
 		]
 	}

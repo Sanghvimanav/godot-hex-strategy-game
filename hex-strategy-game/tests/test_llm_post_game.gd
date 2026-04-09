@@ -6,6 +6,8 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_ai_outcome(tests) and ok
 	ok = _test_build_match_summary(tests) and ok
 	ok = _test_sanitize_and_payload(tests) and ok
+	ok = _test_post_game_payload_includes_unit_roster(tests) and ok
+	ok = _test_parse_post_game_llm_markdown(tests) and ok
 	return ok
 
 
@@ -99,7 +101,7 @@ static func _test_sanitize_and_payload(tests: Node) -> bool:
 	if int(ms.get("recorded_turns_in_history", 0)) != 1:
 		tests._fail("expected 1 turn in history count")
 		return false
-	var js: String = LlmPostGame.build_post_game_user_json(session, ms, "(none)")
+	var js: String = LlmPostGame.build_post_game_user_json(session, ms, "", "")
 	if not js.contains("match_turn_history"):
 		tests._fail("payload should include match_turn_history")
 		return false
@@ -107,4 +109,82 @@ static func _test_sanitize_and_payload(tests: Node) -> bool:
 		tests._fail("should serialize turn number")
 		return false
 	tests._pass("sanitize_and_payload")
+	return true
+
+
+static func _test_post_game_payload_includes_unit_roster(tests: Node) -> bool:
+	tests._log("test_llm_post_game: post_game_payload_unit_roster")
+	var session: Dictionary = {
+		"match_turn_history": [],
+		"match_had_llm_validated_plan": true,
+		"scenario_id": "x",
+		"turn_number": 2,
+		"ai_group_names": ["opponent"],
+		"game_state": {"groups": []},
+	}
+	var ms: Dictionary = LlmPostGame.build_match_summary(session)
+	var js: String = LlmPostGame.build_post_game_user_json(session, ms, "dist", "recent")
+	var data: Variant = JSON.parse_string(js)
+	if not (data is Dictionary):
+		tests._fail("payload should parse as JSON")
+		return false
+	var roster: Variant = (data as Dictionary).get("unit_action_roster", null)
+	if not (roster is Array):
+		tests._fail("unit_action_roster should be array")
+		return false
+	var found_mountain := false
+	for item in roster as Array:
+		if item is Dictionary and str((item as Dictionary).get("name", "")) == "Mountain":
+			found_mountain = true
+			var moves: Variant = (item as Dictionary).get("moves", null)
+			if not (moves is Array) or (moves as Array).size() != 0:
+				tests._fail("Mountain should have empty moves list")
+				return false
+			break
+	if not found_mountain:
+		tests._fail("roster should include Mountain")
+		return false
+	if str((data as Dictionary).get("prior_distilled", "")) != "dist":
+		tests._fail("prior_distilled passthrough")
+		return false
+	if str((data as Dictionary).get("prior_recent_session_learnings", "")) != "recent":
+		tests._fail("prior_recent_session_learnings passthrough")
+		return false
+	tests._pass("post_game_payload_unit_roster")
+	return true
+
+
+static func _test_parse_post_game_llm_markdown(tests: Node) -> bool:
+	tests._log("test_llm_post_game: parse_post_game_llm_markdown")
+	var sample := """## Distilled
+### Ranked learnings
+- A
+
+### Active contradictions
+- none
+
+### Experiments
+- none
+
+## Metadata
+- scenario: x
+
+## Learnings
+- B
+"""
+	var p: Dictionary = LlmPostGame.parse_post_game_llm_markdown(sample)
+	if not bool(p.get("ok", false)):
+		tests._fail("expected ok parse")
+		return false
+	if not str(p.get("distilled", "")).contains("Ranked learnings"):
+		tests._fail("distilled body missing")
+		return false
+	if not str(p.get("session", "")).begins_with("## Metadata"):
+		tests._fail("session should start with Metadata")
+		return false
+	var bad: Dictionary = LlmPostGame.parse_post_game_llm_markdown("## Learnings\n- only")
+	if bool(bad.get("ok", false)):
+		tests._fail("expected fail without Distilled")
+		return false
+	tests._pass("parse_post_game_llm_markdown")
 	return true

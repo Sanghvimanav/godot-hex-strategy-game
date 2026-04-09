@@ -12,6 +12,7 @@ const BattlePhase = preload("res://src/battle/battle_phase.gd")
 @onready var resources_panel: PanelContainer = $resources_panel
 @onready var resources_label: Label = $resources_panel/margin/vbox/resources_label
 @onready var hovered_tile_label: Label = $resources_panel/margin/vbox/hovered_tile_label
+@onready var scenario_objective_label: Label = $scenario_objective_label
 
 var _units_node: UnitsContainer
 var _hex_map_node: Node
@@ -61,7 +62,16 @@ func _ready() -> void:
 		if llm_status_label:
 			llm_status_label.resized.connect(_fit_turn_panel_to_content)
 		call_deferred("_fit_turn_panel_to_content")
+	_apply_scenario_objective_banner()
 	set_process(true)
+
+func _apply_scenario_objective_banner() -> void:
+	if scenario_objective_label == null:
+		return
+	var sc: Dictionary = Scenarios.get_selected_scenario()
+	var txt: String = str(sc.get("description", "")).strip_edges()
+	scenario_objective_label.text = txt
+	scenario_objective_label.visible = not txt.is_empty()
 
 func _on_turn_changed(turn_number: int) -> void:
 	if turn_label:

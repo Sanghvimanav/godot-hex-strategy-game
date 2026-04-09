@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="UnitDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://r4e3cec6no81" path="res://src/unit/definitions/unit_definition.gd" id="1_script"]
+[ext_resource type="Resource" path="res://src/unit/art/mountain/mountain_spriteframes.tres" id="2_frames"]
+
+[resource]
+script = ExtResource("1_script")
+name = "Mountain"
+description = "Immobile zerg mass: no movement or combat — only Rest each turn for planning. Short sight (1 hex). Objectives often treat it as a structure to destroy or defend."
+type = 13
+faction = 1
+frames = ExtResource("2_frames")
+sprite_scale = Vector2(0.035, 0.035)
+sprite_offset = Vector2(0, 14)
+max_health = 5
+sight_range = 1
+move_action_keys = Array[String]([])
+ability_action_keys = Array[String](["rest_no_energy"])

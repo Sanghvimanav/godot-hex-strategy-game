@@ -1,23 +1,29 @@
 # AI learnings (example)
 
-Copy this file to `user://ai_learnings/` as `ai_learnings.md` (or add session files alongside it). Use **verbatim** `##` headings so the planner can ingest them (see `specs/llm-self-learning-ai.md` §7.3 / §7.7).
+Copy or merge into `user://ai_learnings/ai_learnings.md`. The file has a **rolling distill** first (rewrite each post-match), then `---`, then **per-match archives** (newest match first). The planning ingest reads the distill plus recent session `## Learnings` bullets. Use **verbatim** headings so tools can parse them.
+
+## Distilled
+
+### Ranked learnings
+
+- Example: prefer legal_options indices; the board is a hex disk, not a rectangle.
+
+### Active contradictions
+
+- none
+
+### Experiments
+
+- none
+
+---
 
 ## Metadata
 
 - rules_digest: v1
-
-## Result
-
-- incomplete (example)
+- scenario: example
+- note: this block is one past match only
 
 ## Learnings
 
-- Example: prefer legal_options indices; the board is a hex disk, not a rectangle.
-
-## Contradictions
-
-- none
-
-## Experiments
-
-- none
+- Example session takeaway from that scenario only.

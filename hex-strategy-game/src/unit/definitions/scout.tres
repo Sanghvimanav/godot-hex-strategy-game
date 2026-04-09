@@ -6,13 +6,12 @@
 [resource]
 script = ExtResource("1_script")
 name = "Scout"
-description = "Recon specialist: short move or rest without energy refill; long-range ray shot and recruit people from village tiles. More visibility range than marines"
+description = "Recon specialist: short move or rest; long-range ray shot and recruit people from village tiles. Greater sight range than marines. Shoot does not use energy."
 type = 1
 faction = 2
 frames = ExtResource("1_frames")
 sprite_scale = Vector2(0.25, 0.25)
 sprite_offset = Vector2(0, 4)
-max_energy = 3
 sight_range = 3
 move_action_keys = Array[String](["move_short", "rest_no_energy"])
 ability_action_keys = Array[String](["attack_ray", "recruit_people"])

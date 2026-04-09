@@ -13,7 +13,9 @@ enum Type {
 	Excavator,
 	InfantryCamp,
 	Fester,
-	Shardling
+	Shardling,
+	Spire,
+	Mountain
 }
 
 ## Faction for team identity, ally/enemy rules, and future content. Used alongside group assignment.
@@ -42,7 +44,7 @@ enum Faction {
 @export var passive_action_keys: Array[String] = []
 ## Max health (0 = use default 2). Override per unit type.
 @export var max_health: int = 0
-## Max energy (0 = no energy bar). Scouts and similar units use energy for attacks.
+## Max energy (0 = no energy bar). Medics, bases, and similar units use energy for support or structure actions.
 @export var max_energy: int = 0
 ## Starting energy (-1 = use max_energy). Use 0 for base so it must recharge before healing.
 @export var start_energy: int = -1

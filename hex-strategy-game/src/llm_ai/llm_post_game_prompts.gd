@@ -1,25 +1,25 @@
 extends RefCounted
 class_name LlmPostGamePrompts
-## Post-game chat/completions prompts (spec §7.5). Model must emit Markdown with exact ## headings for §7.3 / §7.7.
-## User message JSON is built in `LlmPostGame.build_post_game_user_json` (includes full `match_turn_history`).
+## Post-game chat/completions prompts. Model emits a rolling `## Distilled` rewrite plus one session archive (`## Metadata` + `## Learnings` only).
+## User JSON is built in `LlmPostGame.build_post_game_user_json`.
 
 
 static func system_prompt() -> String:
 	return (
-		"You distill one hex wargame match into a short Markdown journal for the AI opponent. "
-		+ "The user message is JSON with: match_summary (scenario, outcome, etc.), prior_learnings_excerpt (text), "
-		+ "and match_turn_history — the full ordered list of executed turns for this match. "
-		+ "Each match_turn_history entry is { \"turn\": number, \"recording\": { ... } }. "
-		+ "recording typically includes: actions (serialized moves/abilities with paths, end_point, action_key, unit_id), "
-		+ "died_ids, damage_by_id, summary (phase-grouped planned actions), before_state (per-unit snapshots before resolution). "
-		+ "Use match_turn_history to infer concrete tactics (e.g. stacking, trades, timing) that explain the outcome. "
-		+ "If match_history_truncated / match_history_omitted / error fields appear, note uncertainty in ## Learnings. "
+		"You maintain a hex wargame learning journal for the AI opponent. Each reply has two parts. "
+		+ "PART A — Rolling distill (rewrite freely): Start with `## Distilled`. Under it use EXACTLY these level-3 headings in this order: "
+		+ "`### Ranked learnings`, `### Active contradictions`, `### Experiments`. "
+		+ "Under Ranked learnings: bullet list (`- `) ordered most important first; merge, drop stale items, and re-rank as needed — treat `prior_distilled` as your editable draft, not append-only. "
+		+ "Under Active contradictions: bullets for unresolved tensions or disagreements with prior assumptions (or `- none`). "
+		+ "Under Experiments: bullets for falsifiable probes to try in future games (or `- none`). "
+		+ "PART B — This match only: after PART A, output `## Metadata` then `## Learnings`. "
+		+ "`## Learnings` is ONLY observations from this match (typically 2–4 bullets); do not put global strategy, contradictions, or experiments here — those belong in Distilled. "
+		+ "The user message JSON includes: match_summary, prior_distilled (rolling distill markdown), prior_recent_session_learnings (recent per-match learnings bullets only), "
+		+ "unit_action_roster (moves/abilities/passives per unit type), and match_turn_history. "
+		+ "Use match_turn_history for tactics; respect unit_action_roster: empty moves means the unit cannot relocate (no advance/reposition via movement). "
+		+ "If match_history_truncated / match_history_omitted / error fields appear, mention uncertainty under Ranked learnings or session Learnings as appropriate. "
 		+ "Output ONLY Markdown — no JSON, no markdown code fences around the whole reply. "
-		+ "Use these level-2 headings EXACTLY (ASCII, case-sensitive titles): "
-		+ "## Result, ## Learnings, ## Contradictions, ## Experiments. "
-		+ "Under ## Result: one bullet line starting with '- ' stating win, loss, draw, or incomplete from the AI side's perspective (same as ai_outcome in match_summary). "
-		+ "Under ## Learnings: 2–4 bullet lines max, one line each. "
-		+ "Under ## Contradictions: 1–3 bullets comparing new conclusions to prior_learnings_excerpt when relevant, or a single '- none' if none. "
-		+ "Under ## Experiments: 1–2 bullets with testable probes for future games, or '- none'. "
-		+ "Be concise. If prior excerpt is empty, still fill sections honestly from match_summary and match_turn_history."
+		+ "Level-2 headings must match exactly: `## Distilled`, `## Metadata`, `## Learnings`. "
+		+ "Under `## Metadata` use `- ` bullets; include scenario / outcome / rules_digest from match_summary where helpful. "
+		+ "If prior_distilled is empty, still write a useful first Distilled from this match and roster alone."
 	)

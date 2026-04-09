@@ -20,6 +20,8 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_medic_heal_debug_scenario_exists(tests) and ok
 	ok = _test_fester_debug_scenario_exists(tests) and ok
 	ok = _test_shardling_debug_scenario_exists(tests) and ok
+	ok = _test_spire_debug_scenario_exists(tests) and ok
+	ok = _test_mountain_debug_scenario_exists(tests) and ok
 	ok = _test_extract_tile_action_config(tests) and ok
 	ok = _test_recruit_people_action_config(tests) and ok
 	ok = _test_spawn_scout_action_config(tests) and ok
@@ -134,12 +136,29 @@ static func _test_scout_attack_ray_range_and_pattern(tests: Node) -> bool:
 	return true
 
 static func _test_scout_attack_ray_energy_cost(tests: Node) -> bool:
-	tests._log("test_actions: scout attack_ray costs 1 energy")
-	var c: Dictionary = Actions.get_action_config("attack_ray")
-	if int(c.get("energy_consumption", -1)) != 1:
-		tests._fail("attack_ray energy_consumption should be 1, got %s" % c.get("energy_consumption", -1))
+	tests._log("test_actions: marine/scout primary attacks and definitions use no energy")
+	var ray: Dictionary = Actions.get_action_config("attack_ray")
+	if int(ray.get("energy_consumption", -1)) != 0:
+		tests._fail("attack_ray energy_consumption should be 0, got %s" % ray.get("energy_consumption", -1))
 		return false
-	tests._pass("scout attack_ray costs 1 energy")
+	var short: Dictionary = Actions.get_action_config("attack_short")
+	if int(short.get("energy_consumption", -1)) != 0:
+		tests._fail("attack_short energy_consumption should be 0, got %s" % short.get("energy_consumption", -1))
+		return false
+	var scout_def := load("res://src/unit/definitions/scout.tres")
+	var marine_def := load("res://src/unit/definitions/marine.tres")
+	var scout_u: UnitDefinition = scout_def as UnitDefinition
+	var marine_u: UnitDefinition = marine_def as UnitDefinition
+	if scout_u == null or marine_u == null:
+		tests._fail("scout and marine definitions should load")
+		return false
+	if scout_u.max_energy != 0:
+		tests._fail("scout max_energy should be 0, got %s" % scout_u.max_energy)
+		return false
+	if marine_u.max_energy != 0:
+		tests._fail("marine max_energy should be 0, got %s" % marine_u.max_energy)
+		return false
+	tests._pass("marine and scout attacks are free; units have no energy pool")
 	return true
 
 static func _test_scout_visibility_range(tests: Node) -> bool:
@@ -252,7 +271,7 @@ static func _test_zerg_vs_terran_v2_scenario_exists(tests: Node) -> bool:
 	return true
 
 static func _test_campaign_opening_scenario_exists(tests: Node) -> bool:
-	tests._log("test_actions: campaign_opening is in campaign category with stacked mirrored team spawns")
+	tests._log("test_actions: campaign_opening is in campaign category with stacked scouts, stacked zerglings, and mountains on center file")
 	var scenario: Dictionary = Scenarios.get_scenario_by_id("campaign_opening")
 	if scenario.is_empty():
 		tests._fail("campaign_opening scenario should exist")
@@ -266,16 +285,32 @@ static func _test_campaign_opening_scenario_exists(tests: Node) -> bool:
 	if not in_campaign:
 		tests._fail("campaign_opening should be categorized as campaign")
 		return false
+	var desc: String = str(scenario.get("description", "")).strip_edges()
+	if desc.is_empty():
+		tests._fail("campaign_opening should define a description (win condition for player and AI)")
+		return false
+	var desc_lower := desc.to_lower()
+	if not ("mountain" in desc_lower and "scout" in desc_lower):
+		tests._fail("campaign_opening description should mention mountains and scouts")
+		return false
+	for entry in by_category.get("campaign", []):
+		var d: String = str(entry.get("description", "")).strip_edges()
+		if d.is_empty():
+			tests._fail("campaign scenario %s must include a non-empty description" % entry.get("id", ""))
+			return false
 	var total_zerglings := 0
 	var left_zerglings := 0
 	var total_scout := 0
 	var right_scout := 0
 	var total_marines := 0
 	var right_marines := 0
+	var total_mountains := 0
 	var has_player_anchor := false
 	var player_anchor := Vector2i.ZERO
-	var has_opponent_anchor := false
-	var opponent_anchor := Vector2i.ZERO
+	var has_zerg_stack_anchor := false
+	var zerg_stack_anchor := Vector2i.ZERO
+	var expected_mountain_cells: Array[Vector2i] = [Vector2i(0, -2), Vector2i(0, 0), Vector2i(0, 2)]
+	var mountain_cells_found: Dictionary = {}
 	for g in scenario.get("groups", []):
 		var group_name: String = str(g.get("name", ""))
 		for u in g.get("units", []):
@@ -294,12 +329,17 @@ static func _test_campaign_opening_scenario_exists(tests: Node) -> bool:
 					tests._fail("campaign_opening player units should all share the same spawn tile")
 					return false
 			elif group_name == "opponent":
-				if not has_opponent_anchor:
-					opponent_anchor = cell
-					has_opponent_anchor = true
-				elif cell != opponent_anchor:
-					tests._fail("campaign_opening opponent units should all share the same spawn tile")
-					return false
+				if def_path == "res://src/unit/definitions/zergling.tres":
+					if not has_zerg_stack_anchor:
+						zerg_stack_anchor = cell
+						has_zerg_stack_anchor = true
+					elif cell != zerg_stack_anchor:
+						tests._fail("campaign_opening zerglings should all share the same spawn tile")
+						return false
+				elif def_path == "res://src/unit/definitions/mountain.tres":
+					total_mountains += 1
+					var key := "%d,%d" % [cell.x, cell.y]
+					mountain_cells_found[key] = true
 			if def_path == "res://src/unit/definitions/zergling.tres":
 				total_zerglings += 1
 				if cell.x < 0:
@@ -315,22 +355,30 @@ static func _test_campaign_opening_scenario_exists(tests: Node) -> bool:
 	if total_zerglings != 5 or left_zerglings != 5:
 		tests._fail("campaign_opening should include 5 zerglings on the left side")
 		return false
-	if total_scout != 1 or right_scout != 1:
-		tests._fail("campaign_opening should include 1 scout on the right side")
+	if total_mountains != 3:
+		tests._fail("campaign_opening should include 3 mountains")
 		return false
-	if total_marines != 3 or right_marines != 3:
-		tests._fail("campaign_opening should include 3 marines on the right side")
+	for ec in expected_mountain_cells:
+		var ek := "%d,%d" % [ec.x, ec.y]
+		if not mountain_cells_found.get(ek, false):
+			tests._fail("campaign_opening mountains should include a unit at cell %s" % ek)
+			return false
+	if total_scout != 3 or right_scout != 3:
+		tests._fail("campaign_opening should include 3 scouts on the right side")
 		return false
-	if not has_player_anchor or not has_opponent_anchor:
-		tests._fail("campaign_opening should define both player and opponent spawn anchors")
+	if total_marines != 0 or right_marines != 0:
+		tests._fail("campaign_opening should include no marines")
 		return false
-	if player_anchor.x <= 0 or opponent_anchor.x >= 0:
-		tests._fail("campaign_opening anchors should be on opposite sides (player right, opponent left)")
+	if not has_player_anchor or not has_zerg_stack_anchor:
+		tests._fail("campaign_opening should define player spawn and zergling stack anchors")
 		return false
-	if player_anchor.x != -opponent_anchor.x or player_anchor.y != opponent_anchor.y:
-		tests._fail("campaign_opening anchors should be mirrored across the board center")
+	if player_anchor.x <= 0 or zerg_stack_anchor.x >= 0:
+		tests._fail("campaign_opening anchors should be on opposite sides (player right, zerg stack left)")
 		return false
-	tests._pass("campaign_opening scenario is categorized and configured with stacked mirrored team spawns")
+	if player_anchor.x != -zerg_stack_anchor.x or player_anchor.y != zerg_stack_anchor.y:
+		tests._fail("campaign_opening player and zerg stack anchors should be mirrored across the board center")
+		return false
+	tests._pass("campaign_opening scenario is categorized with 3 stacked scouts, mountains on (0,-2) (0,0) (0,2)")
 	return true
 
 static func _test_excavator_debug_scenario_exists(tests: Node) -> bool:
@@ -451,6 +499,76 @@ static func _test_shardling_debug_scenario_exists(tests: Node) -> bool:
 		tests._fail("shardling_debug should give player resources for evolve (people + crystal)")
 		return false
 	tests._pass("shardling_debug has Shardling on crystal tile with resources for evolve")
+	return true
+
+static func _test_spire_debug_scenario_exists(tests: Node) -> bool:
+	tests._log("test_actions: spire_debug has Spire vs Marine at range 2")
+	var scenario: Dictionary = Scenarios.get_scenario_by_id("spire_debug")
+	if scenario.is_empty():
+		tests._fail("spire_debug scenario should exist")
+		return false
+	var has_spire := false
+	var has_marine := false
+	var spire_cell := Vector2i.ZERO
+	var marine_cell := Vector2i.ZERO
+	for g in scenario.get("groups", []):
+		var gn: String = str(g.get("name", ""))
+		for u in g.get("units", []):
+			var dp: String = str(u.get("def_path", ""))
+			var cv: Variant = u.get("cell", Vector2i.ZERO)
+			var cell := Vector2i.ZERO
+			if cv is Vector2i:
+				cell = cv
+			elif cv is Vector2:
+				cell = Vector2i(int(cv.x), int(cv.y))
+			if gn == "player" and dp == "res://src/unit/definitions/spire.tres":
+				has_spire = true
+				spire_cell = cell
+			elif gn == "opponent" and dp == "res://src/unit/definitions/marine.tres":
+				has_marine = true
+				marine_cell = cell
+	if not has_spire or not has_marine:
+		tests._fail("spire_debug should include player Spire and opponent Marine")
+		return false
+	if spire_cell != Vector2i(0, 0) or marine_cell != Vector2i(2, 0):
+		tests._fail("spire_debug should place Spire at (0,0) and Marine at (2,0)")
+		return false
+	tests._pass("spire_debug has Spire and Marine for range-2 check")
+	return true
+
+static func _test_mountain_debug_scenario_exists(tests: Node) -> bool:
+	tests._log("test_actions: mountain_debug has Scout vs Mountain at range 2")
+	var scenario: Dictionary = Scenarios.get_scenario_by_id("mountain_debug")
+	if scenario.is_empty():
+		tests._fail("mountain_debug scenario should exist")
+		return false
+	var has_mountain := false
+	var has_scout := false
+	var mountain_cell := Vector2i.ZERO
+	var scout_cell := Vector2i.ZERO
+	for g in scenario.get("groups", []):
+		var gn: String = str(g.get("name", ""))
+		for u in g.get("units", []):
+			var dp: String = str(u.get("def_path", ""))
+			var cv: Variant = u.get("cell", Vector2i.ZERO)
+			var cell := Vector2i.ZERO
+			if cv is Vector2i:
+				cell = cv
+			elif cv is Vector2:
+				cell = Vector2i(int(cv.x), int(cv.y))
+			if gn == "player" and dp == "res://src/unit/definitions/scout.tres":
+				has_scout = true
+				scout_cell = cell
+			elif gn == "opponent" and dp == "res://src/unit/definitions/mountain.tres":
+				has_mountain = true
+				mountain_cell = cell
+	if not has_mountain or not has_scout:
+		tests._fail("mountain_debug should include player Scout and opponent Mountain")
+		return false
+	if scout_cell != Vector2i(0, 0) or mountain_cell != Vector2i(2, 0):
+		tests._fail("mountain_debug should place Scout at (0,0) and Mountain at (2,0)")
+		return false
+	tests._pass("mountain_debug has Scout and Mountain for range-2 check")
 	return true
 
 static func _test_extract_tile_action_config(tests: Node) -> bool:

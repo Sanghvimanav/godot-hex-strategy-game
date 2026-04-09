@@ -5,6 +5,7 @@ extends CanvasLayer
 @onready var campaign_list: VBoxContainer = $center/panel/margin/vbox/columns/campaign_column/campaign_list
 @onready var debug_list: VBoxContainer = $center/panel/margin/vbox/columns/debug_column/debug_list
 @onready var start_btn: Button = $center/panel/margin/vbox/start_btn
+@onready var scenario_objective_label: Label = $center/panel/margin/vbox/scenario_objective_label
 
 @onready var llm_base_url: LineEdit = $center/panel/margin/vbox/llm_base_row/llm_base_url
 @onready var llm_model: LineEdit = $center/panel/margin/vbox/llm_model_row/llm_model
@@ -32,6 +33,7 @@ func _ready() -> void:
 	llm_status.text = "LLM: configure and Save, or Test API (chat: 60s timeout; responses: 120s)."
 
 	_rebuild_buttons()
+	_refresh_scenario_objective_label()
 	if start_btn:
 		start_btn.pressed.connect(_on_start_pressed)
 	call_deferred("_run_post_game_if_pending")
@@ -208,6 +210,15 @@ func _rebuild_buttons() -> void:
 		_add_scenario_button(main_list, s)
 	for s in by_category.get("debug", []):
 		_add_scenario_button(debug_list, s)
+	_refresh_scenario_objective_label()
+
+func _refresh_scenario_objective_label() -> void:
+	if scenario_objective_label == null:
+		return
+	var s: Dictionary = Scenarios.get_scenario_by_id(Scenarios.selected_scenario_id)
+	var txt: String = str(s.get("description", "")).strip_edges()
+	scenario_objective_label.text = txt
+	scenario_objective_label.visible = not txt.is_empty()
 
 func _add_scenario_button(container: VBoxContainer, s: Dictionary) -> void:
 	var btn := Button.new()
@@ -217,6 +228,9 @@ func _add_scenario_button(container: VBoxContainer, s: Dictionary) -> void:
 	if s.id == Scenarios.selected_scenario_id:
 		btn.button_pressed = true
 	btn.pressed.connect(_on_scenario_pressed.bind(s.id))
+	var desc: String = str(s.get("description", "")).strip_edges()
+	if not desc.is_empty():
+		btn.tooltip_text = desc
 	container.add_child(btn)
 
 var _btn_group: ButtonGroup
@@ -227,6 +241,7 @@ func _get_button_group() -> ButtonGroup:
 
 func _on_scenario_pressed(id: String) -> void:
 	Scenarios.select_scenario(id)
+	_refresh_scenario_objective_label()
 
 func _on_start_pressed() -> void:
 	get_tree().change_scene_to_file("res://src/battle/battle.tscn")

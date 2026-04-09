@@ -21,6 +21,14 @@ static func pick_action(unit: Unit, groups: Array, get_units_at_cell: Callable) 
 					return entry
 			elif _action_hits_enemy(entry.ac, enemies):
 				return entry
+	# Immobile units: Rest/Recharge when no attack would hit (avoid firing at empty hexes).
+	if unit.def != null and unit.def.move_action_keys.is_empty():
+		for entry in options:
+			if entry.is_move:
+				continue
+			var ak: String = entry.ac.definition.action_key if entry.ac.definition else ""
+			if ak in ["reload", "rest_no_energy", "recharge"]:
+				return entry
 	# Move selection: zergling-specific logic when 2 tiles away
 	if _is_zergling(unit):
 		var entry = _pick_zergling_move(unit, options, enemies, groups)

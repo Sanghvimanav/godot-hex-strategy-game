@@ -58,7 +58,7 @@ const ACTION_CONFIGS: Dictionary = {
 		min_range = 1,
 		max_range = 1,
 		color = "#FF0000",
-		energy_consumption = 1,
+		energy_consumption = 0,
 		area_of_effect = {
 			directions = [2],  # Relative direction from attack direction (server3: directions: [2])
 			distance = 1,
@@ -85,6 +85,17 @@ const ACTION_CONFIGS: Dictionary = {
 		damage = 1,
 		stun_duration = 1,
 	},
+	"attack_spire": {
+		key = "attack_spire",
+		type = "ability",
+		name = "Spine Salvo",
+		pattern = "target",
+		min_range = 1,
+		max_range = 2,
+		color = "#76FF03",
+		energy_consumption = 0,
+		damage = 1,
+	},
 	"attack_ray": {
 		key = "attack_ray",
 		type = "ability",
@@ -93,7 +104,7 @@ const ACTION_CONFIGS: Dictionary = {
 		min_range = 2,
 		max_range = 3,
 		color = "#FF0000",
-		energy_consumption = 1,
+		energy_consumption = 0,
 	},
 	"attack_area_adjacent": {
 		key = "attack_area_adjacent",

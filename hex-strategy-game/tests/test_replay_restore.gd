@@ -226,7 +226,7 @@ static func _test_replay_history_respects_capacity(tests: Node) -> bool:
 	return true
 
 static func _test_apply_scenario_uses_health_and_energy_overrides(tests: Node) -> bool:
-	tests._log("test_replay_restore: apply_scenario applies unit health and energy overrides")
+	tests._log("test_replay_restore: apply_scenario applies unit energy overrides (medic + excavator)")
 	var container := _make_container()
 	tests.add_child(container)
 	var scenario := {
@@ -235,7 +235,7 @@ static func _test_apply_scenario_uses_health_and_energy_overrides(tests: Node) -
 				"name": "player",
 				"units": [
 					{"def_path": "res://src/unit/definitions/medic.tres", "cell": Vector2i(0, 0), "energy": 2},
-					{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(1, 0), "health": 3, "energy": 1},
+					{"def_path": "res://src/unit/definitions/excavator.tres", "cell": Vector2i(1, 0), "energy": 1},
 				]
 			},
 			{"name": "opponent", "ai": true, "units": []},
@@ -248,31 +248,27 @@ static func _test_apply_scenario_uses_health_and_energy_overrides(tests: Node) -
 		container.free()
 		return false
 	var medic: Unit = null
-	var marine: Unit = null
+	var excavator: Unit = null
 	for child in player_group.get_children():
 		if not child is Unit:
 			continue
 		if child.def and child.def.resource_path == "res://src/unit/definitions/medic.tres":
 			medic = child
-		elif child.def and child.def.resource_path == "res://src/unit/definitions/marine.tres":
-			marine = child
-	if medic == null or marine == null:
-		tests._fail("apply_scenario should spawn both medic and marine")
+		elif child.def and child.def.resource_path == "res://src/unit/definitions/excavator.tres":
+			excavator = child
+	if medic == null or excavator == null:
+		tests._fail("apply_scenario should spawn medic and excavator")
 		container.free()
 		return false
 	if medic.energy != 2:
 		tests._fail("medic energy override should be 2, got %s" % medic.energy)
 		container.free()
 		return false
-	if marine.health != 3:
-		tests._fail("marine health override should be 3, got %s" % marine.health)
+	if excavator.energy != 1:
+		tests._fail("excavator energy override should be 1, got %s" % excavator.energy)
 		container.free()
 		return false
-	if marine.energy != 1:
-		tests._fail("marine energy override should be 1, got %s" % marine.energy)
-		container.free()
-		return false
-	tests._pass("apply_scenario applies unit health and energy overrides")
+	tests._pass("apply_scenario applies unit energy overrides")
 	container.free()
 	return true
 

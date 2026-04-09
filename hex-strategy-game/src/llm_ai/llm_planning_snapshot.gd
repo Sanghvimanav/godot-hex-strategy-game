@@ -30,8 +30,14 @@ static func build_for_llm(units: Node) -> Dictionary:
 	if hex_map != null and hex_map.has_method("compute_visible_cell_keys_for_ai_groups"):
 		ai_visible = hex_map.compute_visible_cell_keys_for_ai_groups(units)
 
+	var scenario_dict: Dictionary = Scenarios.get_selected_scenario()
+	var scenario_objective: String = str(scenario_dict.get("description", "")).strip_edges()
+	var win_line := "Win by eliminating all enemy units (last side with any unit on the board wins)."
+	if not scenario_objective.is_empty():
+		win_line = "Scenario objective: %s Standard win rule: eliminate all opposing units." % scenario_objective
 	var rules_stub := (
-		"Turn: planning then simultaneous execution. Win by eliminating enemy units. "
+		"Turn: planning then simultaneous execution. %s "
+		% win_line
 		+ "Coordinates are axial (q,r) as in each unit cell and legal option path/end. "
 		+ "Stun may block actions. Energy/costs per unit definition. "
 		+ "action_definitions lists every action key (range, energy, pattern, damage, spawn costs, etc.). "
@@ -127,6 +133,7 @@ static func build_for_llm(units: Node) -> Dictionary:
 		"action_definitions": _RulesCatalog.build_action_definitions(),
 		"unit_type_definitions": _RulesCatalog.build_unit_type_definitions(),
 		"scenario_id": Scenarios.selected_scenario_id,
+		"scenario_description": scenario_objective,
 		"turn": units.turn_number,
 		"visible_enemy_units": enemies_visible,
 		"ai_units": ai_units,

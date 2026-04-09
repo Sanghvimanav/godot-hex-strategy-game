@@ -7,7 +7,7 @@
 script = ExtResource("1_script")
 name = "Shardling"
 description = "Zerg worker: move or zero-energy rest; mines crystal on its tile; can evolve into a Baneling or Hydralisk when costs are met."
-type = 12
+type = 11
 faction = 1
 frames = ExtResource("2_frames")
 sprite_scale = Vector2(0.10, 0.10)

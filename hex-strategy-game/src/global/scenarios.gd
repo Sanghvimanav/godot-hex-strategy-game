@@ -1,6 +1,9 @@
 extends Node
 ## Scenario registry and selection. Used for quick debug setups and future multiplayer.
 ## Select a scenario before loading battle; battle reads selected_scenario_id and applies it.
+##
+## Campaign scenarios (category == "campaign") should set "description" to a short win-condition blurb
+## for the human player and for LLM/classic AI context (strategic goals beyond raw elimination).
 
 var selected_scenario_id: String = "default"
 var available_scenarios: Array[Dictionary] = []
@@ -32,17 +35,17 @@ func _build_scenarios() -> void:
 		},
 		]
 	})
-	# Campaign 1: Terran patrol faces scattered zerglings.
+	# Campaign 1: Terran scouts face scattered zerglings and three mountains on the center file.
 	available_scenarios.append({
 		"id": "campaign_opening",
-		"display_name": "Campaign 1 (Scout + 3 Marines vs 5 Zerglings)",
+		"display_name": "Campaign 1 (3 Scouts vs 5 Zerglings + 3 Mountains)",
 		"category": "campaign",
+		"description": "Terran (you): destroy all three Mountains with your Scouts — they are the Zerg’s static holdings on the center file (no ranged threat, but block the objective). Zerg (AI): protect the Mountains; stop the Scouts from tearing them down while zerglings engage. Standard elimination still ends the match when one side has no units left.",
 		"groups": [
 			{"name": "player", "units": [
 				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(4, 0)},
-				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(4, 0)},
-				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(4, 0)},
-				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(4, 0)},
+				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(4, 0)},
+				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(4, 0)},
 			]},
 			{"name": "opponent", "ai": true, "units": [
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
@@ -50,10 +53,13 @@ func _build_scenarios() -> void:
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
+				{"def_path": "res://src/unit/definitions/mountain.tres", "cell": Vector2i(0, -2)},
+				{"def_path": "res://src/unit/definitions/mountain.tres", "cell": Vector2i(0, 0)},
+				{"def_path": "res://src/unit/definitions/mountain.tres", "cell": Vector2i(0, 2)},
 			]},
 		]
 	})
-	# Scout energy debug: Scout vs Marine at Shoot range (distance 2)
+	# Scout debug: Scout vs Marine at Shoot range (distance 2)
 	available_scenarios.append({
 		"id": "scout_debug",
 		"display_name": "Scout Debug (Scout vs Marine)",
@@ -93,6 +99,32 @@ func _build_scenarios() -> void:
 			]},
 		]
 	})
+	# Mountain debug: immobile objective structure (scout in shooting range, one-turn damage check).
+	available_scenarios.append({
+		"id": "mountain_debug",
+		"display_name": "Mountain Debug (Scout vs Mountain at range 2)",
+		"groups": [
+			{"name": "player", "units": [
+				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(0, 0)},
+			]},
+			{"name": "opponent", "ai": true, "units": [
+				{"def_path": "res://src/unit/definitions/mountain.tres", "cell": Vector2i(2, 0)},
+			]},
+		]
+	})
+	# Spire debug: immobile tower vs Marine at range 2 (one-turn damage check).
+	available_scenarios.append({
+		"id": "spire_debug",
+		"display_name": "Spire Debug (Spire vs Marine at range 2)",
+		"groups": [
+			{"name": "player", "units": [
+				{"def_path": "res://src/unit/definitions/spire.tres", "cell": Vector2i(0, 0)},
+			]},
+			{"name": "opponent", "ai": true, "units": [
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(2, 0)},
+			]},
+		]
+	})
 	# Marine debug: Marine vs Zergling (attack_short + AoE)
 	available_scenarios.append({
 		"id": "marine_debug",
@@ -113,7 +145,7 @@ func _build_scenarios() -> void:
 		"groups": [
 			{"name": "player", "units": [
 				{"def_path": "res://src/unit/definitions/medic.tres", "cell": Vector2i(0, 0), "energy": 4},
-				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(1, 0), "health": 3, "energy": 4},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(1, 0), "health": 3},
 			]},
 			{"name": "opponent", "ai": true, "units": [
 				# Placed at distance 2 from the Marine so AI Hydralisk can damage Marine this turn.
@@ -128,7 +160,7 @@ func _build_scenarios() -> void:
 		"groups": [
 			{"name": "player", "units": [
 				{"def_path": "res://src/unit/definitions/excavator.tres", "cell": Vector2i(0, 0), "energy": 3},
-				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(1, 0), "energy": 1},
+				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(1, 0)},
 			]},
 			{"name": "opponent", "ai": true, "units": [
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-3, 2)},

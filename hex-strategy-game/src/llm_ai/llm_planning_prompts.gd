@@ -13,6 +13,7 @@ static func system_prompt() -> String:
 		+ "dist_from_origin and dist_from_map_edge (when present) describe position for exploration; "
 		+ "distances_to_visible_enemies lists {unit_id, hex_dist} per visible_enemy_units order (engine-computed hex distance from that option's end cell—do not recompute). "
 		+ "If unsure, pick a legal defensive/legal non-blunder option (e.g. hold/rest if i exists). "
+		+ "scenario_description (when non-empty) states the campaign/scenario goal for both sides; align plans with it and with rules_digest. "
 		+ "rules_digest in the user payload is authoritative; obey it over assumptions. "
 		+ "action_definitions is the full action registry (keys, ranges, energy, patterns). "
 		+ "unit_type_definitions maps each unit type id to description (role and playstyle), move/ability/passive keys (use *_resolved for implicit Rest). "

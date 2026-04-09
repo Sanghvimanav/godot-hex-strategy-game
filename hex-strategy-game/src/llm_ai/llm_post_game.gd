@@ -1,16 +1,16 @@
 extends RefCounted
 class_name LlmPostGame
-## Phase 4: capture match end state, optional post-game LLM (§7.5), write session Markdown under user://ai_learnings/.
+## Phase 4: capture match end state, optional post-game LLM, append session Markdown to user://ai_learnings/ai_learnings.md.
 
 const _LearningsIngest = preload("res://src/llm_ai/llm_learnings_ingest.gd")
 const _PostGamePrompts = preload("res://src/llm_ai/llm_post_game_prompts.gd")
+## Oldest sessions dropped after this many blocks (newline --- newline separated).
+const MAX_CANONICAL_SESSION_BLOCKS := 40
 
 ## Pending handoff from battle → scenario picker (cleared after consume).
 static var _pending: Dictionary = {}
 
-## ~2k chars of prior learnings for the post-game model (not full planner block).
-const MAX_PRIOR_EXCERPT_CHARS := 2400
-## Cap entire user JSON (match summary + full turn history + prior excerpt) for provider limits.
+## Cap entire user JSON (match summary + full turn history + prior context) for provider limits.
 const MAX_POST_GAME_USER_PAYLOAD_CHARS := 900_000
 
 
@@ -122,7 +122,8 @@ static func sanitize_for_json(v: Variant) -> Variant:
 static func build_post_game_user_json(
 	session: Dictionary,
 	match_summary: Dictionary,
-	prior_excerpt: String,
+	prior_distilled: String,
+	prior_recent_session_learnings: String,
 ) -> String:
 	var raw_hist: Array = session.get("match_turn_history", []) as Array
 	var sanitized_hist: Variant = sanitize_for_json(raw_hist)
@@ -130,7 +131,9 @@ static func build_post_game_user_json(
 		sanitized_hist = []
 	var payload: Dictionary = {
 		"match_summary": match_summary,
-		"prior_learnings_excerpt": prior_excerpt,
+		"prior_distilled": prior_distilled,
+		"prior_recent_session_learnings": prior_recent_session_learnings,
+		"unit_action_roster": LlmUnitCapabilities.build_unit_action_roster(),
 		"match_turn_history": sanitized_hist,
 	}
 	var truncated := false
@@ -151,32 +154,30 @@ static func build_post_game_user_json(
 			turns.remove_at(0)
 			payload["match_turn_history"] = turns
 			continue
-		# One (or zero) huge turn(s): drop history, then shrink prior excerpt.
 		payload["match_turn_history"] = []
 		payload["match_history_omitted"] = true
 		payload["match_history_omitted_note"] = "Turn recordings omitted: payload still exceeded cap with a single turn."
 		s = JSON.stringify(payload)
 		if s.length() <= MAX_POST_GAME_USER_PAYLOAD_CHARS:
 			return s
-		payload["prior_learnings_excerpt"] = "(omitted — payload too large)"
+		payload["prior_recent_session_learnings"] = "(omitted — payload too large)"
+		s = JSON.stringify(payload)
+		if s.length() <= MAX_POST_GAME_USER_PAYLOAD_CHARS:
+			return s
+		payload["prior_distilled"] = "(omitted — payload too large)"
 		s = JSON.stringify(payload)
 		if s.length() <= MAX_POST_GAME_USER_PAYLOAD_CHARS:
 			return s
 		return JSON.stringify({
 			"match_summary": match_summary,
 			"match_turn_history": [],
-			"prior_learnings_excerpt": "(omitted)",
+			"prior_distilled": "(omitted)",
+			"prior_recent_session_learnings": "(omitted)",
 			"error": "post_game_user_payload_still_too_large",
 		})
-	# Analyzer fallback (all real exits return inside the loop).
+	# `while true` above always returns; analyzer cannot prove exit, so this path is unreachable.
+	push_error("LlmPostGame.build_post_game_user_json: loop fell through (bug)")
 	return "{\"error\":\"post_game_user_json_internal\"}"
-
-
-static func _prior_excerpt_for_post_game() -> String:
-	var block: String = _LearningsIngest.build_prompt_block_for_planner()
-	if block.length() <= MAX_PRIOR_EXCERPT_CHARS:
-		return block
-	return block.substr(0, MAX_PRIOR_EXCERPT_CHARS) + "\n…"
 
 
 static func _strip_outer_fence(s: String) -> String:
@@ -191,13 +192,67 @@ static func _strip_outer_fence(s: String) -> String:
 	return t.strip_edges()
 
 
-static func _session_filename() -> String:
-	var dt: Dictionary = Time.get_datetime_dict_from_system()
-	var y: int = int(dt.get("year", 1970))
-	var mo: int = int(dt.get("month", 1))
-	var d: int = int(dt.get("day", 1))
-	var stamp: int = Time.get_ticks_msec()
-	return "%04d-%02d-%02d_match_%d.md" % [y, mo, d, stamp]
+## Split post-game model output into rolling distill (rewrite) vs one session archive (Metadata + Learnings only).
+static func parse_post_game_llm_markdown(md: String) -> Dictionary:
+	var t: String = _strip_outer_fence(md).strip_edges()
+	if not t.begins_with("## Distilled"):
+		return { "ok": false, "error": "missing_distilled_heading" }
+	var needle := "\n## Metadata\n"
+	var meta_idx: int = t.find(needle)
+	if meta_idx < 0:
+		needle = "\r\n## Metadata\r\n"
+		meta_idx = t.find(needle)
+	if meta_idx < 0:
+		return { "ok": false, "error": "missing_metadata_separator" }
+	var distilled: String = t.substr(0, meta_idx).strip_edges()
+	var session: String = t.substr(meta_idx + 1).strip_edges()
+	if not session.begins_with("## Metadata"):
+		return { "ok": false, "error": "metadata_after_separator" }
+	if not session.contains("## Learnings"):
+		return { "ok": false, "error": "missing_session_learnings" }
+	return { "ok": true, "distilled": distilled, "session": session }
+
+
+static func _read_canonical_file_raw() -> String:
+	var path: String = LlmLearningsIngest.canonical_learnings_path()
+	if not FileAccess.file_exists(path):
+		return ""
+	return FileAccess.get_file_as_string(path)
+
+
+static func _existing_distilled_from_disk() -> String:
+	var raw: String = _read_canonical_file_raw()
+	var p: Dictionary = LlmLearningsIngest.parse_canonical_file(raw)
+	return str(p.get("distilled", "")).strip_edges()
+
+
+static func write_canonical_learnings(distilled_md: String, new_session_md: String) -> String:
+	_LearningsIngest.ensure_directory()
+	var path: String = LlmLearningsIngest.canonical_learnings_path()
+	var old_raw: String = _read_canonical_file_raw()
+	var parsed: Dictionary = LlmLearningsIngest.parse_canonical_file(old_raw)
+	var old_sessions: PackedStringArray = parsed.get("sessions", PackedStringArray()) as PackedStringArray
+	var blocks: PackedStringArray = PackedStringArray()
+	var ns: String = new_session_md.strip_edges()
+	if not ns.is_empty():
+		blocks.append(ns)
+	for i in range(old_sessions.size()):
+		if blocks.size() >= MAX_CANONICAL_SESSION_BLOCKS:
+			break
+		blocks.append(str(old_sessions[i]).strip_edges())
+	var d: String = distilled_md.strip_edges()
+	var combined: String
+	if d.is_empty():
+		combined = "\n---\n".join(blocks)
+	else:
+		combined = "%s\n---\n%s" % [d, "\n---\n".join(blocks)]
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		push_warning("LlmPostGame: could not write %s" % path)
+		return ""
+	f.store_string(combined)
+	f.close()
+	return path
 
 
 static func _metadata_lines(session: Dictionary, match_summary: Dictionary, learning_summary: String) -> PackedStringArray:
@@ -221,31 +276,14 @@ static func write_stub_session_file(
 	learning_summary: String,
 	body_note: String,
 ) -> String:
-	_LearningsIngest.ensure_directory()
-	var path: String = LlmLearningsIngest.USER_LEARNINGS_ROOT.path_join(_session_filename())
 	var meta := _metadata_lines(session, match_summary, learning_summary)
 	var parts: PackedStringArray = PackedStringArray()
 	for line in meta:
 		parts.append(line)
 	parts.append("")
-	parts.append("## Result")
-	parts.append("- %s (AI perspective)" % str(match_summary.get("ai_outcome", "unknown")))
-	parts.append("")
 	parts.append("## Learnings")
 	parts.append("- %s" % body_note)
-	parts.append("")
-	parts.append("## Contradictions")
-	parts.append("- none")
-	parts.append("")
-	parts.append("## Experiments")
-	parts.append("- none")
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f == null:
-		push_warning("LlmPostGame: could not write %s" % path)
-		return ""
-	f.store_string("\n".join(parts))
-	f.close()
-	return path
+	return write_canonical_learnings(_existing_distilled_from_disk(), "\n".join(parts))
 
 
 static func write_llm_session_file(
@@ -254,21 +292,25 @@ static func write_llm_session_file(
 	learning_summary: String,
 	llm_markdown: String,
 ) -> String:
-	_LearningsIngest.ensure_directory()
-	var path: String = LlmLearningsIngest.USER_LEARNINGS_ROOT.path_join(_session_filename())
-	var meta := _metadata_lines(session, match_summary, learning_summary)
-	var parts: PackedStringArray = PackedStringArray()
-	for line in meta:
-		parts.append(line)
-	parts.append("")
-	parts.append(_strip_outer_fence(llm_markdown))
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f == null:
-		push_warning("LlmPostGame: could not write %s" % path)
-		return ""
-	f.store_string("\n".join(parts))
-	f.close()
-	return path
+	var existing: String = _existing_distilled_from_disk()
+	var parsed := parse_post_game_llm_markdown(llm_markdown)
+	if not bool(parsed.get("ok", false)):
+		push_warning(
+			"LlmPostGame: parse_post_game_llm_markdown failed (%s); distill unchanged."
+			% str(parsed.get("error", "?"))
+		)
+		var meta := _metadata_lines(session, match_summary, learning_summary)
+		var parts: PackedStringArray = PackedStringArray()
+		for line in meta:
+			parts.append(line)
+		parts.append("")
+		parts.append("## Learnings")
+		parts.append("- Post-game model returned an unexpected shape; rolling distill left unchanged.")
+		return write_canonical_learnings(existing, "\n".join(parts))
+	return write_canonical_learnings(
+		str(parsed.get("distilled", "")).strip_edges(),
+		str(parsed.get("session", "")).strip_edges(),
+	)
 
 
 ## Runs post-game pipeline: stubs when gated off; otherwise chat/completions (POST_GAME profile).
@@ -307,7 +349,13 @@ func run_session_async(
 		)
 		return { "ok": false, "message": "AI learnings: key missing; saved stub only.", "skipped": false }
 
-	var user_json: String = build_post_game_user_json(session, match_summary, _prior_excerpt_for_post_game())
+	var pri: Dictionary = _LearningsIngest.extract_prior_context_for_post_game()
+	var user_json: String = build_post_game_user_json(
+		session,
+		match_summary,
+		str(pri.get("distilled", "")),
+		str(pri.get("recent_session_learnings", "")),
+	)
 	var messages: Array = [
 		{"role": "system", "content": _PostGamePrompts.system_prompt()},
 		{"role": "user", "content": user_json},
@@ -340,4 +388,8 @@ func run_session_async(
 		return { "ok": false, "message": "AI learnings: empty response — saved stub.", "skipped": false }
 
 	write_llm_session_file(session, match_summary, "ok", content)
-	return { "ok": true, "message": "AI learnings: saved post-game session to user://ai_learnings/.", "skipped": false }
+	return {
+		"ok": true,
+		"message": "AI learnings: updated rolling distill and archived this match in user://ai_learnings/ai_learnings.md.",
+		"skipped": false,
+	}

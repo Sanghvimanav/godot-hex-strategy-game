@@ -345,7 +345,7 @@ static func _should_play_target_damage_effect(attacker: Unit, ac: ActionInstance
 	if not _valid_unit(attacker) or ac == null or ac.definition == null:
 		return false
 	var action_key: String = ac.definition.action_key
-	return action_key == "attack_ray" or action_key == "attack_hydralisk"
+	return action_key == "attack_ray" or action_key == "attack_hydralisk" or action_key == "attack_spire"
 
 static func _apply_stun_effect(ctx: ExecutionContext, target_unit: Unit, duration: int) -> void:
 	var effect := UnitEffect.new(UnitEffect.Kind.Stun, duration, {})
