@@ -35,12 +35,12 @@ func _build_scenarios() -> void:
 		},
 		]
 	})
-	# Campaign 1: Terran scouts face scattered zerglings and three mountains on the center file.
+	# Campaign 1: Terran scouts face scattered zerglings and three mountains on column x = -1.
 	available_scenarios.append({
 		"id": "campaign_opening",
 		"display_name": "Campaign 1 (3 Scouts vs 5 Zerglings + 3 Mountains)",
 		"category": "campaign",
-		"description": "Terran (you): destroy all three Mountains with your Scouts — they are the Zerg’s static holdings on the center file (no ranged threat, but block the objective). Zerg (AI): protect the Mountains; stop the Scouts from tearing them down while zerglings engage. Standard elimination still ends the match when one side has no units left.",
+		"description": "Terran (you): destroy all three Mountains with your Scouts — they are the Zerg’s static holdings on column x = -1 (no ranged threat, but block the objective). Zerg (AI): protect the Mountains; stop the Scouts from tearing them down while zerglings engage. Standard elimination still ends the match when one side has no units left.",
 		"groups": [
 			{"name": "player", "units": [
 				{"def_path": "res://src/unit/definitions/scout.tres", "cell": Vector2i(4, 0)},
@@ -53,9 +53,9 @@ func _build_scenarios() -> void:
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
 				{"def_path": "res://src/unit/definitions/zergling.tres", "cell": Vector2i(-4, 0)},
-				{"def_path": "res://src/unit/definitions/mountain.tres", "cell": Vector2i(0, -2)},
-				{"def_path": "res://src/unit/definitions/mountain.tres", "cell": Vector2i(0, 0)},
-				{"def_path": "res://src/unit/definitions/mountain.tres", "cell": Vector2i(0, 2)},
+				{"def_path": "res://src/unit/definitions/mountain.tres", "cell": Vector2i(-1, -2)},
+				{"def_path": "res://src/unit/definitions/mountain.tres", "cell": Vector2i(-1, 0)},
+				{"def_path": "res://src/unit/definitions/mountain.tres", "cell": Vector2i(-1, 2)},
 			]},
 		]
 	})

@@ -271,7 +271,7 @@ static func _test_zerg_vs_terran_v2_scenario_exists(tests: Node) -> bool:
 	return true
 
 static func _test_campaign_opening_scenario_exists(tests: Node) -> bool:
-	tests._log("test_actions: campaign_opening is in campaign category with stacked scouts, stacked zerglings, and mountains on center file")
+	tests._log("test_actions: campaign_opening is in campaign category with stacked scouts, stacked zerglings, and mountains on x = -1")
 	var scenario: Dictionary = Scenarios.get_scenario_by_id("campaign_opening")
 	if scenario.is_empty():
 		tests._fail("campaign_opening scenario should exist")
@@ -309,7 +309,7 @@ static func _test_campaign_opening_scenario_exists(tests: Node) -> bool:
 	var player_anchor := Vector2i.ZERO
 	var has_zerg_stack_anchor := false
 	var zerg_stack_anchor := Vector2i.ZERO
-	var expected_mountain_cells: Array[Vector2i] = [Vector2i(0, -2), Vector2i(0, 0), Vector2i(0, 2)]
+	var expected_mountain_cells: Array[Vector2i] = [Vector2i(-1, -2), Vector2i(-1, 0), Vector2i(-1, 2)]
 	var mountain_cells_found: Dictionary = {}
 	for g in scenario.get("groups", []):
 		var group_name: String = str(g.get("name", ""))
@@ -378,7 +378,7 @@ static func _test_campaign_opening_scenario_exists(tests: Node) -> bool:
 	if player_anchor.x != -zerg_stack_anchor.x or player_anchor.y != zerg_stack_anchor.y:
 		tests._fail("campaign_opening player and zerg stack anchors should be mirrored across the board center")
 		return false
-	tests._pass("campaign_opening scenario is categorized with 3 stacked scouts, mountains on (0,-2) (0,0) (0,2)")
+	tests._pass("campaign_opening scenario is categorized with 3 stacked scouts, mountains on (-1,-2) (-1,0) (-1,2)")
 	return true
 
 static func _test_excavator_debug_scenario_exists(tests: Node) -> bool:
