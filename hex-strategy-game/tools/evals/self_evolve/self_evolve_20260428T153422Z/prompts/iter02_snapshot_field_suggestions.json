@@ -1,0 +1,49 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "predicted_end_cells_this_turn",
+      "where": "enemies[].predicted_end_cells_this_turn",
+      "why": "Lets the planner target post-move landing hexes directly instead of inferring them from raw movement options.",
+      "example_value": [
+        {
+          "cell": [
+            1,
+            0
+          ],
+          "rank": 1,
+          "via": "fast_move"
+        },
+        {
+          "cell": [
+            2,
+            0
+          ],
+          "rank": 2,
+          "via": "hold"
+        }
+      ]
+    },
+    {
+      "field_name": "hits_predicted_enemy_end_cells",
+      "where": "ai_units[].legal_options[].hits_predicted_enemy_end_cells",
+      "why": "Precomputes which predicted enemy landing cells each attack option actually covers after timing resolution; removes ambiguity for rays/lines/AoE.",
+      "example_value": [
+        {
+          "enemy_id": 123,
+          "cells": [
+            [
+              1,
+              0
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "field_name": "achieves_key_tile_now",
+      "where": "ai_units[].legal_options[].achieves_key_tile_now",
+      "why": "Makes exact end-cell completion explicit so the planner can deterministically choose reaching the required tile over partial progress.",
+      "example_value": true
+    }
+  ]
+}

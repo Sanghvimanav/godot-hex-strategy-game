@@ -18,9 +18,8 @@ func _on_show_replay_summary(lines: Array, title: String) -> void:
 		var s := str(line)
 		var lbl := Label.new()
 		lbl.text = s
-		if s.length() > 0 and not s.begins_with("  "):
-			lbl.add_theme_font_size_override("font_size", 14)
-			lbl.add_theme_color_override("font_color", Color(0.95, 0.95, 0.95))
+		if s.length() > 0 and s.begins_with("  "):
+			lbl.theme_type_variation = "UiHint"
 		lines_container.add_child(lbl)
 	show()
 

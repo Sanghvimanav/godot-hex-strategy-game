@@ -1,0 +1,11 @@
+{
+  "remove_paths": [
+    "failed_cases[].raw_response_excerpt"
+  ],
+  "set_values": {
+    "planner_context.require_constraint_filtering_first": true,
+    "planner_context.fast_mover_targeting_rule": "When attacking a predicted fast-mover landing cell, select the legal target_cell whose coverage hits that landing cell; if intent names a target cell, that exact target_cell overrides.",
+    "planner_context.no_single_ally_sufficiency_assumption": true
+  },
+  "copy_paths": []
+}

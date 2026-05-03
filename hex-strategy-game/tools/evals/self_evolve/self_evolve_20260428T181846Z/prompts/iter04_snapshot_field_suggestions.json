@@ -1,0 +1,49 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "predicted_1t_end_cells",
+      "where": "snapshot.enemy_units[].predicted_1t_end_cells",
+      "why": "Lets the planner directly reason about plausible landing cells for fast movers instead of inferring them from prose.",
+      "example_value": [
+        [
+          -1,
+          -2
+        ],
+        [
+          0,
+          -2
+        ]
+      ]
+    },
+    {
+      "field_name": "coverage_cells",
+      "where": "snapshot.ai_units[].legal_options[].coverage_cells",
+      "why": "Provides one normalized union of all cells actually affected by an option, simplifying required_hit/intercept and AOE/ray decisions.",
+      "example_value": [
+        [
+          -1,
+          -2
+        ],
+        [
+          -1,
+          -1
+        ],
+        [
+          0,
+          -1
+        ]
+      ]
+    },
+    {
+      "field_name": "satisfies_constraints",
+      "where": "snapshot.ai_units[].legal_options[].satisfies_constraints",
+      "why": "Engine-side precheck prevents illegal picks by exposing whether each option satisfies current required/allowed/forbidden targeting and end-cell rules.",
+      "example_value": {
+        "required_target_cell": false,
+        "required_end_cell": true,
+        "allowed_end_cells": true,
+        "forbidden_end_cells": true
+      }
+    }
+  ]
+}

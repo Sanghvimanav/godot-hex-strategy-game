@@ -1,0 +1,23 @@
+{
+  "case_id": "phase_fastmove_contact_zergling_vs_scout_far_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "metadata_shape_snapshot_check"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should fast_move to [3,-2] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+  "mode": "snapshot",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout_far",
+  "estimated_cost_usd": 0.0
+}

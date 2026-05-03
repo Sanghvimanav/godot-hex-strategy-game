@@ -1,0 +1,75 @@
+{
+  "case_id": "scout_no_ff_stepin_to_friendly_tile_t0",
+  "chosen_option_indices": [
+    9
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T181846Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 0.818455555555556,
+    "formula": "correctness * speed_score",
+    "speed_score": 0.818455555555556
+  },
+  "intent": "With 1-HP Zergling moving from [-1,2] to [-1,3], scout should target [-1,3] even though a friendly scout occupies that tile.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68182607565": 9,
+      "68367156968": 2
+    },
+    "call_timings_ms": [
+      46339
+    ],
+    "latency_grader": {
+      "average_call_score": 0.818455555555556,
+      "calls": [
+        {
+          "elapsed_ms": 46339,
+          "elapsed_seconds": 46.339,
+          "score": 0.818455555555556
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 0.818455555555556
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling fast-moves to [-1,3].\",\"reasoning_summary\":\"Scout 681 fires at [-1,3]; Scout 683 moves to [-1,2] to keep pressure.\",\"actions\":[{\"unit_id\":68182607565,\"option_index\":9},{\"unit_id\":68367156968,\"option_index\":2}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Exploring attack options**\n\nI need to determine potential attack options that cover the coordinates -1, 3. I wonder if there are choices available with the covered_cells function. Next, I\u2019ll inspect the attack_ray options for unit2, specifically looking at the range from 7 to 24 to see which can cover the point [-1, 3]. It's important I evaluate these options thoroughly to find the best solution. Let's see what I can discover!\n**Analyzing movement strategy**\n\nI\u2019m considering if maybe I need the attack_ray to cover the same tile. It seems that there's no clear covered_cell for [-1,3]. After searching through the covered_cells, it looks like none cover [-1,3] directly, except maybe some nearby options. If unit2 is already at the landing cell, then the only action could be to move away. But rule 2 mentions I should only move if there's no attack that can cover it. It\u2019s a bit complicated!\n**Considering tactical options**\n\nI\u2019m weighing whether to choose rest_no_energy or move away, while keeping rules 4 and 5 in mind. Since the enemy is landing on our cell and our Scouts don\u2019t have a passive ability, an attack_ray on the same tile isn\u2019t possible. I might need to move away to preserve our position. Rule 2 says I should only move onto a predicted landing cell if it\u2019s legal and not attacked, but it doesn\u2019t address moving if already on it. This is getting complicated!\n**Evaluating attack options**\n\nSo, the enemy\u2019s fast move happens before I take action. Since they\u2019ll be on the same tile, I\u2019m wondering if I could potentially target the same tile with my attack_ray. I need to check unit1 at i=16, which has target_cell [-1,2] and covered_cells also at [-1,2]. It looks like there are some enemy units there already, given the covered_enemy_unit_ids signal they\u2019re currently at -1,2 before my move. It's quite the situation!\n**Evaluating attack options**\n\nI'm trying to figure out if attacks targeting -1,3 would work. It seems if the attack_ray needs to end at that cell, there might not be an attack possible. If I check the metadata, it shows that the attack_ray's end_cell equals the target_cell. This means the shot from the current position might need to be adjacent? I believe I need to ensure each unit can take one action, so I need to think about moving the units appropriately to maintain pressure while considering attacks.\n**Analyzing movement options**\n\nI'm considering the possibilities for unit2 since occupying the landing cell seems tricky. It already occupies that landing cell, which makes it confusing when thinking about moving or resting. I guess the rules come into play here. If there's no attack available, maybe moving away or resting makes sense. I think I should assess the movement options for unit2, like moving short to various potential cells such as -2,3 or -1,2. I need to weigh these options based on the rules I have.\n**Considering enemy movement**\n\nThe enemy's landing cell is at -1,3, and I\u2019m thinking about my movement options. I could go to -1,2 or -1,4 to avoid being on the same tile. However, if the enemy quickly moves to -1,3, that would still leave me adjacent. It feels best to preserve my positioning. I need to choose an action based on the rules. Since my current attack can't cover the landing, maybe moving away is a good choice, but I should also consider if another unit has a potential attack.\n**Considering tactical moves**\n\nI\u2019m thinking about defense strategies since no attack can cover landing. Maybe resting my unit to hold the cell is the way to go. However, if the enemy zergling moves onto the same cell, there could be some interactions. I see that the zergling has a passive attack that likely auto-hits if they're on the same tile. I need to consider various tactical rules and tiebreakers while planning my next move.\n**Evaluating attack options**\n\nI'm considering my options since no legal attack can cover the predicted landing cell, and occupying the exact cell is allowed. It seems that moving or fast-moving onto that landing cell might be the best choice. Since it\u2019s not in line with the rules to attack the current hex, maintaining adjacency could be more beneficial. Oh, but attacking first could be tempting. I have to remember the phase order; the enemy's fast move happens before my attack resolves, which complicates things. So, for unit 2, it looks like I shouldn\u2019t attack at all.\n**Evaluating movement and distance**\n\nI\u2019m pondering whether I should set the move_short to 0.3. That could potentially reduce the distance to the enemy after taking action. But when I look at distances_to_visible_enemies for index i=2, it shows a hex_dist of 0. If I wait for the move to -1,2, it seems there\u2019s a visible enemy at distance 0, meaning they\u2019re on the same tile. That\u2019s puzzling because the distance to visible enemies after an action uses the enemy's current position before the move, not the future one.\n**Evaluating movement options**\n\nI\u2019m thinking about how moving to -1,2 is aggressive, especially since it would give me one hit while others have zero. But then I need to consider that unit 2 is already adjacent. Does that change the dynamics? I\u2019m weighing the potential outcomes and trying to understand if applying rule 4 makes sense in this context. It feels like there\u2019s more here to unpack before making a final decision!\n**Evaluating options for damage prediction**\n\nI see that there are many adjacent options to consider. If we're aiming for lower predicted damage, should everything be set to zero? Maybe we should keep the same tile? I\u2019m wondering if using 'rest_no_energy' at -1,3 could be viewed as an aggressive choice. It's important to think about how each option might affect overall strategy and outcomes! It feels like there's a lot to weigh here.\n**Evaluating movement strategy**\n\nI'm wondering if staying put is better than moving away. The rule indicates I should only move onto a cell if there's no attack coverage. Since I'm already on the cell, staying feels like occupying it, but since the enemy is also moving there, overlap seems unavoidable. If I can't attack the landing cell, maybe I should hold my position. However, it seems more aggressive to move short to adjacent cells, as it might create better next-turn contact. What\u2019s the best forward option?\n**Analyzing movement options**\n\nThe enemy has landed on -1,3, and I\u2019m considering moving to -1,2 to stay adjacent or even in front of them. However, all options are adjacent. Looking at the distances, option 2 has a distance from the origin of 2 and an edge distance of 3, while moving to 0,3 has a distance of 3. I think I might choose option 2 because it offers expected visible hits if targeted. The developer noted that if a prediction mentions a cell, that cell should be part of the chosen option\u2019s metadata.\n**Planning Actions for Units**\n\nI'm focusing on specific coordinates for our units, particularly mentioning -1,3 and possibly -1,2, as they are relevant to the chosen metadata. For instance, I can note that \"enemy is at [-1,3]; Scout 681 shoots there, and Scout 683 moves to [-1,2].\" I'll keep the opponent's prediction limited to -1,3 as well. It's important to ensure the JSON structure accurately reflects the actions array for both units, using numbers instead of strings. Let's keep it concise!",
+    "usage": {
+      "input_tokens": 14559,
+      "output_tokens": 5042,
+      "reasoning_tokens": 4960,
+      "total_tokens": 19601
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.01372375
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "per-unit requirements satisfied (1 units)",
+  "scenario_id": "eval_scout_no_ff_stepin_to_friendly_tile",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.01372375
+}

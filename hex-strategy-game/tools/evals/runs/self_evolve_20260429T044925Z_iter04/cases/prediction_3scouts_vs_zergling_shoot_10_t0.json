@@ -1,0 +1,87 @@
+{
+  "case_id": "prediction_3scouts_vs_zergling_shoot_10_t0",
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T044925Z_iter04"
+  },
+  "grading": {
+    "correctness": 0.0,
+    "final_score": 0.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "All Scouts should target [1,0] with attack_ray to hit the predicted Zergling approach after movement timing.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68149053133": 24,
+      "68333602536": 24,
+      "68467820271": 24
+    },
+    "call_timings_ms": [
+      3117
+    ],
+    "echo_cell_by_unit_id": {
+      "68149053133": [
+        2,
+        0
+      ],
+      "68333602536": [
+        2,
+        0
+      ],
+      "68467820271": [
+        2,
+        0
+      ]
+    },
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 3117,
+          "elapsed_seconds": 3.117,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T044925Z/prompts/iter03_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T044925Z/prompts/iter03_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T044925Z/prompts/iter03_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER,\"echo_cell\":[q,r]}]}\nChoose exactly one action per AI unit, using only ai_units[].legal_options[].i. Emit actions in ai_units order.\n\nDeterministic policy per unit:\n1) Read hard constraints from payload/global/unit intent. Enforce in this order: required_action_type; required_cell/required_cells and any instruction to target/hit/end at cell X; allowed_end_cells; retreat/stay_out_of_range.\n2) If required_action_type is an attack, choose an attack. Never replace a qualifying attack with move/fast_move/rest.\n3) An attack qualifies when the required cell or predicted enemy landing cell is in that option's real hit coverage: target_cell, affected_cells, ray_cells, line_cells, or intercept_cells.\n4) If enemy movement may occur before the hit resolves, prioritize predicted landing cells over current enemy cells. When multiple legal attacks qualify, prefer the one whose target_cell exactly equals the required/predicted landing cell; otherwise choose a target_cell whose coverage contains it. If a legal option exists, do not reject it because the target cell is friendly-occupied or because the enemy is currently elsewhere.\n5) If any legal attack covers a required or predicted landing cell, choose that attack unless intent explicitly forbids attacking.\n6) If no attack is chosen, obey movement constraints exactly: allowed_end_cells are mandatory; under retreat/stay_out_of_range prefer legal end cells outside enemy threat, else the safest allowed end. Only if no such constraint exists, choose move/fast_move that best reduces distance to the key enemy/objective and speeds next-turn contact.\n7) Tie-break: exact hard-constraint satisfaction > exact target_cell match to required/predicted landing cell > coverage of required/predicted landing cell > attack > safer end (lower pred_damage_at_end or incoming_damage_if_enemies_hold_and_shoot_end) > shorter post-action distance > lower i.\n\nOutput rules:\n- One action per AI unit.\n- option_index must equal the chosen legal option's i.\n- echo_cell MUST be copied exactly from the chosen option: end_cell if present, else target_cell if present, else the unit's current cell.\n- Never use coverage cells or predicted landing cells as echo_cell unless that exact cell is also the chosen option's end_cell or target_cell.\n- Keep both strings brief and mention only cells that appear in chosen option metadata."
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling likely fast_move to [1,0]\",\"reasoning_summary\":\"Attack [2,0] with each Scout\",\"actions\":[{\"unit_id\":68149053133,\"option_index\":24,\"echo_cell\":[2,0]},{\"unit_id\":68333602536,\"option_index\":24,\"echo_cell\":[2,0]},{\"unit_id\":68467820271,\"option_index\":24,\"echo_cell\":[2,0]}]}",
+    "reasoning_effort": "low",
+    "thinking": "",
+    "usage": {
+      "input_tokens": 19136,
+      "output_tokens": 139,
+      "reasoning_tokens": 35,
+      "total_tokens": 19275
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.005062
+  },
+  "mode": "live_llm",
+  "pass": false,
+  "perspective_group": "terran",
+  "reason": "unit id=68149053133 chose end [2, 0], expected [1,0]",
+  "scenario_id": "eval_prediction_3scouts_vs_zergling_shoot_10",
+  "runner_exit_code": 2,
+  "estimated_cost_usd": 0.005062
+}

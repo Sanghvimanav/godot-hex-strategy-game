@@ -1,0 +1,72 @@
+{
+  "case_id": "zergling_commit_two_landing_hexes_t0",
+  "chosen_option_index": 4,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T173204Z_iter02"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should commit with fast_move to one of the valid pressure hexes [-1,1] or [0,1], despite potential incoming scout damage.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68870473449": 4
+    },
+    "call_timings_ms": [
+      9005
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 9005,
+          "elapsed_seconds": 9.005,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T173204Z/prompts/iter01_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T173204Z/prompts/iter01_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T173204Z/prompts/iter01_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nEvaluate each unit\u2019s legal options in this exact priority order; stop at the first rule that yields any legal choice.\n1) Exact required cell/effect: If scenario intent, goal, or assignment names a specific unit, finish cell, target cell, hit cell, or end cell, obey it exactly if legal. For move/fast_move, require end_cell == required cell. For attacks, require actual coverage to include the required cell using target_cell, affected_cells, ray_cells, line_cells, or intercept_cells. Never replace an exact required cell with a safer/nearby cell. Required exact-match overrides damage avoidance and other heuristics.\n2) Predicted landing vs fast movers: Otherwise, for each enemy that can move before your hit resolves, predict 1-2 likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE, aim at the landing cell itself, not the enemy\u2019s current hex. This remains valid even if the enemy is not currently there or a friendly unit currently occupies that cell, as long as the option is legal and its metadata covers that cell. If an attack can cover a predicted landing cell, prefer that attack over movement. Only move/fast_move onto a predicted landing cell when no legal attack covers any predicted landing cell.\n3) Lethal/damage: Otherwise choose a legal attack that kills; else highest immediate damage to the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: output one action per AI unit. Every chosen option_index must exist for that unit. If either string mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely steps to [0,1] or [-1,1]\",\"reasoning_summary\":\"Fast move to predicted landing hex and keep pressure; [0,1] is the best landing commit.\",\"actions\":[{\"unit_id\":68870473449,\"option_index\":4}]}",
+    "reasoning_effort": "low",
+    "thinking": "**Calculating distances**\n\nSo, it looks like I'm trying to figure out distances for a scout in a range of 2. If the scout moves to [0,1], I need to compute the distance from [-1,2] to [0,1]. The axial distance seems to be based on the differences in coordinates, which is max of those differences. Wait, I realize the differences are 1, 1, and 0, leading to a distance of 1. That\u2019s clearer!\n**Considering options for commitment**\n\nI'm evaluating two options that both involve contact in the next turn. I think I should go with [0,1] because the rules specify that valid commitments are either [-1,1] or [0,1], and I need to apply pressure. Since both options have the same incoming damage, I wonder if it's logical to choose the lower index among equal options. In this case, option2 has a lower index than option4, so that seems to be the way to go.",
+    "usage": {
+      "input_tokens": 8942,
+      "output_tokens": 665,
+      "reasoning_tokens": 596,
+      "total_tokens": 9607
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.0035655
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_zergling_commit_two_landing_hexes",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.0035655
+}

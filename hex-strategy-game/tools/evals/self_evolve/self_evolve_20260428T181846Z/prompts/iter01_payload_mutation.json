@@ -1,0 +1,19 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.strict_json_only": true,
+    "planner_context.named_attack_target_cell_is_binding": true,
+    "planner_context.cover_predicted_fast_mover_landings": true,
+    "planner_context.allowed_end_cells_are_hard_constraints": true
+  },
+  "copy_paths": [
+    {
+      "from": "scenario.intent",
+      "to": "planner.intent"
+    },
+    {
+      "from": "turn.goal",
+      "to": "planner.goal"
+    }
+  ]
+}

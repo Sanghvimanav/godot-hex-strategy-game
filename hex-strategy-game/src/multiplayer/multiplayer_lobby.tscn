@@ -9,6 +9,13 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 script = ExtResource("1_script")
 
+[node name="ColorRect" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.04, 0.045, 0.065, 1)
+
 [node name="VBox" type="VBoxContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -22,13 +29,13 @@ theme_override_constants/separation = 16
 
 [node name="StatusLabel" type="Label" parent="VBox"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
+theme_type_variation = &"UiHeading"
 text = "Enter host address and click Connect."
 
 [node name="ConnectedPlayersLabel" type="Label" parent="VBox"]
 layout_mode = 2
 visible = false
-theme_override_font_sizes/font_size = 14
+theme_type_variation = &"UiSubtitle"
 text = "Connected (0):"
 
 [node name="ConnectPanel" type="PanelContainer" parent="VBox"]
@@ -54,7 +61,9 @@ layout_mode = 2
 placeholder_text = "8081"
 
 [node name="ConnectButton" type="Button" parent="VBox/ConnectPanel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
+theme_type_variation = &"PrimaryButton"
 text = "Connect"
 
 [node name="UsernamePanel" type="PanelContainer" parent="VBox"]
@@ -76,7 +85,9 @@ layout_mode = 2
 placeholder_text = "Your name"
 
 [node name="OKButton" type="Button" parent="VBox/UsernamePanel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
+theme_type_variation = &"PrimaryButton"
 text = "OK"
 
 [node name="LobbyPanel" type="PanelContainer" parent="VBox"]
@@ -95,14 +106,17 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="CreateButton" type="Button" parent="VBox/LobbyPanel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 text = "Create game"
 
 [node name="ScenarioOption" type="OptionButton" parent="VBox/LobbyPanel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 
 [node name="JoinLabel" type="Label" parent="VBox/LobbyPanel/Margin/VBox"]
 layout_mode = 2
+theme_type_variation = &"UiFormLabel"
 text = "Join a game:"
 
 [node name="GamesListContainer" type="VBoxContainer" parent="VBox/LobbyPanel/Margin/VBox"]
@@ -130,7 +144,7 @@ text = ""
 
 [node name="GameRosterLabel" type="Label" parent="VBox/GamePanel/Margin/VBox"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 14
+theme_type_variation = &"UiSubtitle"
 text = "Players in this game:"
 
 [node name="GameStateLabel" type="Label" parent="VBox/GamePanel/Margin/VBox"]
@@ -140,9 +154,11 @@ text = ""
 [node name="WaitingForHostLabel" type="Label" parent="VBox/GamePanel/Margin/VBox"]
 layout_mode = 2
 visible = false
-theme_override_font_sizes/font_size = 14
+theme_type_variation = &"UiSubtitle"
 text = "Waiting for host to start the game..."
 
 [node name="LaunchBattleButton" type="Button" parent="VBox/GamePanel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
+theme_type_variation = &"PrimaryButton"
 text = "Launch battle"

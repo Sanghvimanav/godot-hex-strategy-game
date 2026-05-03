@@ -1,0 +1,10 @@
+{
+  "case_id": "scout_no_ff_stepin_to_friendly_tile_t0",
+  "pass": false,
+  "reason": "case_timeout_after_450s",
+  "runner_exit_code": 124,
+  "runner_timed_out": true,
+  "runner_timeout_seconds": 450,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n",
+  "estimated_cost_usd": 0.0
+}

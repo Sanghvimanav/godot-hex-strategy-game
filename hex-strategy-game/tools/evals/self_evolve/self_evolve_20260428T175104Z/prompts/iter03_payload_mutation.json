@@ -1,0 +1,8 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.constraint_priority": "Exact required/allowed cells override safety, damage, and pressure.",
+    "planner_context.fast_mover_targeting_rule": "When intercepting a fast mover, prefer attacks whose true coverage hits predicted landing cells; if an attack target cell is choosable, target the predicted landing cell directly when possible."
+  },
+  "copy_paths": []
+}

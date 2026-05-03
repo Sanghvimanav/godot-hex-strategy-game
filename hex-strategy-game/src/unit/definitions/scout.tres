@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_script")
 name = "Scout"
-description = "Recon specialist: short move or rest; long-range ray shot and recruit people from village tiles. Greater sight range than marines. Shoot does not use energy."
+description = "Recon specialist: short move or rest; ray shot (hex range 1–2) and recruit people from village tiles. Greater sight range than marines. Shoot does not use energy."
 type = 1
 faction = 2
 frames = ExtResource("1_frames")

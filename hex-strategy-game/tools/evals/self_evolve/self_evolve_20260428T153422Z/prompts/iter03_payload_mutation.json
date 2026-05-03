@@ -1,0 +1,14 @@
+{
+  "remove_paths": [
+    "failed_cases[].raw_response_excerpt"
+  ],
+  "set_values": {
+    "prompt_revision_focus": [
+      "respect_attack_timing",
+      "aim_at_predicted_landing_cells",
+      "prefer_actual_affected_cells_for_aoe",
+      "exact_objective_hex_priority"
+    ]
+  },
+  "copy_paths": []
+}

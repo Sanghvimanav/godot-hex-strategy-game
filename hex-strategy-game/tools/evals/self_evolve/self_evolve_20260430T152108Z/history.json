@@ -1,0 +1,12 @@
+[
+  {
+    "iter": 1,
+    "run_id": "self_evolve_20260430T152108Z_iter01",
+    "exit_code": 2,
+    "pass_rate": 0.4117647058823529,
+    "avg_final_score": 0.40724444444444446,
+    "fail_count": 10,
+    "custom_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json"
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.rule_order": [
+      "strict_constraints",
+      "fast_mover_interception",
+      "kill_or_damage",
+      "retreat",
+      "pressure"
+    ],
+    "planner_context.coverage_rule": "For attacks, required/predicted cells are satisfied by any legal option whose true coverage includes that cell; the option's target marker may differ."
+  },
+  "copy_paths": []
+}

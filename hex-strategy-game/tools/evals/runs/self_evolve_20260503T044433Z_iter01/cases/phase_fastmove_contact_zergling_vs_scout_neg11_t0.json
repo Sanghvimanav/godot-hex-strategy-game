@@ -1,0 +1,73 @@
+{
+  "case_id": "phase_fastmove_contact_zergling_vs_scout_neg11_t0",
+  "chosen_option_index": 4,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260503T044433Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 0.950211111111111,
+    "formula": "correctness * speed_score",
+    "speed_score": 0.950211111111111
+  },
+  "intent": "Zergling should fast_move to [0,0] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69206017768": 4
+    },
+    "call_timings_ms": [
+      34481
+    ],
+    "latency_grader": {
+      "average_call_score": 0.950211111111111,
+      "calls": [
+        {
+          "elapsed_ms": 34481,
+          "elapsed_seconds": 34.481,
+          "score": 0.950211111111111
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 0.950211111111111
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[] using action_key + target_cell. Use only listed unit_id values and legal action/target combinations.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Survival override: if enemy top1 predictions converge on your current/near cells and at least one legal move/fast_move materially lowers incoming threat this turn, choose the safer endpoint instead of contact. Prefer options with lower pred_damage_at_end (or incoming_damage_if_enemies_hold_and_shoot_end when pred_* absent), then lower enemy_count_can_hit_end_if_hold. If you are outnumbered locally (for example 1 unit vs 2+ enemies in contact range), prioritize retreat/survival over aggressive contact.\n5) No-friendly-fire targeting rule: friendly occupancy on a target cell does NOT block your attack choice. If a legal attack on a friendly-occupied cell secures a kill on a predicted enemy landing cell (especially 1-HP targets), prefer that attack over repositioning.\n6) Multi-unit kill coordination: when multiple allied units each have legal attacks that can kill the same predicted 1-HP enemy (or guaranteed kill tile), choose ATTACK actions for all such units this turn unless an attacker is strictly unable to attack that tile legally.\n7) Min-range intercept rule: if a predicted enemy landing cell equals your current cell and your attack has min_range > 0 (cannot target same-cell), do NOT default to move. Prefer a legal attack on an adjacent/intercept cell that still secures the kill (often enemy current/start cell or paired crossfire cell) over repositioning.\n8) Anti-overcommit rule: when a lone unit faces a clustered 3+ enemy stack, do not move onto the enemy-occupied stack unless it produces an immediate decisive kill advantage this turn; otherwise choose a retreat/safe fast_move endpoint.\n9) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. For pressure-only move choices, prefer endpoints that are on-axis toward immediate contact (avoid sideways drift when a direct contact lane exists).\n10) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; if multiple legal_options rows still tie on action_key + target_cell, pick the first matching row in the listed legal_options array order (top-first).\n\nValidation: every chosen action_key + target_cell pair must resolve to a legal option for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.\n"
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely attacks from [0,0] if we stay; if blocked, it may move away.\",\"reasoning_summary\":\"Fast-move to [0,0] cuts incoming damage to 0 and blocks the scout\u2019s range-1 ray this turn.\",\"actions\":[{\"unit_id\":69206017768,\"action_key\":\"fast_move\",\"target_cell\":[0,0]}]}",
+    "reasoning_effort": "high",
+    "thinking": "**Evaluating enemy actions**\n\nI'm calculating the axial distance between [0,0] and [-1,1], which comes out to 1. That means the enemy can indeed attack the current cell. They also have the option to move short to attack adjacent cells, but they can only take one action per turn. Given that, it's most likely the enemy will choose to attack since it's the most damaging action available to them.\n**Evaluating movement strategy**\n\nI\u2019m considering how to increase distance from the enemy so their attack_ray won't hit. Their attack range is 1-2, so if I can move to a distance of 3 or more, I should be safe. Looking at possible endpoints:   \n- From [-2,1], I'm still within range;  \n- From [-2,2], still can get hit;  \n- From [-1,0] and [-1,2], both are also within attacking distance.  \n- Moving to the same cell as the enemy allows for contact but could still bring risk from their attack_ray. It seems like my safest option is to ensure I move further away.\n**Considering movement options**\n\nI\u2019m weighing the choice between moving short or recruiting. If I move onto an enemy-occupied cell, that feels like aggression, but the anti-overcommit rule isn't relevant since I'm up against a lone unit. The rules around pressure and survival give me some options, especially if I can lower incoming threats. If I move to [0,0], it seems I won\u2019t take any damage, as enemy attacks won\u2019t hit me there. However, the enemy might still attack after my move\u2014yet they can't target the same cell.\n**Avoiding enemy attack**\n\nI\u2019m considering the enemy's options. They could move to an adjacent cell, but they can't both move and attack in the same turn. By moving to [0,0], I effectively avoid their direct attack entirely. This strategy seems solid since it keeps me from facing immediate damage, allowing me to maintain my position while the enemy is limited in their actions. It's all about staying safe while making smart moves!\n**Evaluating battle strategy**\n\nSince the enemy health is at 2, my passive damage of 1 isn't likely to be lethal alone. If any allied units were present, that could change things, but there aren't any. I need to choose between moving to the enemy cell at [0,0] or retreating to a safer endpoint, maybe [1,0] or something else. Following Rule 4, I should pick the safer endpoint, which also reduces incoming damage to 0. So, moving to [0,0] indeed seems like the best option!\n**Analyzing tactical choices**\n\nI'm leaning towards selecting [0,0] as the safest option, since an enemy can't shoot from there due to the minimum range rule. It's important to check if there's a required cell in the scenario, but it seems there isn\u2019t. There could be options like [1,-1] or [1,0], but those still allow the enemy to attack. The best move is to fast_move to [0,0] to minimize damage. I\u2019ll phrase the opponent's prediction clearly as well.\n**Crafting action and prediction**\n\nI need to note that the enemy scout at [0,0] could hit the current cell, so I want to fast_move to [0,0] to block that attack. I\u2019ll choose the action_key as \"fast_move\" and set the target_cell to [0,0], making sure to include unit_id 69206017768. I'll confirm that fast_move is a legal option and ensure there\u2019s only one action. For the opponent_prediction, I'll say, \"Scout will likely attack from [0,0] if we don't move, but we'll preempt this by fast moving there.\" I\u2019ll keep it concise!",
+    "usage": {
+      "input_tokens": 8148,
+      "output_tokens": 2071,
+      "reasoning_tokens": 1983,
+      "total_tokens": 10219
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.006179
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout_neg11",
+  "runner_exit_code": 0,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n[planning-eval] wrote /Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/runs/self_evolve_20260503T044433Z_iter01/cases/phase_fastmove_contact_zergling_vs_scout_neg11_t0.json\n[planning-eval] pass=true reason=required option exists and passes checks chosen_option_index=4 chosen_option_indices=[]\n",
+  "estimated_cost_usd": 0.006179
+}

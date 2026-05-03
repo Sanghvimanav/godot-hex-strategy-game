@@ -1,0 +1,42 @@
+{
+  "run_meta": {
+    "run_id": "self_evolve_20260428T150438Z_iter01",
+    "created_at": "2026-04-28T15:04:38.705932Z",
+    "mode": "live_llm",
+    "prompt_version": "p_current_settings",
+    "eval_set_version": "eval_v001",
+    "thinking_level": "low",
+    "model_override": "",
+    "notes": "",
+    "planning_prompt_version": "minimal",
+    "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v0_prompt.txt",
+    "payload_profile": "baseline",
+    "payload_mutation_file": "",
+    "git_sha": "5632b9b590908f340a90cb1abcc268a83285afe4",
+    "manifest": "",
+    "model_version": "gpt-5.4-mini",
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "planning_max_tokens": 16128,
+    "base_url": "https://api.openai.com/v1"
+  },
+  "total_cases": 7,
+  "pass_cases": 4,
+  "fail_cases": 3,
+  "failed_case_ids": [
+    "prediction_3scouts_vs_zergling_shoot_10_t0",
+    "zergling_commit_two_landing_hexes_t0",
+    "scout_prioritize_zergling_over_mountain_t0"
+  ],
+  "failed_case_reasons": {
+    "prediction_3scouts_vs_zergling_shoot_10_t0": "unit id=67947726541 chose end [2, 0], expected [1,0]",
+    "zergling_commit_two_landing_hexes_t0": "chosen fast_move end not in allowed_end_cells",
+    "scout_prioritize_zergling_over_mountain_t0": "chosen end [2, -2] != required [3,-3]"
+  },
+  "pass_rate": 0.5714285714285714,
+  "avg_final_score": 0.5714285714285714,
+  "avg_speed_on_pass": 1.0,
+  "total_tokens": 74099,
+  "estimated_cost_usd": 0.02065275,
+  "estimated_cost_usd_per_eval_turn": 0.00295039
+}

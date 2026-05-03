@@ -1,0 +1,216 @@
+[gd_scene format=3 uid="uid://c8llmsttngspg"]
+
+[ext_resource type="Script" path="res://src/battle/llm_settings_page.gd" id="1_script"]
+
+[node name="llm_settings_page" type="CanvasLayer"]
+script = ExtResource("1_script")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.04, 0.045, 0.065, 1)
+
+[node name="center" type="CenterContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="panel" type="PanelContainer" parent="center"]
+layout_mode = 2
+theme_type_variation = &"UiMainCard"
+custom_minimum_size = Vector2(560, 620)
+
+[node name="margin" type="MarginContainer" parent="center/panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="vbox" type="VBoxContainer" parent="center/panel/margin"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="title" type="Label" parent="center/panel/margin/vbox"]
+layout_mode = 2
+theme_type_variation = &"UiTitle"
+text = "LLM API settings"
+horizontal_alignment = 1
+
+[node name="back_btn" type="Button" parent="center/panel/margin/vbox"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "← Back to scenario picker"
+
+[node name="llm_hint" type="Label" parent="center/panel/margin/vbox"]
+layout_mode = 2
+theme_type_variation = &"UiHint"
+text = "Keys stay in user:// on this device only (not synced). OpenAI chat/completions only."
+autowrap_mode = 3
+
+[node name="llm_base_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="lbl_base" type="Label" parent="center/panel/margin/vbox/llm_base_row"]
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+theme_type_variation = &"UiFormLabel"
+text = "Base URL"
+
+[node name="llm_base_url" type="LineEdit" parent="center/panel/margin/vbox/llm_base_row"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "https://api.openai.com/v1"
+
+[node name="llm_model_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="lbl_model" type="Label" parent="center/panel/margin/vbox/llm_model_row"]
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+theme_type_variation = &"UiFormLabel"
+text = "Model"
+
+[node name="llm_model" type="LineEdit" parent="center/panel/margin/vbox/llm_model_row"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "gpt-4o-mini"
+
+[node name="llm_key_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="lbl_key" type="Label" parent="center/panel/margin/vbox/llm_key_row"]
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+theme_type_variation = &"UiFormLabel"
+text = "API key"
+
+[node name="llm_api_key" type="LineEdit" parent="center/panel/margin/vbox/llm_key_row"]
+layout_mode = 2
+size_flags_horizontal = 3
+secret = true
+placeholder_text = "sk-..."
+
+[node name="llm_api_mode_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="lbl_api_mode" type="Label" parent="center/panel/margin/vbox/llm_api_mode_row"]
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+theme_type_variation = &"UiFormLabel"
+text = "Planning API"
+
+[node name="llm_mode" type="OptionButton" parent="center/panel/margin/vbox/llm_api_mode_row"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "responses: OpenAI /v1/responses with reasoning.effort (thinking / GPT-5). chat: /v1/chat/completions."
+
+[node name="llm_reasoning_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="lbl_reason" type="Label" parent="center/panel/margin/vbox/llm_reasoning_row"]
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+theme_type_variation = &"UiFormLabel"
+text = "Reasoning"
+
+[node name="llm_reasoning_effort" type="OptionButton" parent="center/panel/margin/vbox/llm_reasoning_row"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Only used with Planning API = responses. Model-dependent values (see OpenAI reasoning docs)."
+
+[node name="llm_two_call_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="lbl_two_call" type="Label" parent="center/panel/margin/vbox/llm_two_call_row"]
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+theme_type_variation = &"UiFormLabel"
+text = "Two-call"
+
+[node name="llm_two_call" type="CheckBox" parent="center/panel/margin/vbox/llm_two_call_row"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Use two-step planning (predict enemy first, then choose actions)"
+tooltip_text = "Experimental testing mode. Makes two LLM requests per planning batch; improves explicit enemy forecasting at higher cost/latency."
+
+[node name="llm_max_tokens_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="lbl_max_tok" type="Label" parent="center/panel/margin/vbox/llm_max_tokens_row"]
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+theme_type_variation = &"UiFormLabel"
+text = "Max tokens"
+
+[node name="llm_planning_max_tokens" type="SpinBox" parent="center/panel/margin/vbox/llm_max_tokens_row"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 256.0
+max_value = 65536.0
+step = 256.0
+value = 2048.0
+tooltip_text = "Chat: max_completion_tokens. Responses API: max_output_tokens (includes hidden reasoning tokens—increase if replies are empty or incomplete)."
+
+[node name="llm_btn_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="llm_save_btn" type="Button" parent="center/panel/margin/vbox/llm_btn_row"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PrimaryButton"
+text = "Save LLM settings"
+
+[node name="llm_test_btn" type="Button" parent="center/panel/margin/vbox/llm_btn_row"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Test API"
+
+[node name="llm_cancel_btn" type="Button" parent="center/panel/margin/vbox/llm_btn_row"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Cancel request"
+
+[node name="llm_learnings_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="llm_clear_learnings_btn" type="Button" parent="center/panel/margin/vbox/llm_learnings_row"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Clear post-match AI learnings"
+tooltip_text = "Deletes all .md files under user://ai_learnings/ (rolling distill and match archives). Confirm to proceed."
+
+[node name="llm_status" type="Label" parent="center/panel/margin/vbox"]
+layout_mode = 2
+theme_type_variation = &"UiHint"
+text = " "
+autowrap_mode = 3
+
+[node name="LlmHttpRequest" type="HTTPRequest" parent="."]
+timeout = 60.0
+
+[node name="LlmClearLearningsConfirm" type="ConfirmationDialog" parent="."]
+title = "Clear AI learnings"
+ok_button_text = "Clear"
+dialog_text = "Remove all saved post-match AI learnings? This deletes every .md file under user://ai_learnings/ (including the rolling distill and per-match archives). This cannot be undone."

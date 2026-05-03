@@ -1,0 +1,58 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "predicted_end_cells_1t",
+      "where": "enemy_units[]",
+      "why": "Directly exposes likely move/fast_move landing hexes so the planner can target them deterministically.",
+      "example_value": [
+        [
+          -1,
+          -2
+        ],
+        [
+          -1,
+          -1
+        ]
+      ]
+    },
+    {
+      "field_name": "covers_cells",
+      "where": "ai_units[].legal_options[]",
+      "why": "Normalized union of all cells an option can hit/intercept; prevents missing AOE or ray coverage when target_cell differs from hit cell.",
+      "example_value": [
+        [
+          -1,
+          -2
+        ],
+        [
+          -1,
+          -1
+        ],
+        [
+          0,
+          -1
+        ]
+      ]
+    },
+    {
+      "field_name": "covered_predicted_enemy_end_cells_1t",
+      "where": "ai_units[].legal_options[]",
+      "why": "Precomputes which enemy predicted landing cells this option covers, making secure hold-vs-move kill choices easier.",
+      "example_value": [
+        {
+          "enemy_id": 68182607565,
+          "cells": [
+            [
+              -1,
+              4
+            ],
+            [
+              -1,
+              3
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}

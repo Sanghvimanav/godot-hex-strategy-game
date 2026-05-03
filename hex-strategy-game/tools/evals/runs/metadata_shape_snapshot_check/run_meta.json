@@ -1,0 +1,18 @@
+{
+  "run_id": "metadata_shape_snapshot_check",
+  "created_at": "2026-04-28T03:25:49.993985Z",
+  "mode": "snapshot",
+  "prompt_version": "p_current_settings",
+  "eval_set_version": "eval_v001",
+  "thinking_level": "",
+  "model_override": "",
+  "notes": "",
+  "planning_prompt_version": "",
+  "git_sha": "5632b9b590908f340a90cb1abcc268a83285afe4",
+  "manifest": "",
+  "model_version": "",
+  "use_responses_api": false,
+  "use_two_call_planning": false,
+  "planning_max_tokens": 0,
+  "base_url": ""
+}

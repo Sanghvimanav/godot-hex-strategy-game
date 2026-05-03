@@ -1,0 +1,25 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.coverage_fields": [
+      "target_cell",
+      "affected_cells",
+      "ray_cells",
+      "line_cells",
+      "intercept_cells",
+      "coverage_cells"
+    ],
+    "planner_context.priority_rule": "required_or_predicted_landing_attack_over_move_or_current_cell_attack",
+    "planner_context.output_contract": "{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":0,\"option_index\":0}]}"
+  },
+  "copy_paths": [
+    {
+      "from": "scenario.intent",
+      "to": "planner_context.intent_text"
+    },
+    {
+      "from": "turn.goal",
+      "to": "planner_context.turn_goal"
+    }
+  ]
+}

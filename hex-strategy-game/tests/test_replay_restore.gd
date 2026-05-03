@@ -20,10 +20,10 @@ static func run_all(tests: Node) -> bool:
 static func _make_container() -> UnitsContainer:
 	var container := UnitsContainer.new()
 	var player := Node2D.new()
-	player.name = "player"
+	player.name = "terran"
 	container.add_child(player)
 	var opponent := Node2D.new()
-	opponent.name = "opponent"
+	opponent.name = "zerg"
 	container.add_child(opponent)
 	return container
 
@@ -31,7 +31,7 @@ static func _sample_before_state(unit_id: int, cell: Vector2) -> Dictionary:
 	return {
 		unit_id: {
 			"unit_id": unit_id,
-			"group_name": "opponent",
+			"group_name": "zerg",
 			"def_path": "res://src/unit/definitions/zergling.tres",
 			"unit_name": "Zergling",
 			"cell": cell,
@@ -232,17 +232,17 @@ static func _test_apply_scenario_uses_health_and_energy_overrides(tests: Node) -
 	var scenario := {
 		"groups": [
 			{
-				"name": "player",
+				"name": "terran",
 				"units": [
 					{"def_path": "res://src/unit/definitions/medic.tres", "cell": Vector2i(0, 0), "energy": 2},
 					{"def_path": "res://src/unit/definitions/excavator.tres", "cell": Vector2i(1, 0), "energy": 1},
 				]
 			},
-			{"name": "opponent", "ai": true, "units": []},
+			{"name": "zerg", "ai": true, "units": []},
 		]
 	}
 	container.apply_scenario(scenario)
-	var player_group := container.get_node_or_null("player")
+	var player_group := container.get_node_or_null("terran")
 	if player_group == null:
 		tests._fail("player group should exist after apply_scenario")
 		container.free()

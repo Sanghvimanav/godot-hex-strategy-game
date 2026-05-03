@@ -1,0 +1,78 @@
+{
+  "case_id": "phase_fastmove_stepin_zergling_vs_scout_hp2_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T044925Z_iter03"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "At 2 HP from [2,0], Zergling should fast_move to [1,0] to keep pressure and reach contact next.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69071800041": 0
+    },
+    "call_timings_ms": [
+      3790
+    ],
+    "echo_cell_by_unit_id": {
+      "69071800041": [
+        1,
+        0
+      ]
+    },
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 3790,
+          "elapsed_seconds": 3.79,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T044925Z/prompts/iter02_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T044925Z/prompts/iter02_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T044925Z/prompts/iter02_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER,\"echo_cell\":[q,r]}]}\nChoose exactly one action per AI unit, using only ai_units[].legal_options[].i.\n\nDeterministic policy per unit:\n1) Enforce hard intent constraints first from payload/global intent/unit intent: required_action_type, required_cell(s), allowed_end_cells, retreat, stay_out_of_range, or instructions to target/hit/end at cell X.\n2) For attacks, \"hit X\" is satisfied if X is anywhere in that option's real coverage: target_cell, affected_cells, ray_cells, line_cells, or intercept_cells. The option does NOT need target_cell==X.\n3) If an enemy can move before your hit resolves, prefer a legal attack whose coverage contains the predicted landing cell. For AOE/ray/line, choose the target_cell that makes coverage include the landing cell. If any legal attack covers a required or predicted landing cell, do not replace it with move/fast_move/rest unless intent forbids attacking.\n4) Otherwise choose: lethal attack on highest-threat enemy > highest immediate damage > any attack on highest-threat enemy.\n5) If no attack is chosen, obey movement intent: retreat/stay_out_of_range/allowed_end_cells first; else move/fast_move that most reduces distance to the key enemy/objective and creates fastest next-turn contact. If fast-phase same-tile contact/passive timing matters, prefer the contact-producing fast_move.\n6) Tie-break: exact intent satisfaction > landing-cell coverage > attack > safer end (lower pred_damage_at_end or incoming_damage_if_enemies_hold_and_shoot_end) > shorter post-action distance > lower i.\n\nOutput rules:\n- One action per AI unit.\n- option_index must equal the chosen legal option's i.\n- echo_cell MUST be copied exactly from the chosen option: end_cell if present, else target_cell if present, else the unit's current cell.\n- Never use affected_cells, predicted landing cells, or intended hit cells as echo_cell unless that exact cell is also the chosen option's end_cell or target_cell.\n- If an attack hits X via AOE/ray/line while targeting Y, that option is valid and echo_cell is Y, not X.\n- Keep both strings brief and only mention cells that appear in the chosen option metadata."
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely uses attack_ray from [0,0] or move_short.\",\"reasoning_summary\":\"fast_move to [1,0] to close fastest and keep contact threat next turn.\",\"actions\":[{\"unit_id\":69071800041,\"option_index\":0,\"echo_cell\":[1,0]}]}",
+    "reasoning_effort": "low",
+    "thinking": "**Evaluating zergling actions**\n\nI need to decide on an action for the zergling since there's an enemy scout at (0,0) and my zergling is at (2,0). I can only make legal fast moves and reload without attacking. I want to maximize contact with the enemy. Moving to (1,0) brings me closer, just 1 space away from the enemy, while other options put me at a greater distance. So, I\u2019ll choose to move to (1,0).",
+    "usage": {
+      "input_tokens": 9108,
+      "output_tokens": 192,
+      "reasoning_tokens": 120,
+      "total_tokens": 9300
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.002661
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_stepin_zergling_vs_scout_hp2",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.002661
+}

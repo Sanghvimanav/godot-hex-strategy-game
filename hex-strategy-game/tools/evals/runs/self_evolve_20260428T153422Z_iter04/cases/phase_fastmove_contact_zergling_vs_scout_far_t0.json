@@ -1,0 +1,72 @@
+{
+  "case_id": "phase_fastmove_contact_zergling_vs_scout_far_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T153422Z_iter04"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should fast_move to [3,-2] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68870473449": 0
+    },
+    "call_timings_ms": [
+      3975
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 3975,
+          "elapsed_seconds": 3.975,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter03_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter03_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter03_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from that unit's legal_options[].i only. Never invent unit ids or option indices.\n\nDeterministic selection rules per unit:\n1) Exact objective first. If any legal option immediately reaches the required objective/goal hex, captures the key tile now, or lands on the required enemy/objective hex, choose the best such option. Prefer exact success over pressure, safety, or partial distance gain.\n2) Respect timing. Only call something a \"kill now\" or \"hit now\" if the option resolves before enemy movement. If an attack resolves after enemy movement, ignore the enemy's current cell and evaluate only predicted enemy end cells/landing cells for this turn.\n3) Target actual hit cells, not just target cells. For attack_ray, line, AoE, intercept, and targeted attacks, choose the legal option whose actual affected cells (covered_cells / ray path / hit cells) best include the highest-priority predicted enemy landing cell. For AoE, the correct target_cell may be adjacent to the predicted landing cell if the splash covers it.\n4) Versus fast movers, explicitly predict likely fast_move endpoints and prioritize options that hit those landing cells. If multiple allies can attack after movement, coordinate all relevant attacks onto the same best predicted landing cell.\n5) For move/fast_move, evaluate by the option's real end_cell only. Never optimize for a hex different from the legal option's true end_cell.\n6) If no exact objective completion exists, movement priority is: a) legal end_cell with minimum remaining distance to the key objective/enemy, b) lower pred_damage_at_end, c) higher expected_visible_hits_if_targeted, d) higher target threat, e) shorter distance to nearest enemy after action, f) lower option_index.\n\nUse legal option metadata only. Keep opponent_prediction and reasoning_summary brief and concrete; mention predicted landing cells when relevant."
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely moves to [2,-2] or [2,-1] to keep range, but fast_move resolves first.\",\"reasoning_summary\":\"Exact objective first: fast_move onto the Scout\u2019s current hex [3,-2] is a direct contact hit and prevents it from holding the lane.\",\"actions\":[{\"unit_id\":68870473449,\"option_index\":0}]}",
+    "reasoning_effort": "low",
+    "thinking": "**Choosing zergling action**\n\nI need to decide what action to take for the zergling. The objective is to move quickly to the position [3,-2] to damage the scout while staying within its minimum range. Since the scout's attack range starts at 1, I realize that the zergling would be safe on the same tile. It seems like my best option is to move into the occupied enemy cell directly. I'll need to focus on the legal move to reach [3,-2].",
+    "usage": {
+      "input_tokens": 8981,
+      "output_tokens": 170,
+      "reasoning_tokens": 83,
+      "total_tokens": 9151
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00258525
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout_far",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.00258525
+}

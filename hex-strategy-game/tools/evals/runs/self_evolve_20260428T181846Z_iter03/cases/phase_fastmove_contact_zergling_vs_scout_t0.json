@@ -1,0 +1,72 @@
+{
+  "case_id": "phase_fastmove_contact_zergling_vs_scout_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T181846Z_iter03"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should fast_move to [0,0] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69105354473": 0
+    },
+    "call_timings_ms": [
+      21810
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 21810,
+          "elapsed_seconds": 21.81,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter02_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter02_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter02_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nDecision order:\n1) Hard constraints override everything. Obey any required_option_index, required_action_type, required_target_cell, required_hit_cell, required_intercept_cell, required_end_cell, allowed_end_cells, and forbidden_end_cells.\n   - move/fast_move: match end_cell exactly; allowed_end_cells is a hard whitelist.\n   - attack: distinguish AIM vs HIT. If a required target/aim cell is named, choose an option whose target_cell exactly equals that cell, even if another target would also damage the desired cell. If a required hit/intercept cell is named, choose an option whose actual coverage includes it (target_cell, affected_cells, ray_cells, line_cells, intercept_cells). Never replace an explicit aim/end cell with a nearby cell or predicted landing cell.\n2) If no hard constraint decides the unit, predict dangerous enemy 1-turn landing cells, especially for fast movers. Prefer an ATTACK whose coverage includes a predicted landing cell. If multiple attacks work, prefer one whose target_cell is itself a predicted landing cell; otherwise any covering attack. Do not override rule 1.\n3) If this unit has a legal lethal or intercepting attack on a forced/predicted kill cell, take that attack even if an ally can also cover it. Prefer redundant kill-secure fire over repositioning.\n4) For melee or short-range pressure units, unless intent/goal explicitly says retreat, survive, avoid range, or kite, prefer the legal move/fast_move that most reduces distance to contact or reaches next-turn attack range. Low HP alone does not imply retreat.\n5) Otherwise choose: lethal attack > highest immediate damage to highest-threat enemy > intent-consistent move. If retreating, end outside immediate enemy attack coverage and inside allowed_end_cells if provided.\n6) Ties: lower pred_damage_at_end; then lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If reasoning mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely holds or sidesteps from [0,0] to keep firing lanes.\",\"reasoning_summary\":\"Fast move to [0,0] for immediate contact pressure; it\u2019s the closest/aggressive end and keeps the enemy pinned.\",\"actions\":[{\"unit_id\":69105354473,\"option_index\":0}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Considering game strategy**\n\nI\u2019m analyzing the situation with the visible enemy and their health. If they\u2019re on the same tile, there\u2019s a potential for a surprise attack since zerglings deal passive damage on contact. I need to decide between quickly moving to [0,0] or exploring other moves. The enemy scout has low health, but my zerglings also need to be managed carefully. Two zerglings could take out the enemy scout, but with just one, I have to be cautious.\n**Evaluating enemy response**\n\nI'm thinking about how to evaluate the enemy's likely response. Since both moves resolve simultaneously, I realize a fast move will happen before the enemy's action. If I move to [0,0], the enemy might move or attack from there too. If they attack while my zergling is on the same tile, there could be implications. \n\nI need to consider how to maximize immediate damage or decide if I should intercept. Also, I have to keep Rule 2 in mind about predicting dangerous landing cells for fast movers.\n**Exploring movement options**\n\nI'm looking at Rule 4 for melee units, which suggests that unless I\u2019m retreating, I should move to reduce the distance to contact or reach attack range for the next turn. Since the zergling is melee and has low HP, I should be aggressive. Currently, the enemy is at [0,0], so moving there would mean contact.\n\nLet's calculate other potential moves from [1,0]. Moves to [0,0], [0,1], and [1,-1] maintain that distance of 1, while others go further. I need to consider incoming damage since the enemy scout could attack from adjacent cells.\n**Considering potential outcomes**\n\nI'm realizing that if I occupy the enemy's current cell, the situation around incoming damage could be ambiguous. It might be that incoming damage is 0 or 1 if the enemy holds their position. I should check the option metadata for clarity. For Option 0, it shows there is a visible enemy, but no enemy can hit if they hold, resulting in 0 incoming damage with an expected visible hit of 1. In contrast, Option 1 indicates there\u2019s an incoming damage threat of 1.\n**Analyzing tactical movement**\n\nI think Option 0 might force the enemy off its cell. But if both are on the same tile, contact could happen. Since the Scout has an attack range of 1 to 2, it can\u2019t shoot the same tile if the enemy is there. So, if a Zergling occupies the same cell, it could block the enemy's attack unless they move away. However, if the enemy moves away, we could still end up on the same tile, but that\u2019s unclear. The metadata about legal options isn\u2019t showing collision restrictions. It seems like I need to explore heuristics to find the optimal move.\n**Deciding on option 0**\n\nIt looks like I should go with Option 0. First, I need to retrieve the opponent_prediction string, as I suspect the enemy scout will try to sidestep or shoot from [0,0]. I\u2019ll keep the reasoning brief and concrete, clearly mentioning the cells in the chosen option's metadata. For Option 0, the end cell is [0,0], with visible enemy IDs at the end being [68182607565] and the hex distance to visible enemies being 0. I\u2019ll ensure to present this exactly as a JSON object, without any extra information.",
+    "usage": {
+      "input_tokens": 9085,
+      "output_tokens": 1609,
+      "reasoning_tokens": 1534,
+      "total_tokens": 10694
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00548925
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.00548925
+}

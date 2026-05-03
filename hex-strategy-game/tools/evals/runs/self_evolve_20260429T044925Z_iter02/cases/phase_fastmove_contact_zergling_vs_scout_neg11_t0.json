@@ -1,0 +1,60 @@
+{
+  "case_id": "phase_fastmove_contact_zergling_vs_scout_neg11_t0",
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T044925Z_iter02"
+  },
+  "grading": {
+    "correctness": 0.0,
+    "final_score": 0.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should fast_move to [0,0] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+  "llm": {
+    "call_timings_ms": [
+      2928
+    ],
+    "detail": {
+      "chosen_end_cell": [
+        -2,
+        1
+      ],
+      "echo_cell": [
+        0,
+        0
+      ],
+      "error": "echo_cell_not_matching_chosen_end_cell",
+      "ok": false,
+      "option_index": 0,
+      "unit_id": 69071800041
+    },
+    "error": "echo_cell_mismatch",
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 2928,
+          "elapsed_seconds": 2.928,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "ok": false,
+    "raw": "{\"opponent_prediction\":\"Scout likely holds or steps off [0,0] with move_short.\",\"reasoning_summary\":\"Fast move to [0,0] for immediate contact and best hit chance before the Scout moves.\",\"actions\":[{\"unit_id\":69071800041,\"option_index\":0,\"echo_cell\":[0,0]}]}",
+    "estimated_cost_usd": 0.0
+  },
+  "mode": "live_llm",
+  "pass": false,
+  "perspective_group": "zerg",
+  "reason": "live_llm_failed: echo_cell_mismatch",
+  "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout_neg11",
+  "runner_exit_code": 2,
+  "estimated_cost_usd": 0.0
+}

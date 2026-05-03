@@ -1,0 +1,87 @@
+{
+  "case_id": "prediction_3scouts_vs_zergling_shoot_10_t0",
+  "chosen_option_indices": [
+    12,
+    12,
+    12
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "settings_capture_check"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "All Scouts should target [1,0] with attack_ray to hit the predicted Zergling approach after movement timing.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "67947726541": 12,
+      "68132275944": 12,
+      "68266493679": 12
+    },
+    "call_timings_ms": [
+      4127,
+      12075
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 4127,
+          "elapsed_seconds": 4.127,
+          "score": 1.0
+        },
+        {
+          "elapsed_ms": 12075,
+          "elapsed_seconds": 12.075,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "legacy",
+    "prediction_usage": {
+      "input_tokens": 14419,
+      "output_tokens": 527,
+      "reasoning_tokens": 401,
+      "total_tokens": 14946
+    },
+    "prompt_debug": {
+      "action_input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "action_prompt": "You are the tactical planner for the AI side in a hex turn-based wargame. You MUST respond with a single JSON object only \u2014 no markdown fences, no other text. Shape: {\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]} reasoning_summary: one short paragraph explaining how the provided enemy predictions drive your option_index choices. actions: exactly one entry per AI unit in ai_units. Each option_index MUST come from that unit's legal_options[].i. If unsure, pick rest/hold. IMPORTANT: enemy_prediction_hypotheses is already provided in the snapshot from a prior prediction pass. Treat those top1 entries as the likely enemy actions this turn. Do NOT re-derive predictions; do NOT emit opponent_prediction. Use the predicted enemy end cells to decide where to shoot (aim at predicted landing hexes against fast movers) and where to stand (avoid their predicted firing lanes). CRITICAL: Resolution is simultaneous \u2014 both sides act at the same time. Each legal option includes action_resolution_phase_index and action_resolution_phase_name \u2014 use them instead of guessing phase from action_key. Phase order within a turn: fast move, fast ability, move, ability, slow move, slow ability, spawn. Each phase executes before the next. A unit with a fast move and a passive fast ability will complete before another unit can complete it's move actionDamage is applied after every ability phase. If a unit is killed, any of it's actions that have not completed during this turn will be cancelled.Because turns are simultaneous, always target where predicted enemies WILL BE after their action resolves, not where they sit now. rules_digest is authoritative; obey it over assumptions. scenario_description (when present) states the goal for both sides. action_definitions: full action registry (keys, ranges, energy, damage, patterns, min_range). unit_type_definitions: each unit type's description, move/ability/passive keys (*_resolved includes implicit Rest). prior_learnings: rolling distilled journal with evidence tags. Honor when consistent with rules_digest. distances_to_visible_enemies on each legal option: engine-computed hex distances \u2014 do not recompute. distances_to_last_known_enemies on each legal option (when present): hex distances to enemies not currently visible. Use to CLOSE distance when advancing. last_known_enemy_positions (top-level, when present): list of out-of-sight enemies with cell, turn_last_seen, health. Positions may be stale. visible_enemy_units and last_known_enemy_positions include ability_action_keys \u2014 cross-reference with action_definitions for enemy range/damage. Each legal option includes pred_damage_at_end, pred_enemies_hitting, and pred_end_threatened when enemy_prediction_hypotheses was merged \u2014 engine recomputed from each enemy top1 vs that option end cell (validated with action_definitions geometry). Use these as your primary damage-at-end estimate. If those fields are absent, fall back to incoming_damage_if_enemies_hold_and_shoot_end / enemy_count_can_hit_end_if_hold / is_end_cell_threatened_if_hold when present. action_resolution_phase_index and action_resolution_phase_name identify when this option's action runs in the global phase pipeline (see rules_digest). When predictions are merged, predicted_enemy_damage_action_phase_index and predicted_enemy_damage_timing_vs_our_action compare your phase to predicted enemy damaging actions: our_action_resolves_first means you finish repositioning before their predicted attacks resolve, so pred_damage_at_end applies if they target your end hex; predicted_enemy_damage_resolves_first means their damage may happen before your action completes\u2014read pred_damage_resolution_note when present. Attack selection rule: expected_visible_hits_if_targeted is how many currently visible enemies occupy the option end cell right now. Prefer options with expected_visible_hits_if_targeted > 0 for immediate damage over speculative shots. DISTANCE RULE: When advancing safely, prefer the legal option with lowest hex_dist to the priority enemy. If pred_damage_at_end would kill or cripple your unit, prefer a safer option even if hex_dist is higher. Do not guess directions from coordinates \u2014 use the precomputed distance and pred_* fields. recent_turns: up to two completed turns (oldest-first). Each has: turn, fov_cells, died_unit_ids, damage_by_id, applied_effects, compact actions. Enemy intel in recent_turns is FOV-filtered. enemy_intel: initial_count, confirmed_kills (cumulative), currently_visible. Factor unseen enemies into plans. TACTICAL REASONING: Calculate damage math: how many hits your unit can take vs turns to close or kill. If you can survive the approach, aggression beats evasion. Min-range gap: actions with min_range > 0 cannot hit closer targets. Close to melee against ranged-only enemies. Stacking: a targeted attack on a tile with multiple enemies damages all. Focus fire kills faster than spreading damage.",
+      "prediction_input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "prediction_prompt": "Prediction-only pass. You are analyzing a hex turn-based wargame snapshot from the AI side's perspective. Predict the single most likely one-turn action for EACH enemy unit (top1 only). CRITICAL: Resolution is simultaneous \u2014 both sides act at the same time. Phase order within a turn: fast move, fast ability, move, ability, slow move, slow ability, spawn. Each phase executes before the next. A unit with a fast move and a passive fast ability will complete before another unit can complete it's move actionDamage is applied after every ability phase. If a unit is killed, any of it's actions that have not completed during this turn will be cancelled.Because turns are simultaneous, always target where you predict enemies WILL BE after their action resolves, not where they sit now. This applies to enemy units too, if they predict your action, they can target where your units will be and the enemy unit will prefer that over movingBase predictions on: recent_turns patterns, visible_enemy_units positions and ability_action_keys, last_known_enemy_positions, scenario_description, unit_type_definitions, and action_definitions (for range/min_range/damage). For enemies in fog, extrapolate from last-known cells and typical behavior for their unit type (ranged units prefer holding at range; melee units advance). enemy_units_legal_options (when present): each non-AI unit's full engine legal_options (same shape as ai_units legal_options: i, action_key, path, end, is_move). Use these so each enemy top1.action_key and end match a real option index i. This snapshot omits per-AI-option hold-and-shoot threat numbers and omits enemy_reaction_candidates \u2014 use enemy_units_legal_options plus action_definitions. Return strict JSON only \u2014 no markdown, no extra text. Shape: {\"opponent_prediction\":\"string\",\"enemy_predictions\":[{\"enemy_unit_id\":NUMBER,\"top1\":{\"action_key\":\"string\",\"end\":[q,r],\"confidence\":0.0}}]} opponent_prediction: 1\u20134 sentences describing what each enemy will do THIS turn. enemy_predictions: one entry per enemy unit (use unit_id from visible_enemy_units or last_known_enemy_positions). top1 is the only predicted action. action_key MUST come from action_definitions. end is [q,r] axial coords for move destination or target cell. confidence in [0,1]. Do NOT return actions for our units."
+    },
+    "raw": "{\"reasoning_summary\":\"The enemy prediction shows the zergling fast-moving to [1,0], so the best play is to shoot its landing hex rather than its current position. Since our Scouts attack in the ability phase after that move resolves, three focused ray shots on the predicted contact hex should remove the zergling before it can threaten us further.\",\"actions\":[{\"unit_id\":67947726541,\"option_index\":12},{\"unit_id\":68132275944,\"option_index\":12},{\"unit_id\":68266493679,\"option_index\":12}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Evaluating attack options**\n\nI need to choose option indexes that match the predicted enemy landing hex at [1,0], if that's possible. However, the visible enemy is currently at [2,0] and is predicted to move to [1,0]. The attack options in legal_options were calculated based on the distances to the enemy's current position, not their predicted landing position. I have to consider how this affects my strategy.\n**Evaluating attack strategy**\n\nI need to think about the attack phases and how they resolve. If all three units attack, they might take out the enemy before it can react, especially if it\u2019s just moving fast. It seems like targeting [1,0] with option 12 might be best because it has a range of 1. Choosing this attack option instead of moving makes sense, especially since there\u2019s no issue with friendly fire. I should focus on effective damage to ensure success.\n**Clarifying output requirements**\n\nI need to focus on producing the exact JSON object. It's crucial that the unit_id numbers and option_index numbers are formatted as numbers, not strings, to meet the specific requirements. This attention to detail is important because it affects how the data is interpreted. I\u2019ll double-check everything to ensure it aligns perfectly with the specified format. Keeping the output precise will help make sure I'm providing exactly what\u2019s needed without any issues.",
+    "usage": {
+      "input_tokens": 18451,
+      "output_tokens": 1069,
+      "reasoning_tokens": 948,
+      "total_tokens": 19520
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": true,
+    "estimated_cost_usd": 0.0114095
+  },
+  "matched_unit_count": 3,
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "required option exists for all 3 units named Scout",
+  "scenario_id": "eval_prediction_3scouts_vs_zergling_shoot_10",
+  "estimated_cost_usd": 0.0114095
+}

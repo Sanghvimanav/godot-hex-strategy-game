@@ -1,0 +1,73 @@
+{
+  "case_id": "phase_fastmove_contact_zergling_vs_scout_far_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T145529Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 0.873088888888889,
+    "formula": "correctness * speed_score",
+    "speed_score": 0.873088888888889
+  },
+  "intent": "Zergling should fast_move to [3,-2] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69474453225": 0
+    },
+    "call_timings_ms": [
+      41422
+    ],
+    "latency_grader": {
+      "average_call_score": 0.873088888888889,
+      "calls": [
+        {
+          "elapsed_ms": 41422,
+          "elapsed_seconds": 41.422,
+          "score": 0.873088888888889
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 0.873088888888889
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[] using action_key + target_cell. Use only listed unit_id values and legal action/target combinations.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then deterministically prefer the lowest legal_options[].i that matches action_key + target_cell.\n\nValidation: every chosen action_key + target_cell pair must resolve to a legal option for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.\n"
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely holds or shifts to [3,-2] to keep the lane.\",\"reasoning_summary\":\"Best fast intercept is [3,-2]: it is legal, removes the enemy\u2019s firing lane, and has the lowest end risk.\",\"actions\":[{\"unit_id\":69474453225,\"action_key\":\"fast_move\",\"target_cell\":[3,-2]}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Evaluating enemy movement**\n\nI\u2019m considering how to handle dangerous enemies that can move before my hit resolves. I need to predict their 1-2 most likely landing cells. The rule says I should prefer a legal attack covering those cells. I can use a fast move to those predicted landing cells if there\u2019s no legal attack. For the enemy scout at [3,-2], it might move to [2,-2], [3,-1], or possibly [4,-2] to keep distance or engage.\n**Considering enemy movement**\n\nI\u2019m thinking about how our fast move resolves before the enemy's move, meaning the enemy hasn't actually moved yet. I need to predict where they might land after they do move. If they don\u2019t move, then the current cell isn\u2019t a landing cell. However, potential landing cells could be [4,-2] or [3,-1]. But if they choose the attack_ray, they likely won\u2019t land anywhere new, which is something to consider.\n**Analyzing move possibilities**\n\nI\u2019m considering the distance from the point [2,-2] to our planned position at [3,-2] which is just 1 unit away, as is the distance from [3,-1]. Both moves are plausible, but I wonder which is more likely. The enemy could potentially step onto our tile at [4,-2], but that seems aggressive. However, the enemy is a scout. If they move onto our tile, it wouldn't help them much since their attack range is 1-2 and they can\u2019t attack from the same tile.\n**Analyzing enemy moves**\n\nI'm looking at legal options for the enemy's possible moves, considering [3,-1] as a natural retreat to maintain orientation. If I predict the landing cell, [3,-1] seems more likely because it keeps distance while staying safe from our zerglings' fast movement. I also evaluate potential moves like [2,-2] and others based on geometry and strategy. Key distances show [3,-1] and [3,-2] as valid, but we really need to consider potential threats from their scouts.\n**Considering movement options**\n\nI'm trying to clarify the enemy's position, which isn't on a landing cell. Our move to [3,-2] would align with the opponent's prediction if we assume that they stay or step back. It\u2019s interesting because cell [3,-2] would be reflected in our metadata about chosen options. So it looks like we're on the right track, but I need to ensure this aligns with our strategy! Let's keep this in mind.\n**Evaluating enemy moves**\n\nI think it makes sense to consider the enemy's moves before our action, especially since ours are fast. Our move phase happens earlier, so the enemy can still act afterward, but not before we hit. Rule 2 seems to suggest we need to intercept their movement.\n\nAmong their options, [2,-2] is a natural retreat, and [3,-1] is also possible. I see our legal fast moves can cover [3,-1] but not [2,-2]. If they retreat to [2,-2], we can't intercept, but we can if they go to [3,-1]. I need to compare the likelihood of these tactical choices since the enemy scout likely wants to keep a distance.\n**Analyzing movement options**\n\nIf I move from [3,-2] to [2,-2], it does increase the distance from [4,-2] to 2, which is the maximum among candidate positions. However, [2,-1] and [3,-3] also have a distance of 2, so they\u2019re equally maximally distant. I wonder which of these options is most likely.\n\nMaybe [2,-2] is a straightforward choice since it's directly away along the q-axis. But if my zergling moves to [3,-2], an enemy at [2,-2] would still be adjacent (distance 1). If they move to [3,-1], I can potentially end up on the same tile by moving to [3,-1].\n**Analyzing game strategies**\n\nI\u2019m considering the legality of actions in the game. If I can't predict the exact cell to land, I might opt for the cell [3,-1] as a second choice since it's a plausible, aggressive move. However, [3,-2] could work if the enemy stays put. The rules underline that attacking a stationary enemy is okay.\n\nI'm comparing options carefully:\n\n- [3,-2]: It has a visible enemy, no incoming damage.\n- [3,-1]: No visible enemy, but I could take damage.\n\nI\u2019ll weigh these variables carefully as I decide.\n**Choosing optimal moves**\n\nI'm analyzing the tiebreaker rules, and it looks like going with [3,-2] is the best choice because it minimizes incoming damage and brings me closer to the enemy. So, I\u2019ll choose [3,-2] for my fast move. Now, if I predict that the opponent might back away or shoot from [3,-2], that's fine since it's the cell I'm targeting. I\u2019ll summarize my reasoning: \"I take [3,-2] for direct contact and the least risk.\" I need to ensure the action is recorded correctly in the JSON format too.",
+    "usage": {
+      "input_tokens": 8895,
+      "output_tokens": 4108,
+      "reasoning_tokens": 4025,
+      "total_tokens": 13003
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.01043975
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout_far",
+  "runner_exit_code": 0,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n[planning-eval] wrote /Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/runs/self_evolve_20260429T145529Z_iter01/cases/phase_fastmove_contact_zergling_vs_scout_far_t0.json\n[planning-eval] pass=true reason=required option exists and passes checks chosen_option_index=0 chosen_option_indices=[]\n",
+  "estimated_cost_usd": 0.01043975
+}

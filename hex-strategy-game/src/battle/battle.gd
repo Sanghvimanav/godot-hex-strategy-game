@@ -33,6 +33,7 @@ func _ready() -> void:
 			if scenario_resources is Dictionary and not scenario_resources.is_empty() and hex_map and hex_map.has_method("apply_tile_resource_state"):
 				hex_map.apply_tile_resource_state(scenario_resources)
 			units.apply_scenario(scenario)
+		units.multiplayer_my_group = Scenarios.get_human_group_name_for_local_battle()
 		units.start_battle()
 
 func _on_game_server_message(obj: Dictionary) -> void:

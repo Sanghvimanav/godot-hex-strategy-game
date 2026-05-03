@@ -1,0 +1,72 @@
+{
+  "case_id": "drill_zergling_vs_scout_three_turn_reach_00_t3",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T181846Z_iter02"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should fast_move to [2,0] on turn 1, accepting potential damage to maintain attack tempo and reach the Scout before dying.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69105354473": 0
+    },
+    "call_timings_ms": [
+      20508
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 20508,
+          "elapsed_seconds": 20.508,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter01_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter01_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter01_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nApply rules in this order for each unit:\n1) Hard constraints first. If payload intent/goal/constraints name a required option, required target cell, required hit/intercept cell, required end cell, allowed_end_cells, or forbidden_end_cells, obey them exactly. For move/fast_move, match end_cell only. For attacks, distinguish AIM from HIT: if the named cell is the attack target/aim cell, choose an option whose target_cell exactly equals that cell, even if damage lands via AOE/ray on another cell. If the named cell is a hit/intercept cell, choose an attack whose actual coverage includes it (target_cell, affected_cells, ray_cells, line_cells, intercept_cells). Never replace a named cell with a nearby cell or predicted landing cell.\n2) Fast-mover interception. Otherwise, predict 1-2 likely landing cells for dangerous enemies that can move before your hit resolves. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE, target the predicted landing cell itself when possible. Only choose move/fast_move onto a predicted landing cell if no legal attack by that unit can cover any predicted landing cell.\n3) Do not drop coverage just because another ally can also cover it. If a unit has a legal attack covering the critical predicted landing/kill cell, prefer that attack over a pressure move unless rule 1 forbids it.\n4) Otherwise choose a lethal attack; else highest immediate damage against the highest-threat enemy.\n5) Otherwise, if intent/goal says retreat, survive, avoid range, or kite, choose a legal move/fast_move ending outside immediate enemy attack coverage; if allowed_end_cells exist, choose among them only. Else choose the most aggressive legal move/fast_move that reduces distance to key enemies/objectives most.\n6) Ties: lower pred_damage_at_end; then lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely holds or keeps range with attack_ray.\",\"reasoning_summary\":\"Fast-move to [2,0] to close the gap on the last known scout and keep pressure high.\",\"actions\":[{\"unit_id\":69105354473,\"option_index\":0}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Evaluating aggressive moves**\n\nI think I need to fast-move into a cell that maximizes pressure and intercepts enemy paths. Since the scout might move to [1,0], advancing toward likely landing spots could be strategic. There aren\u2019t any hard constraints, so I'll choose the most aggressive legal move that reduces the distance to enemies. The Zergling, with no energy, should move toward the enemy. The best aggressive option based on distance is [2,0], though I have to consider incoming damage if enemies attack.\n**Weighing damage options**\n\nOkay, I\u2019m analyzing rule 6 here regarding ties: since I only have incoming damage data and not predicted damage at the end, I\u2019ll focus on that. In this case, retreat isn\u2019t relevant for aggression. I should consider moving to [2,1] or [3,-1] because they have lower incoming damage if the enemies hold their position and shoot. This approach seems to align with maintaining a strategic advantage while minimizing risk.\n**Evaluating next moves**\n\nI'm considering the enemy's potential next hex options from [0, 0]. It looks like the legal end cells are two steps away, which means they can\u2019t move to those next adjacent hexes. So, I need to think about other strategies or possible moves for both the enemy and myself. It's a bit complex, but figuring out the best paths is crucial! Let's keep exploring this!\n**Evaluating options**\n\nI'm looking at two options with distance: option 0 has a distance of 2, while option 1 has a distance of 3. Since option 0 reduces the distance significantly, it seems like the logical choice unless there are safety concerns or something else that makes it less favorable. It looks like I need the JSON formatted exactly as required for this. So, option 0 is likely the way to go!",
+    "usage": {
+      "input_tokens": 9157,
+      "output_tokens": 1867,
+      "reasoning_tokens": 1802,
+      "total_tokens": 11024
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00602325
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "drill_zergling_vs_scout",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.00602325
+}

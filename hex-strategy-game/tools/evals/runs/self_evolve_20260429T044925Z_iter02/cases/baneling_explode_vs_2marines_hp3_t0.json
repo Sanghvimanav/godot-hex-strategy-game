@@ -1,0 +1,60 @@
+{
+  "case_id": "baneling_explode_vs_2marines_hp3_t0",
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T044925Z_iter02"
+  },
+  "grading": {
+    "correctness": 0.0,
+    "final_score": 0.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Baneling stacked with two 3-HP Marines should choose explode for immediate lethal value.",
+  "llm": {
+    "call_timings_ms": [
+      2649
+    ],
+    "detail": {
+      "chosen_end_cell": [
+        -1,
+        0
+      ],
+      "echo_cell": [
+        0,
+        0
+      ],
+      "error": "echo_cell_not_matching_chosen_end_cell",
+      "ok": false,
+      "option_index": 0,
+      "unit_id": 70766298872
+    },
+    "error": "echo_cell_mismatch",
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 2649,
+          "elapsed_seconds": 2.649,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "ok": false,
+    "raw": "{\"opponent_prediction\":\"Both Marines at [0,0] likely hold or step only if forced; either way [0,0] stays in blast.\",\"reasoning_summary\":\"Explode on [0,0] for max damage to both visible Marines.\",\"actions\":[{\"unit_id\":70766298872,\"option_index\":0,\"echo_cell\":[0,0]}]}",
+    "estimated_cost_usd": 0.0
+  },
+  "mode": "live_llm",
+  "pass": false,
+  "perspective_group": "zerg",
+  "reason": "live_llm_failed: echo_cell_mismatch",
+  "scenario_id": "eval_baneling_explode_vs_2marines_hp3",
+  "runner_exit_code": 2,
+  "estimated_cost_usd": 0.0
+}

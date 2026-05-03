@@ -1,0 +1,53 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "coverage_cells",
+      "where": "ai_units[].legal_options[].coverage_cells",
+      "why": "Precompute the full union of all cells actually hit/covered so the planner can deterministically match required and predicted landing cells.",
+      "example_value": [
+        [
+          3,
+          -3
+        ],
+        [
+          3,
+          -2
+        ],
+        [
+          2,
+          -2
+        ]
+      ]
+    },
+    {
+      "field_name": "predicted_landing_cells",
+      "where": "opponent_units[].predicted_landing_cells",
+      "why": "Expose engine-estimated fast-mover landing cells directly instead of forcing the planner to infer them from prose or position alone.",
+      "example_value": [
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          -2
+        ]
+      ]
+    },
+    {
+      "field_name": "can_hit_moving_target_cells",
+      "where": "ai_units[].legal_options[].can_hit_moving_target_cells",
+      "why": "Marks cells the attack can still connect with after enemy movement/resolution timing, reducing false move choices against fast movers.",
+      "example_value": [
+        [
+          -1,
+          -1
+        ],
+        [
+          3,
+          -3
+        ]
+      ]
+    }
+  ]
+}

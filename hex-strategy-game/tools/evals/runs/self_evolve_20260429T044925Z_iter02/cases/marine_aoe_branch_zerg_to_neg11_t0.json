@@ -1,0 +1,60 @@
+{
+  "case_id": "marine_aoe_branch_zerg_to_neg11_t0",
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T044925Z_iter02"
+  },
+  "grading": {
+    "correctness": 0.0,
+    "final_score": 0.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "With the Zergling forced to [-1,-1], Marine should choose attack_short on [-1,-1] to secure damage.",
+  "llm": {
+    "call_timings_ms": [
+      6133
+    ],
+    "detail": {
+      "chosen_end_cell": [
+        -3,
+        -1
+      ],
+      "echo_cell": [
+        -1,
+        -2
+      ],
+      "error": "echo_cell_not_matching_chosen_end_cell",
+      "ok": false,
+      "option_index": 0,
+      "unit_id": 68400711373
+    },
+    "error": "echo_cell_mismatch",
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 6133,
+          "elapsed_seconds": 6.133,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "ok": false,
+    "raw": "{\"opponent_prediction\":\"Zergling likely fast_moves to [-1,-2]\",\"reasoning_summary\":\"Attack landing cell [-1,-2] before its move resolves\",\"actions\":[{\"unit_id\":68400711373,\"option_index\":0,\"echo_cell\":[-1,-2]}]}",
+    "estimated_cost_usd": 0.0
+  },
+  "mode": "live_llm",
+  "pass": false,
+  "perspective_group": "terran",
+  "reason": "live_llm_failed: echo_cell_mismatch",
+  "scenario_id": "eval_marine_aoe_branch_zerg_to_neg11",
+  "runner_exit_code": 2,
+  "estimated_cost_usd": 0.0
+}

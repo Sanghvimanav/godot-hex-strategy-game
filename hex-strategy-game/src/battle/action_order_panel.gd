@@ -12,13 +12,11 @@ func _build_list() -> void:
 		child.queue_free()
 	var title := Label.new()
 	title.text = "Action Order"
-	title.add_theme_font_size_override("font_size", 14)
-	title.add_theme_color_override("font_color", Color.WHITE)
+	title.theme_type_variation = "UiFormLabel"
 	list.add_child(title)
 	for i in Actions.ACTION_ORDER.size():
 		var action_type: String = Actions.ACTION_ORDER[i]
 		var label := Label.new()
 		label.text = "%d. %s" % [i + 1, action_type.capitalize()]
-		label.add_theme_font_size_override("font_size", 12)
-		label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
+		label.theme_type_variation = "UiHint"
 		list.add_child(label)

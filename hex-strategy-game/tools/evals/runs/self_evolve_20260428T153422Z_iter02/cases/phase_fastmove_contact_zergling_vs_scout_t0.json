@@ -1,0 +1,72 @@
+{
+  "case_id": "phase_fastmove_contact_zergling_vs_scout_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T153422Z_iter02"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should fast_move to [0,0] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68870473449": 0
+    },
+    "call_timings_ms": [
+      5061
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 5061,
+          "elapsed_seconds": 5.061,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter01_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter01_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter01_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Never invent unit ids or option indices.\n\nDeterministic decision order for each unit:\n1) If any legal option immediately wins a key objective, occupies the target enemy/objective tile, or secures a kill on the highest-threat enemy, take the best such option.\n2) Predict enemy movement/fast_move landing cells this turn. When attack timing can hit after enemy movement, score attack_ray, line, AoE, intercept, and targeted attacks by coverage of the predicted landing cell first, not the enemy's current visible cell. For rays/lines, explicitly choose the option whose target cell/ray cell best matches that landing hex. If multiple allies can cover one predicted landing cell, coordinate focus there.\n3) For move/fast_move options, prefer exact end-cell occupancy of the key enemy/objective tile if reachable now. Otherwise minimize remaining hex distance to that tile or to the highest-priority enemy; prefer direct shortest-path progress over vague intercept positioning.\n4) If no strong attack exists, apply forward pressure: choose aggressive end cells that reduce next-turn time-to-attack on key enemies/objectives. Do not default to passive safety if engagement is required.\n5) Safety tiebreakers: lower pred_damage_at_end; if missing use incoming_damage_if_enemies_hold_and_shoot_end.\n6) Final tiebreakers, in order: higher expected_visible_hits_if_targeted, higher target threat, shorter distance to nearest enemy after action, lower option_index.\n\nUse legal option metadata such as end cell, target cell, damage, expected hits, and distances if present. Keep opponent_prediction and reasoning_summary brief and concrete; name predicted landing cells when they matter."
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely takes attack_ray from [0,0] or moves short to [0,1]/[1,0] if allowed.\",\"reasoning_summary\":\"Take fast_move to [0,0]: it immediately occupies the enemy tile, hits the Scout, and is the best contact-win line this turn.\",\"actions\":[{\"unit_id\":68870473449,\"option_index\":0}]}",
+    "reasoning_effort": "low",
+    "thinking": "**Considering game strategy**\n\nI'm thinking about how to implement a JSON action where a Zergling does a fast move to coordinates 0,0 as an immediate win objective. I don't want to kill, but rather occupy the target enemy tile and deal damage to a Scout. So, I'm considering this as option 0 for my approach. This may streamline the strategy and achieve the desired effect quickly. I wonder how this will play out in practice!",
+    "usage": {
+      "input_tokens": 8965,
+      "output_tokens": 129,
+      "reasoning_tokens": 39,
+      "total_tokens": 9094
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00249925
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.00249925
+}

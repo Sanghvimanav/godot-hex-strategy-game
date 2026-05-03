@@ -1,0 +1,9 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.require_exact_commit": true,
+    "planner_context.require_reasoning_option_consistency": true,
+    "planner_context.prioritize_fast_mover_landing_cells": true
+  },
+  "copy_paths": []
+}

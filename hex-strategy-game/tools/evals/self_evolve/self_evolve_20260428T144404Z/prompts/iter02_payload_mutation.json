@@ -1,0 +1,15 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.fast_mover_attack_rule": "For enemies that move before attack resolution, attacks covering their predicted landing cell/path count as immediate value and should beat pure movement.",
+    "planner_context.tie_break_order": [
+      "attack_hits_predicted_landing_or_path_this_turn",
+      "expected_visible_hits_or_damage",
+      "ally_focus_same_predicted_target",
+      "lower_pred_damage_at_end_or_incoming_damage_if_enemies_hold_and_shoot_end",
+      "lower_distance_to_nearest_enemy_or_useful_engagement_cell",
+      "lower_option_index"
+    ]
+  },
+  "copy_paths": []
+}

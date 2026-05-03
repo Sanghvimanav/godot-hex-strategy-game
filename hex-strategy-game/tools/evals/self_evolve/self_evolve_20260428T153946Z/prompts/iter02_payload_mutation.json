@@ -1,0 +1,9 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_hints.use_actual_option_coverage_for_exact_match": true,
+    "planner_hints.target_predicted_landing_hex_for_fast_movers": true,
+    "planner_hints.named_cells_must_exist_in_chosen_option_metadata": true
+  },
+  "copy_paths": []
+}

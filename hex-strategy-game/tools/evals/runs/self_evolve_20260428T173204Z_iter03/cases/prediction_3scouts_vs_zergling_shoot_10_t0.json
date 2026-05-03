@@ -1,0 +1,79 @@
+{
+  "case_id": "prediction_3scouts_vs_zergling_shoot_10_t0",
+  "chosen_option_indices": [
+    12,
+    12,
+    12
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T173204Z_iter03"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "All Scouts should target [1,0] with attack_ray to hit the predicted Zergling approach after movement timing.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "67947726541": 12,
+      "68132275944": 12,
+      "68266493679": 12
+    },
+    "call_timings_ms": [
+      3055
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 3055,
+          "elapsed_seconds": 3.055,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T173204Z/prompts/iter02_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T173204Z/prompts/iter02_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T173204Z/prompts/iter02_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nFor each AI unit, apply this deterministic priority and pick the first legal option class that exists:\n1) Exact required cell/effect. If scenario intent/goal/assignment names a specific unit and a required target/landing/hit/end cell, only options that satisfy that exact cell are eligible for that unit. For move/fast_move, require end_cell == required cell. For attacks, require actual coverage to include the required cell using target_cell, affected_cells, ray_cells, line_cells, or intercept_cells. If both an attack and a move satisfy the same required cell, choose the attack. Never replace an exact required cell with a safer or nearby cell.\n2) Predicted landing vs fast movers. Otherwise, for each enemy that can move before your hit resolves, predict 1-2 likely landing cells. If any legal ATTACK for this unit covers any predicted landing cell, choose such an ATTACK and do not choose move/fast_move for that unit. Aim at the landing cell itself, not the enemy\u2019s current hex. This remains valid even if the enemy is not currently there or a friendly unit currently occupies that cell, as long as the option is legal and its metadata covers that cell. Only move/fast_move onto a predicted landing cell when no legal attack by that unit covers any predicted landing cell.\n3) Otherwise choose a legal attack that kills; else highest immediate damage to the highest-threat enemy.\n4) Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: output one action per AI unit. Every chosen option_index must exist for that unit. Keep both strings brief and concrete. If either string mentions a cell, that cell must appear in chosen option metadata."
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling fast-moves to [1,0]\",\"reasoning_summary\":\"All 3 Scouts shoot the predicted landing hex [1,0] instead of moving.\",\"actions\":[{\"unit_id\":67947726541,\"option_index\":12},{\"unit_id\":68132275944,\"option_index\":12},{\"unit_id\":68266493679,\"option_index\":12}]}",
+    "reasoning_effort": "low",
+    "thinking": "",
+    "usage": {
+      "input_tokens": 17033,
+      "output_tokens": 308,
+      "reasoning_tokens": 219,
+      "total_tokens": 17341
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00487425
+  },
+  "matched_unit_count": 3,
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "required option exists for all 3 units named Scout",
+  "scenario_id": "eval_prediction_3scouts_vs_zergling_shoot_10",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.00487425
+}

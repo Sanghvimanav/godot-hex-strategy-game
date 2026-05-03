@@ -1,0 +1,12 @@
+{
+  "session_id": "self_evolve_20260428T181846Z",
+  "created_at": "2026-04-28T18:18:46.384523Z",
+  "target_avg_final_score": 0.9,
+  "max_iters": 4,
+  "planning_prompt_version": "minimal",
+  "payload_profile": "baseline",
+  "start_version": 4,
+  "thinking_level": "medium",
+  "optimizer_model": "gpt-5.4",
+  "optimizer_thinking_level": "medium"
+}

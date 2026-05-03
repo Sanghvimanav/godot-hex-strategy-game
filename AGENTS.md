@@ -15,7 +15,8 @@ This is a **Godot 4.6 hex strategy game** (`hex-strategy-game/`).
 
 - From repo root: `cd hex-strategy-game && godot --headless --path . res://tests/test_runner.tscn`
 - Or use: `hex-strategy-game/tests/run_tests.sh`
-- All 12 test suites run headlessly. See `hex-strategy-game/tests/README.md` for details.
+- All test suites run headlessly. See `hex-strategy-game/tests/README.md` for details.
+- **Headless LLM planning pipeline** (snapshots + metrics, no API): `cd hex-strategy-game && ./tools/run_headless_planning_pipeline.sh -- --scenario=drill_llm_vs_llm_scouts_zergling --out=user://my_run`. User args must follow `--`; Godot exposes them via `OS.get_cmdline_user_args()`. Writes `snapshot_turn_*_<group>.json` and `summary.json` under `--out`.
 - **PR requirement:** before creating any PR, run the full test suite locally and confirm it passes.
 
 ### New Units / Abilities: Debug Scenario Requirement

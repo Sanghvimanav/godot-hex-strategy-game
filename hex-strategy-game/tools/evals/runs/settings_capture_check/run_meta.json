@@ -1,0 +1,13 @@
+{
+  "run_id": "settings_capture_check",
+  "created_at": "2026-04-28T03:20:05.079385Z",
+  "mode": "live_llm",
+  "prompt_version": "p_current_settings",
+  "eval_set_version": "eval_v001",
+  "thinking_level": "",
+  "model_override": "",
+  "notes": "",
+  "planning_prompt_version": "",
+  "git_sha": "5632b9b590908f340a90cb1abcc268a83285afe4",
+  "manifest": ""
+}

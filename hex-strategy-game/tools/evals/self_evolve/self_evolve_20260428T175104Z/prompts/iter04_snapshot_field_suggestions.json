@@ -1,0 +1,34 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "true_effect_cells",
+      "where": "ai_units[].legal_options[]",
+      "why": "Unifies all cells actually hit/covered by an option so the planner can reliably pick AOE/ray/intercept attacks against predicted landing cells.",
+      "example_value": [
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          -2
+        ]
+      ]
+    },
+    {
+      "field_name": "post_action_cell",
+      "where": "ai_units[].legal_options[]",
+      "why": "Lets end-cell constraints be validated consistently for attacks/holds as well as moves.",
+      "example_value": [
+        2,
+        0
+      ]
+    },
+    {
+      "field_name": "acts_before_ai_resolution",
+      "where": "enemy_units[]",
+      "why": "Makes it explicit which enemies require landing-cell prediction instead of hold-cell targeting.",
+      "example_value": true
+    }
+  ]
+}

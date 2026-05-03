@@ -1,0 +1,40 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "satisfies_unit_cell_constraints",
+      "where": "snapshot.ai_units[].legal_options[]",
+      "why": "Precompute whether each option satisfies that unit's required/allowed end/target/hit/covered-cell constraints, so the planner can filter deterministically.",
+      "example_value": true
+    },
+    {
+      "field_name": "likely_landing_cells",
+      "where": "snapshot.enemy_units[]",
+      "why": "Provide top 1-2 engine-ranked landing cells for enemies that may move before resolution, reducing guesswork for interception.",
+      "example_value": [
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          -2
+        ]
+      ]
+    },
+    {
+      "field_name": "covers_enemy_likely_landing_cells",
+      "where": "snapshot.ai_units[].legal_options[]",
+      "why": "List which predicted enemy landing cells are hit by this option's true coverage, making AOE/ray interception and hold-vs-move coverage easy to rank.",
+      "example_value": [
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          -2
+        ]
+      ]
+    }
+  ]
+}

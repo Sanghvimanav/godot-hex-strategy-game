@@ -1,0 +1,28 @@
+{
+  "case_id": "prediction_3scouts_vs_zergling_shoot_10_t0",
+  "chosen_option_indices": [
+    12,
+    12,
+    12
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_v001",
+    "run_id": "smoke_snapshot_run"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "All Scouts should target [1,0] with attack_ray to hit the predicted Zergling approach after movement timing.",
+  "matched_unit_count": 3,
+  "mode": "snapshot",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "required option exists for all 3 units named Scout",
+  "scenario_id": "eval_prediction_3scouts_vs_zergling_shoot_10",
+  "estimated_cost_usd": 0.0
+}

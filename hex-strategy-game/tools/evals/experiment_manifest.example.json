@@ -1,0 +1,8 @@
+{
+  "prompt_version": "p_v001",
+  "planning_prompt_version": "minimal",
+  "eval_set_version": "eval_v001",
+  "thinking_level": "medium",
+  "model": "",
+  "notes": "baseline run"
+}

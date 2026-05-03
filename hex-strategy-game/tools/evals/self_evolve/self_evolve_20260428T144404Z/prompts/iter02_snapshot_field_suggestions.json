@@ -1,0 +1,27 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "hits_predicted_enemy_landing_this_turn",
+      "where": "ai_units[].legal_options[]",
+      "why": "Lets the planner directly detect when an option damages a move-before-attack enemy on its predicted landing cell/path, removing guesswork from timing interactions.",
+      "example_value": true
+    },
+    {
+      "field_name": "predicted_enemy_cells_hit_this_turn",
+      "where": "ai_units[].legal_options[]",
+      "why": "Shows exactly which predicted enemy cells/paths are covered by each option, enabling deterministic landing-cell targeting and focus fire.",
+      "example_value": [
+        [
+          1,
+          0
+        ]
+      ]
+    },
+    {
+      "field_name": "best_predicted_target_unit_id",
+      "where": "ai_units[].legal_options[]",
+      "why": "Identifies the enemy most directly affected after predicted movement, simplifying consistent concentration on the same target.",
+      "example_value": 90011234
+    }
+  ]
+}

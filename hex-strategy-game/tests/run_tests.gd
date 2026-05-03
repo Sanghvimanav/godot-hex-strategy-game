@@ -20,6 +20,7 @@ func _ready() -> void:
 	var TestLlmLearningsIngest = load("res://tests/test_llm_learnings_ingest.gd") as GDScript
 	var TestLlmPlanningRecentTurns = load("res://tests/test_llm_planning_recent_turns.gd") as GDScript
 	var TestLlmPostGame = load("res://tests/test_llm_post_game.gd") as GDScript
+	var TestHeadlessPlanningHarness = load("res://tests/test_headless_planning_harness.gd") as GDScript
 
 	if not TestActions.run_all(self):
 		_fail_count += 1
@@ -70,6 +71,10 @@ func _ready() -> void:
 	else:
 		_pass_count += 1
 	if not TestLlmPostGame.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestHeadlessPlanningHarness.run_all(self):
 		_fail_count += 1
 	else:
 		_pass_count += 1

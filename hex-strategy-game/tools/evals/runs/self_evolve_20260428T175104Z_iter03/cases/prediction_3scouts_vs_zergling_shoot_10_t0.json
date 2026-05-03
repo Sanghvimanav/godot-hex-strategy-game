@@ -1,0 +1,79 @@
+{
+  "case_id": "prediction_3scouts_vs_zergling_shoot_10_t0",
+  "chosen_option_indices": [
+    12,
+    12,
+    12
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T175104Z_iter03"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "All Scouts should target [1,0] with attack_ray to hit the predicted Zergling approach after movement timing.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "67947726541": 12,
+      "68132275944": 12,
+      "68266493679": 12
+    },
+    "call_timings_ms": [
+      12294
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 12294,
+          "elapsed_seconds": 12.294,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T175104Z/prompts/iter02_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T175104Z/prompts/iter02_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T175104Z/prompts/iter02_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nDecide across all AI units with this priority order. Never violate a higher rule for a lower one.\n1) STRICT CONSTRAINTS: If payload gives this unit required_end_cell, allowed_end_cells, required_target_cell, required_hit_cell, required_covered_cell, or any explicit end/finish/target/hit cell, keep only legal options that satisfy it exactly. move/fast_move match only end_cell. Attacks match by true coverage: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. Important: the chosen attack's own target/end marker may differ from the required/predicted victim cell if its real coverage includes that cell. Never replace an exact/allowed cell with a nearby pressure cell.\n2) FAST-MOVER INTERCEPTION: If an enemy may move before resolution, infer 1-2 likely landing cells from its legal move/fast_move options and stated goal. Prefer a legal ATTACK whose true coverage includes a forced/likely landing cell. Do not require the attack marker itself to equal that landing cell. If one legal attack covers both hold and likely move outcomes, prefer it. Friendly occupancy of a targeted/covered cell is irrelevant if the option is legal. Only move/fast_move onto a landing cell if no legal attack covers the required/predicted landing cell. When multiple AI units can attack the same mover, first assign coverage to distinct forced/likely landing cells before duplicating shots.\n3) KILL/DAMAGE: Otherwise choose a legal attack that kills the highest-threat enemy; else highest immediate damage. Prefer robust attacks that still hit across hold-vs-move branches over attacks that only punish the current cell.\n4) RETREAT: If survival is explicitly favored, or the current cell is threatened by multiple enemies and some retreat option strictly lowers expected incoming damage versus every forward option, retreat. If allowed_end_cells exists, choose only among them.\n5) PRESSURE: Otherwise choose the most aggressive legal move/fast_move that reduces distance to key enemies/objectives and maximizes next-turn contact.\n\nTiebreakers: lower pred_damage_at_end; else lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If a summary mentions a cell, that cell must appear in the chosen option metadata or true coverage. Keep both strings brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling fast_moves to [1,0]\",\"reasoning_summary\":\"All three Scouts cover the likely landing cell [1,0] with ray attacks; focus fire can kill it if it commits forward.\",\"actions\":[{\"unit_id\":67947726541,\"option_index\":12},{\"unit_id\":68132275944,\"option_index\":12},{\"unit_id\":68266493679,\"option_index\":12}]}",
+    "reasoning_effort": "low",
+    "thinking": "**Maximizing interception strategy**\n\nI need to choose one action per unit and maximize interception. It looks like a Zergling might want to move toward the nearest scout at [1,0]. Since all scouts are at [0,0], moving quickly to [1,0] could apply pressure. I should consider attacks that cover likely landing cells too. Maybe option 24 to [2,0] covers [1,0], but the metadata suggests visibility issues. If the enemy moves to [1,0], I need to check if the attack ray from [0,0] to [2,0] can reach them.\n**Considering attack options**\n\nI'm thinking about how to utilize various attack options, particularly how I might define them with end values like [1,0], [1,1], and so on. It seems like I need to clearly outline these before proceeding. I want to ensure I'm interpreting this correctly and applying the appropriate methodology. I\u2019ll take some time to organize my options and figure out the best way to implement them. More clarity is needed!",
+    "usage": {
+      "input_tokens": 17043,
+      "output_tokens": 1319,
+      "reasoning_tokens": 1222,
+      "total_tokens": 18362
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00689875
+  },
+  "matched_unit_count": 3,
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "required option exists for all 3 units named Scout",
+  "scenario_id": "eval_prediction_3scouts_vs_zergling_shoot_10",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.00689875
+}

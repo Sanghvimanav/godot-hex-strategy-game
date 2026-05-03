@@ -25,6 +25,8 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_extract_tile_action_config(tests) and ok
 	ok = _test_recruit_people_action_config(tests) and ok
 	ok = _test_spawn_scout_action_config(tests) and ok
+	ok = _test_campaign_baneling_breach_scenario_exists(tests) and ok
+	ok = _test_drill_llm_vs_llm_scenario_exists(tests) and ok
 	return ok
 
 ## Ensures get_action_type and get_action_config stay static so scripts can call them without preloading (avoids parser error).
@@ -121,18 +123,18 @@ static func _test_attack_support_ability_types(tests: Node) -> bool:
 	return true
 
 static func _test_scout_attack_ray_range_and_pattern(tests: Node) -> bool:
-	tests._log("test_actions: scout attack_ray uses target-only range 2-3")
+	tests._log("test_actions: scout attack_ray uses target-only range 1-2")
 	var c: Dictionary = Actions.get_action_config("attack_ray")
 	if c.get("pattern", "") != "target":
 		tests._fail("attack_ray should use pattern=target, got %s" % c.get("pattern", ""))
 		return false
-	if int(c.get("min_range", -1)) != 2:
-		tests._fail("attack_ray min_range should be 2, got %s" % c.get("min_range", -1))
+	if int(c.get("min_range", -1)) != 1:
+		tests._fail("attack_ray min_range should be 1, got %s" % c.get("min_range", -1))
 		return false
-	if int(c.get("max_range", -1)) != 3:
-		tests._fail("attack_ray max_range should be 3, got %s" % c.get("max_range", -1))
+	if int(c.get("max_range", -1)) != 2:
+		tests._fail("attack_ray max_range should be 2, got %s" % c.get("max_range", -1))
 		return false
-	tests._pass("scout attack_ray uses target-only range 2-3")
+	tests._pass("scout attack_ray uses target-only range 1-2")
 	return true
 
 static func _test_scout_attack_ray_energy_cost(tests: Node) -> bool:
@@ -210,7 +212,7 @@ static func _test_zerg_vs_terran_includes_medic(tests: Node) -> bool:
 		return false
 	var has_player_medic := false
 	for g in scenario.get("groups", []):
-		if str(g.get("name", "")) != "player":
+		if str(g.get("name", "")) != "terran":
 			continue
 		for u in g.get("units", []):
 			if str(u.get("def_path", "")) == "res://src/unit/definitions/medic.tres":
@@ -236,7 +238,7 @@ static func _test_zerg_vs_terran_v2_scenario_exists(tests: Node) -> bool:
 	for g in scenario.get("groups", []):
 		var group_name: String = str(g.get("name", ""))
 		var units: Array = g.get("units", [])
-		if group_name == "player":
+		if group_name == "terran":
 			for u in units:
 				var def: String = str(u.get("def_path", ""))
 				if def == "res://src/unit/definitions/terran_base.tres" or def == "res://src/unit/definitions/infantry_camp.tres":
@@ -245,7 +247,7 @@ static func _test_zerg_vs_terran_v2_scenario_exists(tests: Node) -> bool:
 					has_marine = true
 				elif def == "res://src/unit/definitions/scout.tres":
 					has_scout = true
-		if group_name == "opponent" and bool(g.get("ai", false)):
+		if group_name == "zerg" and bool(g.get("ai", false)):
 			for u in units:
 				var def: String = str(u.get("def_path", ""))
 				if def == "res://src/unit/definitions/zergling.tres":
@@ -271,32 +273,47 @@ static func _test_zerg_vs_terran_v2_scenario_exists(tests: Node) -> bool:
 	return true
 
 static func _test_campaign_opening_scenario_exists(tests: Node) -> bool:
-	tests._log("test_actions: campaign_opening is in campaign category with stacked scouts, stacked zerglings, and mountains on x = -1")
-	var scenario: Dictionary = Scenarios.get_scenario_by_id("campaign_opening")
-	if scenario.is_empty():
-		tests._fail("campaign_opening scenario should exist")
-		return false
+	tests._log("test_actions: campaign_opening is in campaign category with stacked scouts, difficulty-scaled zerglings, and mountains on x = -1")
 	var by_category: Dictionary = Scenarios.get_scenarios_by_category()
+	var campaign_template: Dictionary = {}
 	var in_campaign := false
 	for entry in by_category.get("campaign", []):
 		if str(entry.get("id", "")) == "campaign_opening":
 			in_campaign = true
+			campaign_template = entry
 			break
 	if not in_campaign:
 		tests._fail("campaign_opening should be categorized as campaign")
 		return false
+	if not bool(campaign_template.get("supports_campaign_difficulty", false)):
+		tests._fail("campaign_opening should support campaign difficulty")
+		return false
+	var counts: Dictionary = campaign_template.get("campaign_zergling_counts", {})
+	if int(counts.get("easy", -1)) != 2 or int(counts.get("medium", -1)) != 3 or int(counts.get("hard", -1)) != 4:
+		tests._fail("campaign_opening should define zergling counts easy=2 medium=3 hard=4")
+		return false
+	var saved_diff: String = Scenarios.campaign_difficulty
+	Scenarios.set_campaign_difficulty("medium")
+	var scenario: Dictionary = Scenarios.get_scenario_by_id("campaign_opening")
+	if scenario.is_empty():
+		tests._fail("campaign_opening scenario should exist")
+		Scenarios.set_campaign_difficulty(saved_diff)
+		return false
 	var desc: String = str(scenario.get("description", "")).strip_edges()
 	if desc.is_empty():
-		tests._fail("campaign_opening should define a description (win condition for player and AI)")
+		tests._fail("campaign_opening should define a description (win conditions for both sides)")
+		Scenarios.set_campaign_difficulty(saved_diff)
 		return false
 	var desc_lower := desc.to_lower()
 	if not ("mountain" in desc_lower and "scout" in desc_lower):
 		tests._fail("campaign_opening description should mention mountains and scouts")
+		Scenarios.set_campaign_difficulty(saved_diff)
 		return false
 	for entry in by_category.get("campaign", []):
 		var d: String = str(entry.get("description", "")).strip_edges()
 		if d.is_empty():
 			tests._fail("campaign scenario %s must include a non-empty description" % entry.get("id", ""))
+			Scenarios.set_campaign_difficulty(saved_diff)
 			return false
 	var total_zerglings := 0
 	var left_zerglings := 0
@@ -321,20 +338,22 @@ static func _test_campaign_opening_scenario_exists(tests: Node) -> bool:
 				cell = cell_variant
 			elif cell_variant is Vector2:
 				cell = Vector2i(int(cell_variant.x), int(cell_variant.y))
-			if group_name == "player":
+			if group_name == "terran":
 				if not has_player_anchor:
 					player_anchor = cell
 					has_player_anchor = true
 				elif cell != player_anchor:
 					tests._fail("campaign_opening player units should all share the same spawn tile")
+					Scenarios.set_campaign_difficulty(saved_diff)
 					return false
-			elif group_name == "opponent":
+			elif group_name == "zerg":
 				if def_path == "res://src/unit/definitions/zergling.tres":
 					if not has_zerg_stack_anchor:
 						zerg_stack_anchor = cell
 						has_zerg_stack_anchor = true
 					elif cell != zerg_stack_anchor:
 						tests._fail("campaign_opening zerglings should all share the same spawn tile")
+						Scenarios.set_campaign_difficulty(saved_diff)
 						return false
 				elif def_path == "res://src/unit/definitions/mountain.tres":
 					total_mountains += 1
@@ -352,9 +371,23 @@ static func _test_campaign_opening_scenario_exists(tests: Node) -> bool:
 				total_marines += 1
 				if cell.x > 0:
 					right_marines += 1
-	if total_zerglings != 5 or left_zerglings != 5:
-		tests._fail("campaign_opening should include 5 zerglings on the left side")
+	if total_zerglings != 3 or left_zerglings != 3:
+		tests._fail("campaign_opening on medium should include 3 zerglings on the left side")
+		Scenarios.set_campaign_difficulty(saved_diff)
 		return false
+	for pair in [["easy", 2], ["medium", 3], ["hard", 4]]:
+		Scenarios.set_campaign_difficulty(pair[0])
+		var scn: Dictionary = Scenarios.get_scenario_by_id("campaign_opening")
+		var nz := 0
+		for g2 in scn.get("groups", []):
+			for u2 in g2.get("units", []):
+				if str(u2.get("def_path", "")) == "res://src/unit/definitions/zergling.tres":
+					nz += 1
+		if nz != pair[1]:
+			tests._fail("campaign_opening on %s should have %d zerglings, got %d" % [pair[0], pair[1], nz])
+			Scenarios.set_campaign_difficulty(saved_diff)
+			return false
+	Scenarios.set_campaign_difficulty(saved_diff)
 	if total_mountains != 3:
 		tests._fail("campaign_opening should include 3 mountains")
 		return false
@@ -378,7 +411,7 @@ static func _test_campaign_opening_scenario_exists(tests: Node) -> bool:
 	if player_anchor.x != -zerg_stack_anchor.x or player_anchor.y != zerg_stack_anchor.y:
 		tests._fail("campaign_opening player and zerg stack anchors should be mirrored across the board center")
 		return false
-	tests._pass("campaign_opening scenario is categorized with 3 stacked scouts, mountains on (-1,-2) (-1,0) (-1,2)")
+	tests._pass("campaign_opening scenario is categorized with 3 stacked scouts, difficulty zerglings, mountains on (-1,-2) (-1,0) (-1,2)")
 	return true
 
 static func _test_excavator_debug_scenario_exists(tests: Node) -> bool:
@@ -390,7 +423,7 @@ static func _test_excavator_debug_scenario_exists(tests: Node) -> bool:
 	var has_excavator := false
 	var has_crystal := false
 	for g in scenario.get("groups", []):
-		if str(g.get("name", "")) == "player":
+		if str(g.get("name", "")) == "terran":
 			for u in g.get("units", []):
 				if str(u.get("def_path", "")) == "res://src/unit/definitions/excavator.tres":
 					has_excavator = true
@@ -422,13 +455,13 @@ static func _test_medic_heal_debug_scenario_exists(tests: Node) -> bool:
 	for g in scenario.get("groups", []):
 		var group_name: String = str(g.get("name", ""))
 		var units: Array = g.get("units", [])
-		if group_name == "player":
+		if group_name == "terran":
 			for u in units:
 				if str(u.get("def_path", "")) == "res://src/unit/definitions/medic.tres":
 					has_medic = true
 				if str(u.get("def_path", "")) == "res://src/unit/definitions/marine.tres" and int(u.get("health", 0)) == 3:
 					has_damaged_marine = true
-		if group_name == "opponent" and bool(g.get("ai", false)):
+		if group_name == "zerg" and bool(g.get("ai", false)):
 			for u in units:
 				if str(u.get("def_path", "")) == "res://src/unit/definitions/hydralisk.tres":
 					has_ai_hydralisk = true
@@ -476,7 +509,7 @@ static func _test_shardling_debug_scenario_exists(tests: Node) -> bool:
 	var has_crystal := false
 	var has_resources := false
 	for g in scenario.get("groups", []):
-		if str(g.get("name", "")) == "player":
+		if str(g.get("name", "")) == "terran":
 			for u in g.get("units", []):
 				if str(u.get("def_path", "")) == "res://src/unit/definitions/shardling.tres":
 					has_shardling = true
@@ -521,10 +554,10 @@ static func _test_spire_debug_scenario_exists(tests: Node) -> bool:
 				cell = cv
 			elif cv is Vector2:
 				cell = Vector2i(int(cv.x), int(cv.y))
-			if gn == "player" and dp == "res://src/unit/definitions/spire.tres":
+			if gn == "terran" and dp == "res://src/unit/definitions/spire.tres":
 				has_spire = true
 				spire_cell = cell
-			elif gn == "opponent" and dp == "res://src/unit/definitions/marine.tres":
+			elif gn == "zerg" and dp == "res://src/unit/definitions/marine.tres":
 				has_marine = true
 				marine_cell = cell
 	if not has_spire or not has_marine:
@@ -556,10 +589,10 @@ static func _test_mountain_debug_scenario_exists(tests: Node) -> bool:
 				cell = cv
 			elif cv is Vector2:
 				cell = Vector2i(int(cv.x), int(cv.y))
-			if gn == "player" and dp == "res://src/unit/definitions/scout.tres":
+			if gn == "terran" and dp == "res://src/unit/definitions/scout.tres":
 				has_scout = true
 				scout_cell = cell
-			elif gn == "opponent" and dp == "res://src/unit/definitions/mountain.tres":
+			elif gn == "zerg" and dp == "res://src/unit/definitions/mountain.tres":
 				has_mountain = true
 				mountain_cell = cell
 	if not has_mountain or not has_scout:
@@ -624,4 +657,171 @@ static func _test_spawn_scout_action_config(tests: Node) -> bool:
 		tests._fail("spawn_scout should require exactly 3 people")
 		return false
 	tests._pass("spawn_scout action config")
+	return true
+
+static func _test_campaign_baneling_breach_scenario_exists(tests: Node) -> bool:
+	tests._log("test_actions: campaign_baneling_breach has infantry camp + 2 marines + 2 scouts vs difficulty-scaled banelings + zerglings")
+	var by_category: Dictionary = Scenarios.get_scenarios_by_category()
+	var in_campaign := false
+	var campaign_template: Dictionary = {}
+	for entry in by_category.get("campaign", []):
+		if str(entry.get("id", "")) == "campaign_baneling_breach":
+			in_campaign = true
+			campaign_template = entry
+			break
+	if not in_campaign:
+		tests._fail("campaign_baneling_breach should be categorized as campaign")
+		return false
+	if not bool(campaign_template.get("supports_campaign_difficulty", false)):
+		tests._fail("campaign_baneling_breach should support campaign difficulty")
+		return false
+	var desc: String = str(campaign_template.get("description", "")).strip_edges()
+	if desc.is_empty():
+		tests._fail("campaign_baneling_breach should define a description")
+		return false
+	var desc_lower := desc.to_lower()
+	if not ("baneling" in desc_lower and "infantry camp" in desc_lower):
+		tests._fail("campaign_baneling_breach description should mention banelings and infantry camp")
+		return false
+	var saved_diff: String = Scenarios.campaign_difficulty
+	var expected: Dictionary = {
+		"easy": {"zerglings": 2, "banelings": 1},
+		"medium": {"zerglings": 3, "banelings": 1},
+		"hard": {"zerglings": 4, "banelings": 2},
+	}
+	for diff in expected:
+		Scenarios.set_campaign_difficulty(diff)
+		var scenario: Dictionary = Scenarios.get_scenario_by_id("campaign_baneling_breach")
+		if scenario.is_empty():
+			tests._fail("campaign_baneling_breach should exist")
+			Scenarios.set_campaign_difficulty(saved_diff)
+			return false
+		var nz := 0
+		var nb := 0
+		var has_camp := false
+		var marine_count := 0
+		var scout_count := 0
+		for g in scenario.get("groups", []):
+			var gn: String = str(g.get("name", ""))
+			for u in g.get("units", []):
+				var dp: String = str(u.get("def_path", ""))
+				if gn == "terran":
+					if dp == "res://src/unit/definitions/infantry_camp.tres":
+						has_camp = true
+					elif dp == "res://src/unit/definitions/marine.tres":
+						marine_count += 1
+					elif dp == "res://src/unit/definitions/scout.tres":
+						scout_count += 1
+				elif gn == "zerg":
+					if dp == "res://src/unit/definitions/zergling.tres":
+						nz += 1
+					elif dp == "res://src/unit/definitions/baneling.tres":
+						nb += 1
+		if not has_camp:
+			tests._fail("campaign_baneling_breach should include a player infantry camp")
+			Scenarios.set_campaign_difficulty(saved_diff)
+			return false
+		if marine_count != 2:
+			tests._fail("campaign_baneling_breach should include 2 player marines, got %d" % marine_count)
+			Scenarios.set_campaign_difficulty(saved_diff)
+			return false
+		if scout_count != 2:
+			tests._fail("campaign_baneling_breach should include 2 player scouts, got %d" % scout_count)
+			Scenarios.set_campaign_difficulty(saved_diff)
+			return false
+		var ez: int = expected[diff]["zerglings"]
+		var eb: int = expected[diff]["banelings"]
+		if nz != ez:
+			tests._fail("campaign_baneling_breach on %s should have %d zerglings, got %d" % [diff, ez, nz])
+			Scenarios.set_campaign_difficulty(saved_diff)
+			return false
+		if nb != eb:
+			tests._fail("campaign_baneling_breach on %s should have %d banelings, got %d" % [diff, eb, nb])
+			Scenarios.set_campaign_difficulty(saved_diff)
+			return false
+	Scenarios.set_campaign_difficulty(saved_diff)
+	tests._pass("campaign_baneling_breach has infantry camp + 2 marines + 2 scouts vs difficulty-scaled banelings + zerglings")
+	return true
+
+
+static func _test_drill_llm_vs_llm_scenario_exists(tests: Node) -> bool:
+	tests._log("test_actions: drill_llm_vs_llm scenario has correct config and apply_scenario wiring")
+	var scenario: Dictionary = Scenarios.get_scenario_by_id("drill_llm_vs_llm_scouts_zergling")
+	if scenario.is_empty():
+		tests._fail("drill_llm_vs_llm_scouts_zergling should exist")
+		return false
+	if str(scenario.get("category", "")) != "drill":
+		tests._fail("expected category drill")
+		return false
+	var drill: Dictionary = scenario.get("drill", {})
+	var scripted: Dictionary = drill.get("scripted_groups", {})
+	if str(scripted.get("zerg", "")) != "llm_ai":
+		tests._fail("expected zerg scripted_groups = llm_ai, got %s" % scripted)
+		return false
+	var groups: Array = scenario.get("groups", [])
+	var terran_ai := false
+	var zerg_ai := false
+	var scout_count := 0
+	var zergling_count := 0
+	for g in groups:
+		var gn: String = str(g.get("name", ""))
+		if gn == "terran" and bool(g.get("ai", false)):
+			terran_ai = true
+		if gn == "zerg" and bool(g.get("ai", false)):
+			zerg_ai = true
+		for u in g.get("units", []):
+			var dp: String = str(u.get("def_path", ""))
+			if "scout" in dp:
+				scout_count += 1
+			elif "zergling" in dp:
+				zergling_count += 1
+	if not terran_ai:
+		tests._fail("terran should be ai: true")
+		return false
+	if zerg_ai:
+		tests._fail("zerg should NOT be ai: true (drill_scripted instead)")
+		return false
+	if scout_count != 2:
+		tests._fail("expected 2 scouts, got %d" % scout_count)
+		return false
+	if zergling_count != 1:
+		tests._fail("expected 1 zergling, got %d" % zergling_count)
+		return false
+	# Verify apply_scenario wires up drill_scripted_groups and planning order correctly.
+	var container := UnitsContainer.new()
+	tests.add_child(container)
+	container.apply_scenario(scenario)
+	if not container.drill_scripted_groups.has("zerg"):
+		tests._fail("apply_scenario should populate drill_scripted_groups for zerg")
+		container.free()
+		return false
+	if str(container.drill_scripted_groups["zerg"]) != "llm_ai":
+		tests._fail("drill_scripted_groups zerg should be llm_ai, got %s" % container.drill_scripted_groups["zerg"])
+		container.free()
+		return false
+	if "terran" not in container.ai_group_names:
+		tests._fail("ai_group_names should contain terran")
+		container.free()
+		return false
+	if "zerg" in container.ai_group_names:
+		tests._fail("ai_group_names should NOT contain zerg (it uses drill script)")
+		container.free()
+		return false
+	var ordered: Array = container._get_planning_units_ordered()
+	if ordered.is_empty():
+		tests._fail("planning units should not be empty")
+		container.free()
+		return false
+	var first_group: String = ordered[0].get_parent().name if ordered[0].get_parent() else ""
+	if first_group != "zerg":
+		tests._fail("drill 'llm_ai' unit (zerg) should be first in planning order, got %s" % first_group)
+		container.free()
+		return false
+	var last_group: String = ordered[ordered.size() - 1].get_parent().name if ordered[ordered.size() - 1].get_parent() else ""
+	if last_group != "terran":
+		tests._fail("primary AI unit (terran) should be last in planning order, got %s" % last_group)
+		container.free()
+		return false
+	container.free()
+	tests._pass("drill_llm_vs_llm scenario config and apply_scenario wiring correct")
 	return true

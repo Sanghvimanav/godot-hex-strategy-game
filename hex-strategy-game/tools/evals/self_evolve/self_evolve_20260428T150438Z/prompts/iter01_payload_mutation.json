@@ -1,0 +1,18 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.fast_mover_intercept_priority": true,
+    "planner_context.engage_over_passive_safety_when_no_attack": true,
+    "planner_context.tie_break_order": [
+      "kill_or_max_damage",
+      "cover_predicted_landing_cell",
+      "forward_pressure",
+      "lower_end_damage",
+      "higher_expected_visible_hits",
+      "higher_target_threat",
+      "shorter_enemy_distance",
+      "lower_option_index"
+    ]
+  },
+  "copy_paths": []
+}

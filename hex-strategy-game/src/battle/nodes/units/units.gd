@@ -4,17 +4,20 @@ extends Node2D
 const BattlePhase = preload("res://src/battle/battle_phase.gd")
 const TurnExecutor = preload("res://src/battle/turn_executor.gd")
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
-const PlanningAI = preload("res://src/battle/ai/planning_ai.gd")
 const LlmPlanningSnapshot = preload("res://src/llm_ai/llm_planning_snapshot.gd")
 const LlmPlanningPrompts = preload("res://src/llm_ai/llm_planning_prompts.gd")
 const LlmPlanningResponseParser = preload("res://src/llm_ai/llm_planning_response_parser.gd")
 const LlmPlanningPayloadLog = preload("res://src/llm_ai/llm_planning_payload_log.gd")
+const DrillScriptAI = preload("res://src/battle/ai/drill_script_ai.gd")
 const UNIT_SCENE := preload("res://src/unit/unit.tscn")
 const MAX_REPLAY_TURN_HISTORY: int = 8
 
 var groups: Array = []
 var ai_group_names: Array[String] = []
-## In multiplayer, only units in this group can be controlled (e.g. "player" or "opponent").
+## Drill training: group_name -> script_name. These groups are auto-planned by DrillScriptAI.
+var drill_scripted_groups: Dictionary = {}
+## Local human seat: faction group name. In multiplayer, only this group's units are controlled.
+## In single-player, set to the human faction so fog-of-war and resource UI match that seat (same as MP).
 var multiplayer_my_group: String = ""
 var battle_phase: BattlePhase.Phase = BattlePhase.Phase.PLANNING
 var planning_unit_index: int = 0
@@ -34,19 +37,41 @@ var _llm_http: HTTPRequest
 var _llm_openai: LlmOpenAiClient
 var _llm_batch_running: bool = false
 var _llm_batch_generation: int = 0
+## Drill LLM-vs-LLM: separate HTTP node, client, and state so both batches can run concurrently.
+var _drill_llm_http: HTTPRequest
+var _drill_llm_openai: LlmOpenAiClient
+var _drill_llm_running: bool = false
+var _drill_llm_group_planned: Dictionary = {}  # group_name -> bool
+## Responses API only: last successful response id for previous_response_id chaining across planning turns.
+var _llm_previous_response_id: String = ""
 ## Set true when at least one AI action was applied from a validated LLM choice this match (Phase 3 gate).
 var match_had_llm_validated_plan: bool = false
+## Cached AI FOV and unit IDs from start of planning phase — stored with recordings for history filtering.
+var _planning_phase_ai_fov: Dictionary = {}
+var _planning_phase_ai_unit_ids: Array = []
+## Enemy intel for LLM: initial count from scenario config, plus running kill tally.
+var _ai_initial_enemy_count: int = 0
+var _ai_confirmed_enemy_kills: int = 0
+var _ai_killed_enemy_ids: Dictionary = {}
+## Last-known enemy positions per perspective group. Keys: group_name -> {unit_id -> {cell, name, def_path, turn_seen}}.
+## Initialized from scenario starting positions; updated each planning turn when enemies are visible.
+var _ai_last_known_enemies: Dictionary = {}
 
 func _ready() -> void:
 	_llm_http = HTTPRequest.new()
 	_llm_http.name = "LlmHttpRequest"
 	add_child(_llm_http)
+	_drill_llm_http = HTTPRequest.new()
+	_drill_llm_http.name = "DrillLlmHttpRequest"
+	add_child(_drill_llm_http)
 	_llm_openai = LlmOpenAiClient.new()
+	_drill_llm_openai = LlmOpenAiClient.new()
 	_refresh_groups()
 	EventBus.execute_turn_requested.connect(_on_execute_turn_requested)
 	EventBus.replay_turn_requested.connect(_on_replay_turn_requested)
 	EventBus.unit_pick_requested.connect(_on_unit_pick_requested)
 	EventBus.action_key_selected.connect(_on_action_key_selected)
+	EventBus.llm_retry_requested.connect(_on_llm_retry_requested)
 
 func _on_action_key_selected(action_key: String) -> void:
 	selected_action_key = action_key
@@ -61,13 +86,8 @@ func _on_action_key_selected(action_key: String) -> void:
 			EventBus.action_key_selected.emit("")
 
 func _on_execute_turn_requested() -> void:
-	# If LLM still computing, cancel and classic-fill AI so the player is never blocked (spec §2.1).
 	if _llm_batch_running:
-		_llm_openai.cancel_inflight(_llm_http)
-		_llm_batch_generation += 1
-		_llm_batch_running = false
-		_apply_classic_plans_all_ai_units()
-		EventBus.llm_planning_status.emit("classic", "Turn submitted while LLM was running — classic AI for opponent.")
+		return
 	if battle_phase != BattlePhase.Phase.PLANNING or not _all_units_have_planned_action():
 		return
 	if MultiplayerState.is_multiplayer:
@@ -80,6 +100,93 @@ func _refresh_groups() -> void:
 	for child in get_children():
 		groups.append(child)
 
+
+## Populate _ai_last_known_enemies from scenario starting positions so every group
+## has a starting picture of where all other groups' units begin.
+func _init_last_known_enemies() -> void:
+	_ai_last_known_enemies.clear()
+	var all_group_names: Array[String] = []
+	for g in groups:
+		all_group_names.append(str(g.name))
+	for observer_name in all_group_names:
+		var known: Dictionary = {}
+		for g in groups:
+			if str(g.name) == observer_name:
+				continue
+			for child in g.get_children():
+				if not (child is Unit and child.is_active):
+					continue
+				var u: Unit = child
+				var uid: int = LlmPlanningSnapshot._stable_unit_id(u)
+				var ability_keys: Array = []
+				if u.def:
+					for ak in u.def.ability_action_keys:
+						ability_keys.append(str(ak))
+				known[uid] = {
+					"cell": Vector2(u.cell.x, u.cell.y),
+					"name": u.def.name if u.def else "unit",
+					"def_path": u.def.resource_path if u.def else "",
+					"health": u.health,
+					"max_health": u.max_health,
+					"ability_action_keys": ability_keys,
+					"turn_seen": 0,
+				}
+		_ai_last_known_enemies[observer_name] = known
+
+
+## Update last-known positions for a given observer group from a list of currently visible enemies.
+## Called by the snapshot builder when computing visibility.
+func update_last_known_enemies_for_group(observer_group: String, visible_enemies: Array) -> void:
+	if not _ai_last_known_enemies.has(observer_group):
+		_ai_last_known_enemies[observer_group] = {}
+	var known: Dictionary = _ai_last_known_enemies[observer_group]
+	for entry in visible_enemies:
+		if not (entry is Dictionary):
+			continue
+		var uid: int = int(entry.get("unit_id", 0))
+		if uid == 0:
+			continue
+		var cell_arr: Array = entry.get("cell", []) as Array
+		var upd: Dictionary = {
+			"cell": Vector2(int(cell_arr[0]) if cell_arr.size() >= 1 else 0,
+							int(cell_arr[1]) if cell_arr.size() >= 2 else 0),
+			"name": str(entry.get("name", "unit")),
+			"def_path": str(entry.get("def", "")),
+			"health": int(entry.get("health", 0)),
+			"max_health": int(entry.get("max_health", 0)),
+			"turn_seen": turn_number,
+		}
+		var vis_keys: Array = entry.get("ability_action_keys", []) as Array
+		if not vis_keys.is_empty():
+			upd["ability_action_keys"] = vis_keys
+		known[uid] = upd
+
+
+## Returns last-known enemy entries that are NOT in the currently visible set.
+func get_nonvisible_known_enemies(observer_group: String, visible_unit_ids: Dictionary) -> Array:
+	var result: Array = []
+	var known: Dictionary = _ai_last_known_enemies.get(observer_group, {})
+	for uid in known:
+		if visible_unit_ids.has(uid):
+			continue
+		var entry: Dictionary = known[uid]
+		var out_entry: Dictionary = {
+			"unit_id": int(uid),
+			"cell": [int(entry.cell.x), int(entry.cell.y)],
+			"name": str(entry.get("name", "unit")),
+			"def": str(entry.get("def_path", "")),
+			"health": int(entry.get("health", 0)),
+			"max_health": int(entry.get("max_health", 0)),
+			"turn_last_seen": int(entry.get("turn_seen", 0)),
+			"source": "last_known",
+		}
+		var stored_keys: Array = entry.get("ability_action_keys", []) as Array
+		if not stored_keys.is_empty():
+			out_entry["ability_action_keys"] = stored_keys
+		result.append(out_entry)
+	return result
+
+
 func _apply_effects_from_state(unit: Unit, effects_data: Array) -> void:
 	unit.active_effects.clear()
 	for effect_dict in effects_data:
@@ -91,6 +198,12 @@ func apply_scenario(scenario: Dictionary) -> void:
 	if scenario.is_empty():
 		return
 	ai_group_names.clear()
+	drill_scripted_groups.clear()
+	var drill_config: Dictionary = scenario.get("drill", {})
+	if not drill_config.is_empty():
+		var scripted: Dictionary = drill_config.get("scripted_groups", {})
+		for gname in scripted:
+			drill_scripted_groups[str(gname)] = str(scripted[gname])
 	var randomize_pos: bool = scenario.get("randomize_positions", false)
 	for group_spec in scenario.get("groups", []):
 		var group_name: String = group_spec.get("name", "")
@@ -140,6 +253,14 @@ func apply_scenario(scenario: Dictionary) -> void:
 					if unit.energy_bar and unit.max_energy > 0:
 						unit.energy_bar.update_value(unit.energy)
 	_refresh_groups()
+	_ai_initial_enemy_count = 0
+	for group in groups:
+		if group.name in ai_group_names:
+			continue
+		for child in group.get_children():
+			if child is Unit:
+				_ai_initial_enemy_count += 1
+	_init_last_known_enemies()
 
 ## Build board from server game state (multiplayer). Sets unit_id on each unit for submit_actions.
 func apply_multiplayer_state(state: Dictionary) -> void:
@@ -285,11 +406,15 @@ func _submit_actions_to_server() -> void:
 func start_battle() -> void:
 	turn_number = 1
 	match_had_llm_validated_plan = false
+	_llm_previous_response_id = ""
+	_drill_llm_group_planned.clear()
 	battle_phase = BattlePhase.Phase.PLANNING
 	_clear_all_planned_actions()
 	last_turn_recording = {}
 	replay_turn_history.clear()
 	match_full_turn_history.clear()
+	_ai_confirmed_enemy_kills = 0
+	_ai_killed_enemy_ids.clear()
 	EventBus.turn_changed.emit(turn_number)
 	EventBus.replay_available_changed.emit(false)
 	EventBus.replay_history_changed.emit([], 0)
@@ -297,8 +422,9 @@ func start_battle() -> void:
 
 func get_active_units() -> Array[Unit]:
 	var units: Array[Unit] = []
+	var filter_by_seat := MultiplayerState.is_multiplayer and not multiplayer_my_group.is_empty()
 	for group in groups:
-		if not multiplayer_my_group.is_empty() and group.name != multiplayer_my_group:
+		if filter_by_seat and str(group.name) != multiplayer_my_group:
 			continue
 		for child in group.get_children():
 			if child is Unit and child.is_active:
@@ -537,21 +663,7 @@ func _get_planning_units_ordered() -> Array[Unit]:
 	return out
 
 
-func _apply_classic_plans_all_ai_units() -> void:
-	for u in get_active_units():
-		if not (is_instance_valid(u) and u is Unit and u.is_active):
-			continue
-		var gname: String = u.get_parent().name if u.get_parent() else ""
-		if gname not in ai_group_names:
-			continue
-		if u.planned_action != null:
-			continue
-		var entry: Dictionary = PlanningAI.pick_action(u, groups, _get_units_at_cell_for_planning)
-		if not entry.is_empty():
-			_store_planned_action(u, entry.ac, entry.is_move)
-
-
-func _apply_llm_choice_map(by_unit_id: Dictionary) -> Dictionary:
+func _apply_llm_choice_map(action_request_by_unit_id: Dictionary, legacy_option_index_by_unit_id: Dictionary = {}) -> Dictionary:
 	var any_llm := false
 	var partial := false
 	for u in get_active_units():
@@ -562,10 +674,14 @@ func _apply_llm_choice_map(by_unit_id: Dictionary) -> Dictionary:
 			continue
 		var uid: int = _get_unit_stable_id(u)
 		var opts: Array = _llm_option_tables.get(uid, []) as Array
-		if not by_unit_id.has(uid):
+		var idx: int = -1
+		if action_request_by_unit_id.has(uid):
+			idx = _resolve_option_index_from_action_request(opts, action_request_by_unit_id.get(uid, {}) as Dictionary)
+		elif legacy_option_index_by_unit_id.has(uid):
+			idx = int(legacy_option_index_by_unit_id[uid])
+		else:
 			partial = true
 			continue
-		var idx: int = int(by_unit_id[uid])
 		if idx < 0 or idx >= opts.size():
 			partial = true
 			continue
@@ -580,19 +696,41 @@ func _apply_llm_choice_map(by_unit_id: Dictionary) -> Dictionary:
 			continue
 		_store_planned_action(u, ac, bool(entry.get("is_move", false)))
 		any_llm = true
-	for u2 in get_active_units():
-		if not (is_instance_valid(u2) and u2 is Unit and u2.is_active):
-			continue
-		var gn2: String = u2.get_parent().name if u2.get_parent() else ""
-		if gn2 not in ai_group_names:
-			continue
-		if u2.planned_action != null:
-			continue
-		partial = true
-		var e2: Dictionary = PlanningAI.pick_action(u2, groups, _get_units_at_cell_for_planning)
-		if not e2.is_empty():
-			_store_planned_action(u2, e2.ac, e2.is_move)
 	return { "any_llm": any_llm, "partial": partial }
+
+
+func _resolve_option_index_from_action_request(opts: Array, request: Dictionary) -> int:
+	if request.is_empty():
+		return -1
+	var req_key: String = str(request.get("action_key", "")).strip_edges()
+	var req_cell: Array = request.get("target_cell", []) as Array
+	if req_key.is_empty() or req_cell.size() < 2:
+		return -1
+	var rq: int = int(req_cell[0])
+	var rr: int = int(req_cell[1])
+	var best_i: int = 1_000_000
+	var best_idx: int = -1
+	for opt_idx in range(opts.size()):
+		var raw: Variant = opts[opt_idx]
+		if typeof(raw) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = raw
+		var ac: ActionInstance = entry.get("ac") as ActionInstance
+		if ac == null or ac.definition == null:
+			continue
+		if str(ac.definition.action_key) != req_key:
+			continue
+		var ex: int = int(ac.end_point.x)
+		var ey: int = int(ac.end_point.y)
+		if ex != rq or ey != rr:
+			continue
+		var oi: int = int(entry.get("i", opt_idx))
+		if oi < 0:
+			continue
+		if oi < best_i:
+			best_i = oi
+			best_idx = oi
+	return best_idx
 
 
 func _debug_print_llm_chosen_actions(by_unit_id: Dictionary) -> void:
@@ -647,6 +785,62 @@ func _log_llm_failure_result(http_result: Dictionary) -> void:
 		print("[LLM] body_snippet: %s" % snip)
 
 
+func _log_llm_usage(tag: String, http_result: Dictionary) -> void:
+	var usage: Dictionary = http_result.get("usage", {}) as Dictionary
+	if usage.is_empty():
+		return
+	var parts: Array[String] = []
+	for k in usage.keys():
+		parts.append("%s=%s" % [str(k), str(usage[k])])
+	print("[%s] usage: %s" % [tag, ", ".join(parts)])
+
+
+func _planning_api_call(
+	client: LlmOpenAiClient,
+	http: HTTPRequest,
+	settings: LlmAiSettings,
+	system_prompt: String,
+	user_json: String,
+	previous_response_id: String = "",
+) -> Dictionary:
+	if settings.use_responses_api:
+		return await client.responses_create(
+			http,
+			settings.get_effective_base_url(),
+			settings.api_key,
+			settings.model,
+			system_prompt,
+			user_json,
+			settings.reasoning_effort,
+			settings.planning_max_tokens,
+			previous_response_id,
+		)
+	var messages: Array = [
+		{"role": "system", "content": system_prompt},
+		{"role": "user", "content": user_json},
+	]
+	return await client.chat_completions(
+		http,
+		settings.get_effective_base_url(),
+		settings.api_key,
+		settings.model,
+		messages,
+		LlmOpenAiClient.Profile.PLANNING,
+		settings.planning_max_tokens,
+	)
+
+
+func _parse_prediction_hypotheses(raw: String) -> Dictionary:
+	var parsed: Variant = JSON.parse_string(raw)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {}
+	var obj: Dictionary = parsed
+	var arr: Array = obj.get("enemy_predictions", []) as Array
+	if arr.is_empty():
+		return {}
+	return {"enemy_predictions": arr}
+
+
 func _llm_batch_run_async(schedule_gen: int) -> void:
 	if schedule_gen != _llm_batch_generation:
 		return
@@ -659,71 +853,144 @@ func _llm_batch_run_async(schedule_gen: int) -> void:
 		EventBus.llm_planning_status.emit("idle", "")
 		return
 	var snapshot: Dictionary = LlmPlanningSnapshot.build_for_llm(self)
-	var user_json := JSON.stringify(snapshot)
-	if user_json.is_empty():
-		_llm_batch_running = false
-		_apply_classic_plans_all_ai_units()
-		EventBus.llm_planning_status.emit("classic", "Snapshot encode failed — classic AI.")
-		_llm_after_batch_apply()
-		return
 	LlmPlanningPayloadLog.write_turn_if_enabled(turn_number, snapshot, settings)
-	var system_prompt: String = LlmPlanningPrompts.system_prompt()
 	var http_result: Dictionary
+	var retry_system_prompt: String = ""
+	var retry_user_json: String = ""
 	EventBus.llm_planning_status.emit("waiting", "Waiting for API…")
-	if settings.use_responses_api:
-		http_result = await _llm_openai.responses_create(
+	var system_prompt: String = LlmPlanningPrompts.system_prompt_for_version(settings.planning_prompt_version)
+	var use_two_call_effective: bool = settings.use_two_call_planning and LlmPlanningPrompts.supports_two_call(settings.planning_prompt_version)
+	if use_two_call_effective:
+		var pred_payload: Dictionary = snapshot.duplicate(true)
+		LlmPlanningSnapshot.prepare_snapshot_for_prediction_api_call(pred_payload)
+		var user_json := JSON.stringify(pred_payload)
+		if user_json.is_empty():
+			_llm_batch_running = false
+			EventBus.llm_planning_status.emit("failed", "Snapshot encode failed.")
+			return
+		var prediction_prompt: String = LlmPlanningPrompts.prediction_only_prompt_for_version(settings.planning_prompt_version)
+		var pred_result: Dictionary = await _planning_api_call(
+			_llm_openai,
 			_llm_http,
-			settings.get_effective_base_url(),
-			settings.api_key,
-			settings.model,
-			system_prompt,
+			settings,
+			prediction_prompt,
 			user_json,
-			settings.reasoning_effort,
-			settings.planning_max_tokens,
+			_llm_previous_response_id,
+		)
+		_log_llm_usage("LLM prediction", pred_result)
+		var pred_raw: String = str(pred_result.get("content", ""))
+		var pred_thinking: String = str(pred_result.get("thinking", ""))
+		var pred_usage: Dictionary = pred_result.get("usage", {}) as Dictionary
+		var pred_hyp: Dictionary = {}
+		if pred_result.get("ok", false):
+			pred_hyp = _parse_prediction_hypotheses(pred_raw)
+		LlmPlanningPayloadLog.write_prediction_if_enabled(
+			turn_number, "ai", pred_raw, pred_hyp, pred_thinking, pred_usage, settings
+		)
+		if OS.is_debug_build():
+			if not pred_thinking.strip_edges().is_empty():
+				print("[LLM prediction thinking] ", pred_thinking)
+			if not pred_raw.strip_edges().is_empty():
+				print("[LLM prediction content] ", pred_raw)
+		var second_snapshot: Dictionary = snapshot.duplicate(true)
+		if not pred_hyp.is_empty():
+			second_snapshot["enemy_prediction_hypotheses"] = pred_hyp
+			LlmPlanningSnapshot.apply_prediction_hypotheses_to_legal_options(second_snapshot, pred_hyp)
+		var second_json: String = JSON.stringify(second_snapshot)
+		retry_system_prompt = LlmPlanningPrompts.action_only_system_prompt_for_version(settings.planning_prompt_version)
+		retry_user_json = second_json
+		http_result = await _planning_api_call(
+			_llm_openai,
+			_llm_http,
+			settings,
+			retry_system_prompt,
+			second_json,
+			_llm_previous_response_id,
 		)
 	else:
-		var messages: Array = [
-			{"role": "system", "content": system_prompt},
-			{"role": "user", "content": user_json},
-		]
-		http_result = await _llm_openai.chat_completions(
+		var user_json := JSON.stringify(snapshot)
+		if user_json.is_empty():
+			_llm_batch_running = false
+			EventBus.llm_planning_status.emit("failed", "Snapshot encode failed.")
+			return
+		retry_system_prompt = system_prompt
+		retry_user_json = user_json
+		http_result = await _planning_api_call(
+			_llm_openai,
 			_llm_http,
-			settings.get_effective_base_url(),
-			settings.api_key,
-			settings.model,
-			messages,
-			LlmOpenAiClient.Profile.PLANNING,
-			settings.planning_max_tokens,
+			settings,
+			system_prompt,
+			user_json,
+			_llm_previous_response_id,
 		)
+	_log_llm_usage("LLM planning", http_result)
 	_llm_batch_running = false
 	if schedule_gen != _llm_batch_generation:
 		return
 	if not http_result.get("ok", false):
 		_log_llm_failure_result(http_result)
-		_apply_classic_plans_all_ai_units()
-		EventBus.llm_planning_status.emit("classic", "LLM error: %s" % str(http_result.get("error", "?")))
-		_llm_after_batch_apply()
+		if str(http_result.get("error", "")) != "cancelled":
+			_llm_previous_response_id = ""
+		EventBus.llm_planning_status.emit("failed", "LLM error: %s" % str(http_result.get("error", "?")))
 		return
-	EventBus.llm_planning_status.emit("parsing", "Validating…")
-	var parse: Dictionary = LlmPlanningResponseParser.parse_json_actions(str(http_result.get("content", "")))
-	if not parse.get("ok", false):
-		print("[LLM] parse_json_actions: %s" % str(parse))
-		_apply_classic_plans_all_ai_units()
-		EventBus.llm_planning_status.emit("classic", "Bad JSON: %s" % str(parse.get("error", "?")))
-		_llm_after_batch_apply()
-		return
+	var parse: Dictionary = {}
+	var apply: Dictionary = {}
+	var retries_used: int = 0
+	while true:
+		EventBus.llm_planning_status.emit("parsing", "Validating…")
+		parse = LlmPlanningResponseParser.parse_json_actions(str(http_result.get("content", "")))
+		if parse.get("ok", false):
+			var action_req_by_id: Dictionary = parse.get("action_request_by_unit_id", {}) as Dictionary
+			var legacy_by_id: Dictionary = parse.get("legacy_option_index_by_unit_id", {}) as Dictionary
+			if OS.is_debug_build():
+				_debug_print_llm_chosen_actions(legacy_by_id)
+			apply = _apply_llm_choice_map(action_req_by_id, legacy_by_id)
+			if not bool(apply.get("partial", false)):
+				break
+		if retries_used >= 1:
+			if not parse.get("ok", false):
+				print("[LLM] parse_json_actions: %s" % str(parse))
+				_llm_previous_response_id = ""
+				EventBus.llm_planning_status.emit("failed", "Bad JSON: %s" % str(parse.get("error", "?")))
+			else:
+				EventBus.llm_planning_status.emit("failed", "LLM returned invalid plans after retry.")
+			return
+		retries_used += 1
+		EventBus.llm_planning_status.emit("retrying", "Retrying invalid actions…")
+		http_result = await _planning_api_call(
+			_llm_openai,
+			_llm_http,
+			settings,
+			retry_system_prompt,
+			retry_user_json,
+			_llm_previous_response_id,
+		)
+		_log_llm_usage("LLM planning retry", http_result)
+		if not http_result.get("ok", false):
+			_log_llm_failure_result(http_result)
+			if str(http_result.get("error", "")) != "cancelled":
+				_llm_previous_response_id = ""
+			EventBus.llm_planning_status.emit("failed", "LLM error: %s" % str(http_result.get("error", "?")))
+			return
+	if settings.use_responses_api:
+		var rid: String = str(http_result.get("response_id", "")).strip_edges()
+		_llm_previous_response_id = rid if not rid.is_empty() else ""
+	var _thinking: String = str(http_result.get("thinking", "")).strip_edges()
+	var _op: String = str(parse.get("opponent_prediction", "")).strip_edges()
+	var _rs: String = str(parse.get("reasoning_summary", "")).strip_edges()
 	if OS.is_debug_build():
-		var summary: String = str(parse.get("reasoning_summary", "")).strip_edges()
-		if not summary.is_empty():
-			print("[LLM reasoning] ", summary)
-	var by_id: Dictionary = parse.get("by_unit_id", {}) as Dictionary
-	if OS.is_debug_build():
-		_debug_print_llm_chosen_actions(by_id)
-	var apply: Dictionary = _apply_llm_choice_map(by_id)
+		if not _thinking.is_empty():
+			print("[LLM thinking] ", _thinking)
+		if not _op.is_empty():
+			print("[LLM opponent prediction] ", _op)
+		if not _rs.is_empty():
+			print("[LLM reasoning] ", _rs)
+	if not _thinking.is_empty() or not _op.is_empty() or not _rs.is_empty():
+		EventBus.llm_thinking_updated.emit("ai", _thinking, _op, _rs)
 	if bool(apply.get("any_llm", false)):
 		match_had_llm_validated_plan = true
 	if bool(apply.get("partial", false)):
-		EventBus.llm_planning_status.emit("partial", "Some opponent moves used classic fallback.")
+		EventBus.llm_planning_status.emit("failed", "LLM returned incomplete plans — some units missing.")
 	else:
 		EventBus.llm_planning_status.emit("ready", "Opponent plan ready.")
 	_llm_after_batch_apply()
@@ -732,8 +999,27 @@ func _llm_batch_run_async(schedule_gen: int) -> void:
 func _llm_after_batch_apply() -> void:
 	if _all_units_have_planned_action():
 		EventBus.planning_complete.emit()
-	else:
+	elif current_unit == null and not _drill_llm_running:
 		_select_planning_unit()
+
+func _on_llm_retry_requested() -> void:
+	if battle_phase != BattlePhase.Phase.PLANNING:
+		return
+	if _llm_batch_running or _drill_llm_running:
+		return
+	if not _should_run_llm_batch_for_sp():
+		return
+	for u in get_active_units():
+		if not (is_instance_valid(u) and u is Unit and u.is_active):
+			continue
+		var gname: String = u.get_parent().name if u.get_parent() else ""
+		if gname in ai_group_names or drill_scripted_groups.get(gname, "") == "llm_ai":
+			u.planned_action = null
+	_drill_llm_group_planned.clear()
+	_llm_batch_generation += 1
+	var schedule_gen: int = _llm_batch_generation
+	EventBus.llm_planning_status.emit("idle", "")
+	call_deferred("_llm_batch_run_async", schedule_gen)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if battle_phase == BattlePhase.Phase.EXECUTING:
@@ -807,15 +1093,35 @@ func _all_units_have_planned_action() -> bool:
 func _begin_planning() -> void:
 	battle_phase = BattlePhase.Phase.PLANNING
 	_llm_openai.cancel_inflight(_llm_http)
+	_drill_llm_openai.cancel_inflight(_drill_llm_http)
+	_drill_llm_running = false
 	_llm_batch_generation += 1
 	var schedule_gen: int = _llm_batch_generation
+	_drill_llm_group_planned.clear()
 	_clear_all_planned_actions()
+	_cache_ai_fov_for_turn()
 	planning_unit_index = 0
 	EventBus.planning_started.emit()
 	EventBus.llm_planning_status.emit("idle", "")
 	if _should_run_llm_batch_for_sp():
 		call_deferred("_llm_batch_run_async", schedule_gen)
 	_select_planning_unit()
+
+## Caches AI groups' visible hexes and unit IDs at start of planning phase.
+## Stored with each turn recording so LLM history can filter by what AI could observe.
+func _cache_ai_fov_for_turn() -> void:
+	_planning_phase_ai_fov.clear()
+	_planning_phase_ai_unit_ids.clear()
+	var hex_parent: Node = get_parent()
+	var hex_map: Node = hex_parent.get_node_or_null("hex_map") if hex_parent else null
+	if hex_map != null and hex_map.has_method("compute_visible_cell_keys_for_ai_groups"):
+		_planning_phase_ai_fov = hex_map.compute_visible_cell_keys_for_ai_groups(self)
+	for u in get_all_units():
+		if not (is_instance_valid(u) and u is Unit and u.is_active):
+			continue
+		var gname: String = u.get_parent().name if u.get_parent() else ""
+		if gname in ai_group_names:
+			_planning_phase_ai_unit_ids.append(_get_unit_stable_id(u))
 
 func _get_unit_at_cell(cell: Vector2) -> Unit:
 	var units = _get_units_at_cell_for_planning(cell)
@@ -878,6 +1184,20 @@ func _select_planning_unit() -> void:
 		return
 	var next_unit: Unit = active[planning_unit_index]
 	var unit_group_name: String = next_unit.get_parent().name if next_unit.get_parent() else ""
+	# Drill-scripted groups: auto-plan via deterministic script or secondary LLM.
+	if drill_scripted_groups.has(unit_group_name):
+		var script_name: String = str(drill_scripted_groups[unit_group_name])
+		if script_name == "llm_ai":
+			current_unit = null
+			selected_action_key = ""
+			EventBus.unit_selected_for_planning.emit(null)
+			_run_drill_llm_planning_for(next_unit, unit_group_name)
+			return
+		var choice: Dictionary = DrillScriptAI.pick_action(next_unit, groups, script_name)
+		if not choice.is_empty():
+			_store_planned_action(next_unit, choice.ac, choice.is_move)
+		_advance_planning()
+		return
 	# Do not assign current_unit to AI: keeps action selector, highlights, and click-to-commit on the player.
 	if unit_group_name in ai_group_names:
 		# Clear last human's move/ability selection so map clicks can switch units while LLM runs (see _unhandled_input).
@@ -900,27 +1220,197 @@ func _run_ai_planning_for(unit: Unit) -> void:
 				await get_tree().process_frame
 		if is_instance_valid(unit) and unit.planned_action != null:
 			_advance_planning()
-			return
+		return
 	if not is_instance_valid(unit):
 		return
-	var entry = PlanningAI.pick_action(unit, groups, _get_units_at_cell_for_planning)
-	if entry.is_empty():
-		# No valid action (shouldn't happen) - pick Rest if available
-		var options: Array = []
-		for key in unit.def.get_move_action_keys_resolved():
-			options = unit.abilities_db.get_options_for_action_key(key)
-			if not options.is_empty():
-				break
-		if options.is_empty():
-			for key in unit.def.get_ability_action_keys_resolved():
-				options = unit.abilities_db.get_options_for_action_key(key)
-				if not options.is_empty():
-					break
-		if not options.is_empty():
-			entry = options[0]
-	if not entry.is_empty():
-		_store_planned_action(unit, entry.ac, entry.is_move)
 	_advance_planning()
+
+
+## Drill LLM-vs-LLM: plans an entire drill-scripted group via a secondary LLM call.
+func _run_drill_llm_planning_for(unit: Unit, group_name: String) -> void:
+	var gen_at_start: int = _llm_batch_generation
+	if not _drill_llm_group_planned.get(group_name, false):
+		if _drill_llm_running:
+			EventBus.llm_planning_status.emit("waiting", "Waiting for drill LLM…")
+			while _drill_llm_running:
+				await get_tree().process_frame
+			if gen_at_start != _llm_batch_generation:
+				return
+		if not _drill_llm_group_planned.get(group_name, false):
+			_drill_llm_running = true
+			await _drill_llm_batch_for_group(group_name)
+			if gen_at_start != _llm_batch_generation:
+				return
+			_drill_llm_running = false
+			_drill_llm_group_planned[group_name] = true
+	if gen_at_start != _llm_batch_generation:
+		return
+	if is_instance_valid(unit) and unit.planned_action != null:
+		_advance_planning()
+		return
+	# Fallback: if the LLM didn't produce an action, use the classic heuristic AI.
+	if is_instance_valid(unit):
+		var fallback: Dictionary = DrillScriptAI.pick_action(unit, groups, "advance_straight")
+		if not fallback.is_empty():
+			_store_planned_action(unit, fallback.ac, fallback.is_move)
+	_advance_planning()
+
+
+## Runs a standalone LLM batch for a drill-scripted group by temporarily swapping ai_group_names.
+func _drill_llm_batch_for_group(group_name: String) -> void:
+	EventBus.llm_planning_status.emit("requesting", "Calling model for %s…" % group_name)
+	var settings := LlmAiSettings.new()
+	settings.load_from_disk()
+	if not settings.has_configured_key():
+		EventBus.llm_planning_status.emit("idle", "")
+		return
+
+	# Temporarily treat only this group as AI so the snapshot is built from its perspective.
+	var saved_ai := ai_group_names.duplicate()
+	ai_group_names.clear()
+	ai_group_names.append(group_name)
+	var snapshot: Dictionary = LlmPlanningSnapshot.build_for_llm(self)
+	var drill_options: Dictionary = _llm_option_tables.duplicate(true)
+	ai_group_names = saved_ai
+	LlmPlanningPayloadLog.write_turn_if_enabled(turn_number, snapshot, settings)
+
+	var system_prompt: String = LlmPlanningPrompts.system_prompt_for_version(settings.planning_prompt_version)
+	EventBus.llm_planning_status.emit("waiting", "Waiting for %s API…" % group_name)
+	var http_result: Dictionary
+	var retry_system_prompt: String = ""
+	var retry_user_json: String = ""
+	var use_two_call_effective: bool = settings.use_two_call_planning and LlmPlanningPrompts.supports_two_call(settings.planning_prompt_version)
+	if use_two_call_effective:
+		var pred_payload: Dictionary = snapshot.duplicate(true)
+		LlmPlanningSnapshot.prepare_snapshot_for_prediction_api_call(pred_payload)
+		var user_json := JSON.stringify(pred_payload)
+		if user_json.is_empty():
+			EventBus.llm_planning_status.emit("failed", "Snapshot encode failed for %s." % group_name)
+			return
+		var prediction_prompt: String = LlmPlanningPrompts.prediction_only_prompt_for_version(settings.planning_prompt_version)
+		var pred_result: Dictionary = await _planning_api_call(
+			_drill_llm_openai,
+			_drill_llm_http,
+			settings,
+			prediction_prompt,
+			user_json,
+		)
+		_log_llm_usage("DrillLLM prediction %s" % group_name, pred_result)
+		var pred_raw: String = str(pred_result.get("content", ""))
+		var pred_thinking: String = str(pred_result.get("thinking", ""))
+		var pred_usage: Dictionary = pred_result.get("usage", {}) as Dictionary
+		var pred_hyp: Dictionary = {}
+		if pred_result.get("ok", false):
+			pred_hyp = _parse_prediction_hypotheses(pred_raw)
+		LlmPlanningPayloadLog.write_prediction_if_enabled(
+			turn_number, "drill_" + group_name, pred_raw, pred_hyp, pred_thinking, pred_usage, settings
+		)
+		if OS.is_debug_build():
+			if not pred_thinking.strip_edges().is_empty():
+				print("[DrillLLM %s prediction thinking] %s" % [group_name, pred_thinking])
+			if not pred_raw.strip_edges().is_empty():
+				print("[DrillLLM %s prediction content] %s" % [group_name, pred_raw])
+		var second_snapshot: Dictionary = snapshot.duplicate(true)
+		if not pred_hyp.is_empty():
+			second_snapshot["enemy_prediction_hypotheses"] = pred_hyp
+			LlmPlanningSnapshot.apply_prediction_hypotheses_to_legal_options(second_snapshot, pred_hyp)
+		var second_json: String = JSON.stringify(second_snapshot)
+		retry_system_prompt = LlmPlanningPrompts.action_only_system_prompt_for_version(settings.planning_prompt_version)
+		retry_user_json = second_json
+		http_result = await _planning_api_call(
+			_drill_llm_openai,
+			_drill_llm_http,
+			settings,
+			retry_system_prompt,
+			second_json,
+		)
+	else:
+		var user_json := JSON.stringify(snapshot)
+		if user_json.is_empty():
+			EventBus.llm_planning_status.emit("failed", "Snapshot encode failed for %s." % group_name)
+			return
+		retry_system_prompt = system_prompt
+		retry_user_json = user_json
+		http_result = await _planning_api_call(
+			_drill_llm_openai,
+			_drill_llm_http,
+			settings,
+			system_prompt,
+			user_json,
+		)
+	_log_llm_usage("DrillLLM planning %s" % group_name, http_result)
+	if not http_result.get("ok", false):
+		var err_msg := str(http_result.get("error", "?"))
+		print("[DrillLLM] %s batch failed: %s" % [group_name, err_msg])
+		EventBus.llm_planning_status.emit("failed", "Drill LLM error: %s" % err_msg)
+		return
+
+	var parse: Dictionary = {}
+	var apply: Dictionary = {}
+	var retries_used: int = 0
+	while true:
+		EventBus.llm_planning_status.emit("parsing", "Validating %s…" % group_name)
+		parse = LlmPlanningResponseParser.parse_json_actions(str(http_result.get("content", "")))
+		if parse.get("ok", false):
+			# Apply choices: swap option tables + ai_group_names so _apply_llm_choice_map targets this group.
+			var action_req_by_id: Dictionary = parse.get("action_request_by_unit_id", {}) as Dictionary
+			var legacy_by_id: Dictionary = parse.get("legacy_option_index_by_unit_id", {}) as Dictionary
+			var primary_options := _llm_option_tables.duplicate(true)
+			_llm_option_tables = drill_options
+			var saved_ai2 := ai_group_names.duplicate()
+			ai_group_names.clear()
+			ai_group_names.append(group_name)
+			if OS.is_debug_build():
+				_debug_print_llm_chosen_actions(legacy_by_id)
+			apply = _apply_llm_choice_map(action_req_by_id, legacy_by_id)
+			ai_group_names = saved_ai2
+			_llm_option_tables = primary_options
+			if not bool(apply.get("partial", false)):
+				break
+		if retries_used >= 1:
+			if not parse.get("ok", false):
+				print("[DrillLLM] %s parse failed: %s" % [group_name, str(parse)])
+				EventBus.llm_planning_status.emit("failed", "Bad JSON from drill LLM.")
+			else:
+				EventBus.llm_planning_status.emit("failed", "Drill LLM returned invalid plans for %s." % group_name)
+			return
+		retries_used += 1
+		EventBus.llm_planning_status.emit("retrying", "Retrying %s invalid actions…" % group_name)
+		http_result = await _planning_api_call(
+			_drill_llm_openai,
+			_drill_llm_http,
+			settings,
+			retry_system_prompt,
+			retry_user_json,
+		)
+		_log_llm_usage("DrillLLM planning retry %s" % group_name, http_result)
+		if not http_result.get("ok", false):
+			var retry_err := str(http_result.get("error", "?"))
+			print("[DrillLLM] %s retry failed: %s" % [group_name, retry_err])
+			EventBus.llm_planning_status.emit("failed", "Drill LLM error: %s" % retry_err)
+			return
+
+	var _drill_thinking: String = str(http_result.get("thinking", "")).strip_edges()
+	var _drill_op: String = str(parse.get("opponent_prediction", "")).strip_edges()
+	var _drill_rs: String = str(parse.get("reasoning_summary", "")).strip_edges()
+	if OS.is_debug_build():
+		if not _drill_thinking.is_empty():
+			print("[DrillLLM %s thinking] %s" % [group_name, _drill_thinking])
+		if not _drill_op.is_empty():
+			print("[DrillLLM %s opponent prediction] %s" % [group_name, _drill_op])
+		if not _drill_rs.is_empty():
+			print("[DrillLLM %s reasoning] %s" % [group_name, _drill_rs])
+	if not _drill_thinking.is_empty() or not _drill_op.is_empty() or not _drill_rs.is_empty():
+		EventBus.llm_thinking_updated.emit("drill:" + group_name, _drill_thinking, _drill_op, _drill_rs)
+
+	if bool(apply.get("any_llm", false)):
+		match_had_llm_validated_plan = true
+
+	if bool(apply.get("partial", false)):
+		EventBus.llm_planning_status.emit("failed", "Drill LLM returned incomplete plans for %s." % group_name)
+	else:
+		EventBus.llm_planning_status.emit("ready", "%s plan ready." % group_name.capitalize())
+
 
 func _build_combined_acs() -> void:
 	current_acs = []
@@ -1146,7 +1636,9 @@ func _store_replay_recording_for_turn(turn_played: int, recording: Dictionary) -
 	last_turn_recording = cloned_recording
 	replay_turn_history.append({
 		"turn": turn_played,
-		"recording": cloned_recording
+		"recording": cloned_recording,
+		"ai_fov": _planning_phase_ai_fov.duplicate(),
+		"ai_unit_ids": _planning_phase_ai_unit_ids.duplicate(),
 	})
 	while replay_turn_history.size() > MAX_REPLAY_TURN_HISTORY:
 		replay_turn_history.remove_at(0)
@@ -1154,6 +1646,15 @@ func _store_replay_recording_for_turn(turn_played: int, recording: Dictionary) -
 		"turn": turn_played,
 		"recording": cloned_recording.duplicate(true),
 	})
+	var recording_died: Array = cloned_recording.get("died_ids", [])
+	for raw_uid in recording_died:
+		var uid: int = int(raw_uid)
+		if uid in _planning_phase_ai_unit_ids:
+			continue
+		if _ai_killed_enemy_ids.has(uid):
+			continue
+		_ai_killed_enemy_ids[uid] = true
+		_ai_confirmed_enemy_kills += 1
 	EventBus.replay_available_changed.emit(not replay_turn_history.is_empty())
 	_emit_replay_history_changed(turn_played)
 

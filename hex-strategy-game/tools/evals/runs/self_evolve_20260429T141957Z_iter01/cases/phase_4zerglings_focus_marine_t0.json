@@ -1,0 +1,71 @@
+{
+  "case_id": "phase_4zerglings_focus_marine_t0",
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T141957Z_iter01"
+  },
+  "grading": {
+    "correctness": 0.0,
+    "final_score": 0.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 0.916911111111111
+  },
+  "intent": "All Zerglings should fast_move to [-1,2] to focus-kill the Marine before the Marine's normal-phase passive can resolve.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69726111469": 1,
+      "69860329224": 1,
+      "69994546959": 1,
+      "70128764694": 1
+    },
+    "call_timings_ms": [
+      37478
+    ],
+    "latency_grader": {
+      "average_call_score": 0.916911111111111,
+      "calls": [
+        {
+          "elapsed_ms": 37478,
+          "elapsed_seconds": 37.478,
+          "score": 0.916911111111111
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 0.916911111111111
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[] using action_key + target_cell. Use only listed unit_id values and legal action/target combinations.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn’s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy’s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then deterministically prefer the lowest legal_options[].i that matches action_key + target_cell.\n\nValidation: every chosen action_key + target_cell pair must resolve to a legal option for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.\n"
+    },
+    "raw": "{\"opponent_prediction\":\"Marine likely holds [-1,2].\",\"reasoning_summary\":\"All four zerglings fast-move to [-1,2] for same-tile pressure.\",\"actions\":[{\"unit_id\":69726111469,\"action_key\":\"fast_move\",\"target_cell\":[-1,2]},{\"unit_id\":69860329224,\"action_key\":\"fast_move\",\"target_cell\":[-1,2]},{\"unit_id\":69994546959,\"action_key\":\"fast_move\",\"target_cell\":[-1,2]},{\"unit_id\":70128764694,\"action_key\":\"fast_move\",\"target_cell\":[-1,2]}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Analyzing tactical movement**\n\nI’m considering the implications of moving onto an enemy tile. While direct attack actions aren’t an option, such movement might trigger passive damage. The fast move to [-1, 2] gives a visible hit estimate of one. I wonder if I need to use rule one exactly. But rule two favors legal attacks covering the predicted landing cell, which I don't have. So, I should only move there if there are no legal attacks available. I might consider the marine’s reach too.\n**Evaluating attack conditions**\n\nI’m trying to understand the conditions for a Marine's attack_short. It seems the target hex must meet specific min and max range requirements, possibly between 1 and a certain maximum. The candidate mentions staying on from the cell and using attack_short. I’m a bit confused because it looks like the attack_short might only hit adjacent cells. I’ll need to clarify if the target hex needs to fulfill both range and pattern criteria in the action definitions.\n**Evaluating legal options in gameplay**\n\nI’m thinking about how legal options don’t include passive actions. It seems they might only apply during the attack phase? The rules digest indicates that passive action keys could still resolve based on the rules. A zergling's passive attack likely activates in the fast ability phase. It seems like passive actions might still resolve at specific phases, but that doesn't give me enough information to be completely sure. I need to evaluate this further.\n**Analyzing attack range**\n\nI'm considering whether the unit can hit neighboring tiles. If it ends its turn on tile [-1,2], it probably can't target that same tile with its short-range attack, since the range is likely 1. So if it stays and attacks, it looks like our current tile is occupied by an enemy, but I think we might not suffer passive damage after all. I need to double-check that!\n**Analyzing zergling strategy**\n\nI’m considering how to manage the zerglings, especially in relation to the marine. The plan is to move all four zerglings to the same tile, which could potentially deal enough damage to take out the marine. Since there are four zerglings, their passive damage might total up to 4, enough to eliminate the 4 HP marine. I need to confirm if the marine counts as a visible enemy and if moving could expose them to an attack. This seems like the most effective approach.\n**Considering zergling tactics**\n\nI'm analyzing whether the passive attack resolves after movement or before the enemy action. If it activates after, I could potentially take out the marine. I wonder if I should spread some zerglings to intercept the marine’s movement, but having them all stacked already allows for maximum damage. The marine can only affect one unit with its attack. Given that the marine might want to move away if I fill its tile, stacking on that tile seems like the best strategy!\n**Examining unit stacking and movement**\n\nI'm considering whether enemy and friendly units can stack, and it seems likely they can. I also wonder if moving into an occupied cell would create any pathing issues. The legal options don’t indicate restrictions on occupancy, which is good. I need to make sure that my chosen action key matches the target cell exactly. For the fast move, the end cell is [-1, 2], so I'll need to ensure I select that action for all four units.\n**Analyzing AI unit actions**\n\nI'm considering how to manage the actions for my AI units effectively. I’ll keep the strings that mention the coordinates [-1,2], perhaps saying \"Marine likely holds [-1,2].\" All four zerglings are fast-moving to the same tile for pressure, and that’s acceptable. I want to make sure there's one action per unit. So, I’ll set all four to fast_move to [-1,2]. However, there's this concern about enemy movements and attack resolutions—I’ll need to craft a single JSON object with the actions array in unit_id order.",
+    "usage": {
+      "input_tokens": 11236,
+      "output_tokens": 3077,
+      "reasoning_tokens": 2938,
+      "total_tokens": 14313
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false
+  },
+  "mode": "live_llm",
+  "pass": false,
+  "perspective_group": "zerg",
+  "reason": "chosen option index 1 not found in legal_options for unit id=69726111469",
+  "scenario_id": "eval_phase_4zerglings_focus_marine"
+}

@@ -1,0 +1,9 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.target_predicted_landing_cells_for_fast_movers": true,
+    "planner_context.final_tiebreaker": "lowest_option_index",
+    "planner_context.attack_timing_priority": "predicted_landing_cell_over_current_cell_when_enemy_moves_before_resolution"
+  },
+  "copy_paths": []
+}

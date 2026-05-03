@@ -1,0 +1,47 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "predicted_end_cells",
+      "where": "snapshot.enemies[]",
+      "why": "Engine-computed likely move/fast_move landing cells reduce guesswork and improve anti-fast-mover targeting.",
+      "example_value": [
+        [
+          -1,
+          1
+        ],
+        [
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "field_name": "actual_end_cell",
+      "where": "snapshot.ai_units[].legal_options[]",
+      "why": "Explicit landing hex for move/fast_move removes ambiguity between path cells, pressure cells, and the true legal endpoint.",
+      "example_value": [
+        2,
+        0
+      ]
+    },
+    {
+      "field_name": "coverage_cells_union",
+      "where": "snapshot.ai_units[].legal_options[]",
+      "why": "A normalized union of all truly hit/covered cells simplifies exact matching to intent cells and predicted landing cells.",
+      "example_value": [
+        [
+          3,
+          -3
+        ],
+        [
+          2,
+          -2
+        ],
+        [
+          1,
+          -1
+        ]
+      ]
+    }
+  ]
+}

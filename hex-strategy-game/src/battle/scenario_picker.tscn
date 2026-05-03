@@ -1,4 +1,4 @@
-[gd_scene format=3 uid="uid://b3m8k2n5qx1wr"]
+[gd_scene load_steps=2 format=3 uid="uid://b3m8k2n5qx1wr"]
 
 [ext_resource type="Script" path="res://src/battle/scenario_picker.gd" id="1_script"]
 
@@ -11,7 +11,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.1, 0.1, 0.15, 0.9)
+color = Color(0.04, 0.045, 0.065, 1)
 
 [node name="center" type="CenterContainer" parent="."]
 anchors_preset = 15
@@ -22,226 +22,257 @@ grow_vertical = 2
 
 [node name="panel" type="PanelContainer" parent="center"]
 layout_mode = 2
-custom_minimum_size = Vector2(840, 640)
+theme_type_variation = &"UiMainCard"
+custom_minimum_size = Vector2(1060, 540)
 
 [node name="margin" type="MarginContainer" parent="center/panel"]
 layout_mode = 2
-theme_override_constants/margin_left = 20
-theme_override_constants/margin_top = 20
-theme_override_constants/margin_right = 20
-theme_override_constants/margin_bottom = 20
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 26
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 26
 
 [node name="vbox" type="VBoxContainer" parent="center/panel/margin"]
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/separation = 20
 
-[node name="title" type="Label" parent="center/panel/margin/vbox"]
+[node name="header_block" type="VBoxContainer" parent="center/panel/margin/vbox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 20
-text = "Select Scenario"
+theme_override_constants/separation = 6
+
+[node name="header_title" type="Label" parent="center/panel/margin/vbox/header_block"]
+layout_mode = 2
+theme_type_variation = &"UiTitle"
+text = "Scenarios"
+horizontal_alignment = 1
+
+[node name="header_subtitle" type="Label" parent="center/panel/margin/vbox/header_block"]
+layout_mode = 2
+theme_type_variation = &"UiSubtitle"
+text = "Choose a mission, then start the battle."
 horizontal_alignment = 1
 
 [node name="columns" type="HBoxContainer" parent="center/panel/margin/vbox"]
 layout_mode = 2
-theme_override_constants/separation = 24
+size_flags_vertical = 3
+theme_override_constants/separation = 16
 
 [node name="campaign_column" type="VBoxContainer" parent="center/panel/margin/vbox/columns"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 8
+size_flags_vertical = 3
+theme_override_constants/separation = 12
 
-[node name="campaign_label" type="Label" parent="center/panel/margin/vbox/columns/campaign_column"]
+[node name="campaign_card" type="PanelContainer" parent="center/panel/margin/vbox/columns/campaign_column"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
-theme_override_font_sizes/font_size = 14
+size_flags_vertical = 3
+
+[node name="campaign_card_margin" type="MarginContainer" parent="center/panel/margin/vbox/columns/campaign_column/campaign_card"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="campaign_card_inner" type="VBoxContainer" parent="center/panel/margin/vbox/columns/campaign_column/campaign_card/campaign_card_margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="campaign_label" type="Label" parent="center/panel/margin/vbox/columns/campaign_column/campaign_card/campaign_card_margin/campaign_card_inner"]
+layout_mode = 2
+theme_type_variation = &"UiFormLabel"
 text = "Campaign"
 horizontal_alignment = 1
 
-[node name="campaign_list" type="VBoxContainer" parent="center/panel/margin/vbox/columns/campaign_column"]
+[node name="campaign_list" type="VBoxContainer" parent="center/panel/margin/vbox/columns/campaign_column/campaign_card/campaign_card_margin/campaign_card_inner"]
 layout_mode = 2
+size_flags_vertical = 3
 theme_override_constants/separation = 8
+
+[node name="campaign_difficulty_row" type="HBoxContainer" parent="center/panel/margin/vbox/columns/campaign_column"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="campaign_difficulty_label" type="Label" parent="center/panel/margin/vbox/columns/campaign_column/campaign_difficulty_row"]
+layout_mode = 2
+theme_type_variation = &"UiFormLabel"
+text = "Difficulty"
+
+[node name="campaign_difficulty_option" type="OptionButton" parent="center/panel/margin/vbox/columns/campaign_column/campaign_difficulty_row"]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Enemy zergling count for campaign missions that support difficulty."
+
+[node name="team_selection_row" type="HBoxContainer" parent="center/panel/margin/vbox/columns/campaign_column"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="team_selection_label" type="Label" parent="center/panel/margin/vbox/columns/campaign_column/team_selection_row"]
+layout_mode = 2
+theme_type_variation = &"UiFormLabel"
+text = "Play as"
+
+[node name="team_selection_option" type="OptionButton" parent="center/panel/margin/vbox/columns/campaign_column/team_selection_row"]
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Choose which team to control."
 
 [node name="main_column" type="VBoxContainer" parent="center/panel/margin/vbox/columns"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 8
+size_flags_vertical = 3
+theme_override_constants/separation = 0
 
-[node name="main_label" type="Label" parent="center/panel/margin/vbox/columns/main_column"]
+[node name="main_card" type="PanelContainer" parent="center/panel/margin/vbox/columns/main_column"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
-theme_override_font_sizes/font_size = 14
+size_flags_vertical = 3
+
+[node name="main_card_margin" type="MarginContainer" parent="center/panel/margin/vbox/columns/main_column/main_card"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="main_card_inner" type="VBoxContainer" parent="center/panel/margin/vbox/columns/main_column/main_card/main_card_margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="main_label" type="Label" parent="center/panel/margin/vbox/columns/main_column/main_card/main_card_margin/main_card_inner"]
+layout_mode = 2
+theme_type_variation = &"UiFormLabel"
 text = "Main"
 horizontal_alignment = 1
 
-[node name="main_list" type="VBoxContainer" parent="center/panel/margin/vbox/columns/main_column"]
+[node name="main_list" type="VBoxContainer" parent="center/panel/margin/vbox/columns/main_column/main_card/main_card_margin/main_card_inner"]
 layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="drill_column" type="VBoxContainer" parent="center/panel/margin/vbox/columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 0
+
+[node name="drill_card" type="PanelContainer" parent="center/panel/margin/vbox/columns/drill_column"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="drill_card_margin" type="MarginContainer" parent="center/panel/margin/vbox/columns/drill_column/drill_card"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="drill_card_inner" type="VBoxContainer" parent="center/panel/margin/vbox/columns/drill_column/drill_card/drill_card_margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="drill_label" type="Label" parent="center/panel/margin/vbox/columns/drill_column/drill_card/drill_card_margin/drill_card_inner"]
+layout_mode = 2
+theme_type_variation = &"UiFormLabel"
+text = "AI Drills"
+horizontal_alignment = 1
+
+[node name="drill_list" type="VBoxContainer" parent="center/panel/margin/vbox/columns/drill_column/drill_card/drill_card_margin/drill_card_inner"]
+layout_mode = 2
+size_flags_vertical = 3
 theme_override_constants/separation = 8
 
 [node name="debug_column" type="VBoxContainer" parent="center/panel/margin/vbox/columns"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 8
+size_flags_vertical = 3
+theme_override_constants/separation = 0
 
-[node name="debug_label" type="Label" parent="center/panel/margin/vbox/columns/debug_column"]
+[node name="debug_card" type="PanelContainer" parent="center/panel/margin/vbox/columns/debug_column"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
-theme_override_font_sizes/font_size = 14
+size_flags_vertical = 3
+
+[node name="debug_card_margin" type="MarginContainer" parent="center/panel/margin/vbox/columns/debug_column/debug_card"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 14
+
+[node name="debug_card_inner" type="VBoxContainer" parent="center/panel/margin/vbox/columns/debug_column/debug_card/debug_card_margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="debug_label" type="Label" parent="center/panel/margin/vbox/columns/debug_column/debug_card/debug_card_margin/debug_card_inner"]
+layout_mode = 2
+theme_type_variation = &"UiFormLabel"
 text = "Debug"
 horizontal_alignment = 1
 
-[node name="debug_list" type="VBoxContainer" parent="center/panel/margin/vbox/columns/debug_column"]
+[node name="debug_list" type="VBoxContainer" parent="center/panel/margin/vbox/columns/debug_column/debug_card/debug_card_margin/debug_card_inner"]
 layout_mode = 2
+size_flags_vertical = 3
 theme_override_constants/separation = 8
 
-[node name="scenario_objective_label" type="Label" parent="center/panel/margin/vbox"]
+[node name="objective_strip" type="PanelContainer" parent="center/panel/margin/vbox"]
+visible = false
 layout_mode = 2
-theme_override_colors/font_color = Color(0.8, 0.85, 0.95, 1)
-theme_override_font_sizes/font_size = 12
+theme_type_variation = &"UiInsetStrip"
+
+[node name="objective_margin" type="MarginContainer" parent="center/panel/margin/vbox/objective_strip"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="scenario_objective_label" type="Label" parent="center/panel/margin/vbox/objective_strip/objective_margin"]
+layout_mode = 2
+theme_type_variation = &"UiBanner"
 text = ""
 autowrap_mode = 3
 horizontal_alignment = 1
 
-[node name="start_btn" type="Button" parent="center/panel/margin/vbox"]
+[node name="post_game_status" type="Label" parent="center/panel/margin/vbox"]
 layout_mode = 2
-text = "Start Battle"
-
-[node name="llm_separator" type="HSeparator" parent="center/panel/margin/vbox"]
-layout_mode = 2
-
-[node name="llm_title" type="Label" parent="center/panel/margin/vbox"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
-theme_override_font_sizes/font_size = 14
-text = "LLM API (experimentation)"
+theme_type_variation = &"UiStatusOk"
+text = ""
+autowrap_mode = 3
 horizontal_alignment = 1
 
-[node name="llm_hint" type="Label" parent="center/panel/margin/vbox"]
+[node name="footer_separator" type="HSeparator" parent="center/panel/margin/vbox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.65, 0.65, 0.75, 1)
-theme_override_font_sizes/font_size = 11
-text = "Keys stay in user:// on this device only (not synced). OpenAI chat/completions only."
-autowrap_mode = 3
 
-[node name="llm_base_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
+[node name="actions_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
 layout_mode = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 14
 
-[node name="lbl_base" type="Label" parent="center/panel/margin/vbox/llm_base_row"]
-custom_minimum_size = Vector2(90, 0)
+[node name="llm_settings_btn" type="Button" parent="center/panel/margin/vbox/actions_row"]
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
-text = "Base URL"
+text = "LLM API settings…"
+tooltip_text = "Configure API key, model, and planning options (saved under user://)."
 
-[node name="llm_base_url" type="LineEdit" parent="center/panel/margin/vbox/llm_base_row"]
+[node name="ai_learnings_btn" type="Button" parent="center/panel/margin/vbox/actions_row"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "AI Learnings…"
+tooltip_text = "View the AI's accumulated learnings from past matches."
+
+[node name="eval_leaderboard_btn" type="Button" parent="center/panel/margin/vbox/actions_row"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "Eval Leaderboard…"
+tooltip_text = "Browse eval leaderboard rows and open run summaries."
+
+[node name="actions_spacer" type="Control" parent="center/panel/margin/vbox/actions_row"]
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "https://api.openai.com/v1"
 
-[node name="llm_model_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
+[node name="start_btn" type="Button" parent="center/panel/margin/vbox/actions_row"]
+custom_minimum_size = Vector2(168, 44)
 layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="lbl_model" type="Label" parent="center/panel/margin/vbox/llm_model_row"]
-custom_minimum_size = Vector2(90, 0)
-layout_mode = 2
-theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
-text = "Model"
-
-[node name="llm_model" type="LineEdit" parent="center/panel/margin/vbox/llm_model_row"]
-layout_mode = 2
-size_flags_horizontal = 3
-placeholder_text = "gpt-4o-mini"
-
-[node name="llm_key_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="lbl_key" type="Label" parent="center/panel/margin/vbox/llm_key_row"]
-custom_minimum_size = Vector2(90, 0)
-layout_mode = 2
-theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
-text = "API key"
-
-[node name="llm_api_key" type="LineEdit" parent="center/panel/margin/vbox/llm_key_row"]
-layout_mode = 2
-size_flags_horizontal = 3
-secret = true
-placeholder_text = "sk-..."
-
-[node name="llm_api_mode_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="lbl_api_mode" type="Label" parent="center/panel/margin/vbox/llm_api_mode_row"]
-custom_minimum_size = Vector2(90, 0)
-layout_mode = 2
-theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
-text = "Planning API"
-
-[node name="llm_mode" type="OptionButton" parent="center/panel/margin/vbox/llm_api_mode_row"]
-layout_mode = 2
-size_flags_horizontal = 3
-tooltip_text = "responses: OpenAI /v1/responses with reasoning.effort (thinking / GPT-5). chat: /v1/chat/completions."
-
-[node name="llm_reasoning_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="lbl_reason" type="Label" parent="center/panel/margin/vbox/llm_reasoning_row"]
-custom_minimum_size = Vector2(90, 0)
-layout_mode = 2
-theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
-text = "Reasoning"
-
-[node name="llm_reasoning_effort" type="OptionButton" parent="center/panel/margin/vbox/llm_reasoning_row"]
-layout_mode = 2
-size_flags_horizontal = 3
-tooltip_text = "Only used with Planning API = responses. Model-dependent values (see OpenAI reasoning docs)."
-
-[node name="llm_max_tokens_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="lbl_max_tok" type="Label" parent="center/panel/margin/vbox/llm_max_tokens_row"]
-custom_minimum_size = Vector2(90, 0)
-layout_mode = 2
-theme_override_colors/font_color = Color(0.85, 0.85, 0.9, 1)
-text = "Max tokens"
-
-[node name="llm_planning_max_tokens" type="SpinBox" parent="center/panel/margin/vbox/llm_max_tokens_row"]
-layout_mode = 2
-size_flags_horizontal = 3
-min_value = 256.0
-max_value = 65536.0
-step = 256.0
-value = 2048.0
-tooltip_text = "Chat: max_completion_tokens. Responses API: max_output_tokens (includes hidden reasoning tokens—increase if replies are empty or incomplete)."
-
-[node name="llm_btn_row" type="HBoxContainer" parent="center/panel/margin/vbox"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="llm_save_btn" type="Button" parent="center/panel/margin/vbox/llm_btn_row"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Save LLM settings"
-
-[node name="llm_test_btn" type="Button" parent="center/panel/margin/vbox/llm_btn_row"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Test API"
-
-[node name="llm_cancel_btn" type="Button" parent="center/panel/margin/vbox/llm_btn_row"]
-layout_mode = 2
-text = "Cancel request"
-
-[node name="llm_status" type="Label" parent="center/panel/margin/vbox"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.75, 0.78, 0.85, 1)
-theme_override_font_sizes/font_size = 11
-text = " "
-autowrap_mode = 3
+theme_type_variation = &"PrimaryButton"
+text = "Start Battle"
 
 [node name="LlmHttpRequest" type="HTTPRequest" parent="."]
 timeout = 60.0

@@ -1,0 +1,8 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.intercept_rule": "If a legal attack covers a required or predicted enemy landing cell, that attack outranks any move/fast_move for that same unit.",
+    "planner_context.friendly_on_landing_cell_does_not_block_attack": true
+  },
+  "copy_paths": []
+}

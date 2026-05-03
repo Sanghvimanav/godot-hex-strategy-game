@@ -1,0 +1,41 @@
+{
+  "run_meta": {
+    "run_id": "self_evolve_20260428T173204Z_iter02",
+    "created_at": "2026-04-28T17:33:23.999382Z",
+    "mode": "live_llm",
+    "prompt_version": "p_current_settings",
+    "eval_set_version": "eval_v001",
+    "thinking_level": "low",
+    "model_override": "gpt-5.4-mini",
+    "notes": "",
+    "planning_prompt_version": "minimal",
+    "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T173204Z/prompts/iter01_prompt.txt",
+    "payload_profile": "baseline",
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T173204Z/prompts/iter01_payload_mutation.json",
+    "git_sha": "5632b9b590908f340a90cb1abcc268a83285afe4",
+    "manifest": "",
+    "model_version": "gpt-5.4-mini",
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "planning_max_tokens": 16128,
+    "base_url": "https://api.openai.com/v1"
+  },
+  "total_cases": 17,
+  "pass_cases": 15,
+  "fail_cases": 2,
+  "failed_case_ids": [
+    "scout_no_ff_stepin_to_friendly_tile_t0",
+    "scout_no_ff_crossfire_other_scout_tile_t0"
+  ],
+  "failed_case_reasons": {
+    "scout_no_ff_stepin_to_friendly_tile_t0": "required unit id=67947726541 chose move_short, expected attack_ray",
+    "scout_no_ff_crossfire_other_scout_tile_t0": "required unit id=68132275944 chose move_short, expected attack_ray"
+  },
+  "pass_rate": 0.8823529411764706,
+  "avg_final_score": 0.8823529411764706,
+  "avg_speed_on_pass": 1.0,
+  "total_tokens": 185352,
+  "total_eval_turns": 17,
+  "estimated_cost_usd": 0.05639175,
+  "estimated_cost_usd_per_eval_turn": 0.00331716
+}

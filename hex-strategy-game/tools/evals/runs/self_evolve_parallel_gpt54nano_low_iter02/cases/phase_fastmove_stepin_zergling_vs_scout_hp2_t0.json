@@ -1,0 +1,72 @@
+{
+  "case_id": "phase_fastmove_stepin_zergling_vs_scout_hp2_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_parallel_gpt54nano_low_iter02"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "At 2 HP from [2,0], Zergling should fast_move to [1,0] to keep pressure and reach contact next.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68870473449": 0
+    },
+    "call_timings_ms": [
+      3295
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 3295,
+          "elapsed_seconds": 3.295,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-nano",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_parallel_gpt54nano_low/prompts/iter01_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_parallel_gpt54nano_low/prompts/iter01_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_parallel_gpt54nano_low/prompts/iter01_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nPer unit, apply the first matching rule:\n1) Required cell/effect override. If scenario intent or turn goal names a specific cell to finish on, hit, cover, intercept, block, or target, choose the lowest-index legal option that satisfies it. For move/fast_move, only actual end_cell counts. For attacks, the cell is satisfied if it appears in any real coverage field: target_cell, affected_cells, ray_cells, line_cells, or intercept_cells. Do not require an attack's target_cell or end_cell to equal the named cell. If any legal attack covers the required cell, prefer that attack over any move.\n2) Predicted landing vs fast movers. If a dangerous enemy can move before your hit resolves, predict 1-2 likely landing cells. If any legal attack covers any predicted landing cell via target_cell, affected_cells, ray_cells, line_cells, or intercept_cells, choose such an attack. For ray/line/AOE, target the option whose actual coverage includes the predicted landing cell even if the aimed cell and the enemy's current cell differ. Never reject an attack just because target_cell/end_cell differs when coverage includes the landing cell. Only choose move/fast_move onto a predicted landing cell if no legal attack covers any predicted landing cell.\n3) Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Otherwise choose the most aggressive legal move/fast_move that reduces distance to key enemies/objectives and improves next-turn contact. Do not retreat unless every forward legal option is strictly worse.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation:\n- Every chosen option_index must exist for that unit.\n- If reasoning_summary mentions a required or predicted cell, that cell must be present in the chosen option metadata as end_cell or attack coverage, or explicitly stated as an enemy predicted landing cell.\n- Keep both strings brief and concrete."
+    },
+    "raw": "{\n  \"opponent_prediction\": \"Scout at [0,0] likely either holds firing lane with attack_ray or retreats to a neighboring hex with move_short; the closest pressure from the Zergling is the contested contact route toward [1,0].\",\n  \"reasoning_summary\": \"Scenario goal is to fast-move to [1,0] for contact tempo. Zergling legal option i=0 ends on [1,0], so select it. No damaging legal attack options are available for this Zergling this turn.\",\n  \"actions\": [\n    {\n      \"unit_id\": 68870473449,\n      \"option_index\": 0\n    }\n  ]\n}",
+    "reasoning_effort": "low",
+    "thinking": "",
+    "usage": {
+      "input_tokens": 8926,
+      "output_tokens": 326,
+      "reasoning_tokens": 178,
+      "total_tokens": 9252
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.0028835
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_stepin_zergling_vs_scout_hp2",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.0028835
+}

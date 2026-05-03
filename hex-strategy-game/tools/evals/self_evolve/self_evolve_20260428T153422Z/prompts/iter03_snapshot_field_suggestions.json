@@ -1,0 +1,31 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "resolution_timing",
+      "where": "units[].legal_options[].resolution_timing",
+      "why": "Lets the planner deterministically separate attacks that resolve before enemy movement from those that must target predicted end cells.",
+      "example_value": "after_enemy_move"
+    },
+    {
+      "field_name": "affected_cells_after_resolution",
+      "where": "units[].legal_options[].affected_cells_after_resolution",
+      "why": "Gives the exact cells hit by the option at resolve time, preventing AoE/ray mistakes where target_cell differs from the cell that must be covered.",
+      "example_value": [
+        [
+          -1,
+          -2
+        ],
+        [
+          -1,
+          -1
+        ]
+      ]
+    },
+    {
+      "field_name": "reaches_primary_objective",
+      "where": "units[].legal_options[].reaches_primary_objective",
+      "why": "Makes exact goal-hex completion easy to recognize and rank above generic pressure or distance heuristics.",
+      "example_value": true
+    }
+  ]
+}

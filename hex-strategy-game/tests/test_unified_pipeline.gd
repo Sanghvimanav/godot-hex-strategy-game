@@ -73,19 +73,19 @@ static func _test_execute_turn_recording_structure(tests: Node) -> bool:
 	tests._log("test_unified_pipeline: execute_turn produces valid recording structure")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [0, 0], "health": 1, "max_health": 1, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
+			{ "name": "zerg", "ai": false, "units": [
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 2, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]}
 		]
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "fast_move", "path": [[1, 0]], "end_point": [1, 0] }
 		],
-		"opponent": []
+		"zerg": []
 	}
 	var recording := TurnExecutionCore.execute_turn(game_state, player_actions)
 	if not recording.has("actions"):

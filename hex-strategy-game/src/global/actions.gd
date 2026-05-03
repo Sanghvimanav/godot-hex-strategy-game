@@ -59,6 +59,7 @@ const ACTION_CONFIGS: Dictionary = {
 		max_range = 1,
 		color = "#FF0000",
 		energy_consumption = 0,
+		damage = 1,
 		area_of_effect = {
 			directions = [2],  # Relative direction from attack direction (server3: directions: [2])
 			distance = 1,
@@ -72,6 +73,7 @@ const ACTION_CONFIGS: Dictionary = {
 		max_range = 2,
 		color = "#FF0000",
 		energy_consumption = 2,
+		damage = 1,
 	},
 	"attack_hydralisk": {
 		key = "attack_hydralisk",
@@ -101,10 +103,11 @@ const ACTION_CONFIGS: Dictionary = {
 		type = "ability",
 		name = "Shoot",
 		pattern = "target",
-		min_range = 2,
-		max_range = 3,
+		min_range = 1,
+		max_range = 2,
 		color = "#FF0000",
 		energy_consumption = 0,
+		damage = 1,
 	},
 	"attack_area_adjacent": {
 		key = "attack_area_adjacent",
@@ -113,6 +116,7 @@ const ACTION_CONFIGS: Dictionary = {
 		pattern = "area_adjacent",
 		color = "#FF6600",
 		energy_consumption = 2,
+		damage = 1,
 	},
 	"attack_passive": {
 		key = "attack_passive",
@@ -121,6 +125,7 @@ const ACTION_CONFIGS: Dictionary = {
 		pattern = "self",
 		color = "#FF4444",
 		energy_consumption = 0,
+		damage = 1,
 	},
 	"attack_passive_normal": {
 		key = "attack_passive_normal",
@@ -129,6 +134,7 @@ const ACTION_CONFIGS: Dictionary = {
 		pattern = "self",
 		color = "#FF4444",
 		energy_consumption = 0,
+		damage = 1,
 	},
 	"explode": {
 		key = "explode",
@@ -386,6 +392,28 @@ static func get_all_action_keys() -> Array[String]:
 ## Returns phase name for pipeline ordering (fast ability, ability, slow ability, move, etc.).
 static func get_action_type(action_key: String) -> String:
 	return get_action_config(action_key).get("type", "")
+
+
+## Index into ACTION_ORDER for this action key's resolution phase (0 = first global phase).
+static func resolution_phase_index_for_action_key(action_key: String) -> int:
+	return resolution_phase_index_for_type(str(get_action_config(action_key).get("type", "")))
+
+
+static func resolution_phase_index_for_type(atype: String) -> int:
+	if atype.is_empty():
+		return -1
+	for i in range(ACTION_ORDER.size()):
+		if str(ACTION_ORDER[i]) == atype:
+			return i
+	return -1
+
+
+static func resolution_phase_name_for_action_key(action_key: String) -> String:
+	var idx: int = resolution_phase_index_for_action_key(action_key)
+	if idx < 0 or idx >= ACTION_ORDER.size():
+		return ""
+	return str(ACTION_ORDER[idx])
+
 
 ## Returns definitions for passive actions (attack types only).
 func get_passive_definitions_for_action(action_key: String) -> Array[ActionDefinition]:

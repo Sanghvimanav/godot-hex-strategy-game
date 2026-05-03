@@ -1,0 +1,76 @@
+{
+  "case_id": "scout_no_ff_stepin_to_friendly_tile_t0",
+  "chosen_option_indices": [
+    9
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T145529Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 0.953933333333333,
+    "formula": "correctness * speed_score",
+    "speed_score": 0.953933333333333
+  },
+  "intent": "With 1-HP Zergling moving from [-1,2] to [-1,3], scout should target [-1,3] even though a friendly scout occupies that tile.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68551706317": 9,
+      "68736255720": 11
+    },
+    "call_timings_ms": [
+      34146
+    ],
+    "latency_grader": {
+      "average_call_score": 0.953933333333333,
+      "calls": [
+        {
+          "elapsed_ms": 34146,
+          "elapsed_seconds": 34.146,
+          "score": 0.953933333333333
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 0.953933333333333
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[] using action_key + target_cell. Use only listed unit_id values and legal action/target combinations.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then deterministically prefer the lowest legal_options[].i that matches action_key + target_cell.\n\nValidation: every chosen action_key + target_cell pair must resolve to a legal option for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.\n"
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling fast_moves to [-1,3] or [0,2].\",\"reasoning_summary\":\"Cover the two most likely landing cells; one scout shoots [-1,3], the other hedges [0,2].\",\"actions\":[{\"unit_id\":68551706317,\"action_key\":\"attack_ray\",\"target_cell\":[-1,3]},{\"unit_id\":68736255720,\"action_key\":\"attack_ray\",\"target_cell\":[0,2]}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Considering attack strategies**\n\nI need to figure out my legal options for attacking. Since the enemy's health is at 1, any hit will finish them off, but if they move quickly, I might miss unless I guess their landing cell correctly. There are six potential landing cells nearby to consider. I have two scouts to predict their movement. It's essential to aim my attack at the target cell they are likely to land on, rather than where they are currently.\n**Deciding on enemy landing cells**\n\nI need to figure out where the enemy zergling is likely to land. It's currently at [-1,2], and my scouts are positioned at [-1,4] and [-1,3]. The zergling could fast move to either of my scouts' cells or maybe even to [-1,1]. Since it can make one move before my attacks, it\u2019s likely aiming to get close to one of my scouts or prepare for a passive attack. It craves contact!\n**Inspecting attack options**\n\nI'm checking the attack_ray options from the range of [-1, 3] to see if the target [-2, 2] is included. It seems it's not, but other options like [-1, 2], [-2, 3], and several others are possible. I want to make sure the target cells are covered accurately. For the attack_ray with the target cell [0, 2], the covered cells are just [0, 2], and right now there isn't any enemy there.\n**Analyzing attack strategy**\n\nI\u2019m considering whether to have unit 685 attack at [-1,3] or unit 687 at [0,2]. If the enemy lands on [-1,3], 685 could take it out, but if they land on [0,2], then 687 has a chance. I need to ensure all actions are legal and select different options to maximize coverage. For unit 685, an attack on [-1,3] is lawful, same for 687 on [0,2]. I want to anticipate enemy movements based on geometry.\n**Evaluating enemy movement**\n\nThe enemy is currently at [-1,2], and I\u2019m thinking they might move to [0,2]. This would involve moving east and away from both scouts, all while maintaining a distance of 2 from the unit at [-1,3]. I need to calculate the hex distance from [0,2] to [-1,3] and check if it indeed equals 2. This analysis is important to anticipate their next move effectively.\n**Evaluating unit attack options**\n\nUnit 687 at position [-1,3] doesn\u2019t have an attack option there, so that's a no-go. I'm considering whether unit 687 should use attack_ray [0,2] instead, as it could cover another potential landing cell and eliminate an enemy if they choose that spot. Maybe attack_ray [-1,1] could work too since the enemy might retreat there to maintain distance from my scouts. The enemy is currently at [-1,2], while my scout is at [-1,3], so the distances are close.\n**Evaluating attack options**\n\nThe unit at [-1,3] targeting [0,2] won't result in a kill, but the second unit could be decisive since the enemy has only 1 health. If the first unit misses, the second unit's targeting of likely landings still plays a crucial role. I wonder about a legal attack option from [-1,3] to [-1,2], but it looks like that won't work either. I'll need to consider which unit has the best chance to hit based on the enemy's movements.\n**Analyzing potential scout movements**\n\nI'm considering the scouts at [-1,4] and [-1,3]. The most likely next move appears to be [-1,3]. The second likely option might be [0,2], since it keeps the enemy nearby our line. It seems that this positioning could factor into our strategy. I really want to ensure that I'm thinking through all possible movements to anticipate the enemy's actions effectively. Let's keep exploring these options!\n**Verifying attack options**\n\nI'm listing actions for two units. First unit 685 has a target at [-1,3] for the attack_ray action. The second unit 687 targets [0,2] with the same action. I need to confirm that these target cells are valid integers, and it looks like they are. Both units have legitimate attack options, so I'll select the attack_ray for each. I'll prepare a summary mentioning the enemy's potential movements and then focus on generating a valid JSON format.",
+    "usage": {
+      "input_tokens": 14325,
+      "output_tokens": 3616,
+      "reasoning_tokens": 3509,
+      "total_tokens": 17941
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.01081325
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "per-unit requirements satisfied (1 units)",
+  "scenario_id": "eval_scout_no_ff_stepin_to_friendly_tile",
+  "runner_exit_code": 0,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n[planning-eval] wrote /Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/runs/self_evolve_20260429T145529Z_iter01/cases/scout_no_ff_stepin_to_friendly_tile_t0.json\n[planning-eval] pass=true reason=per-unit requirements satisfied (1 units) chosen_option_index=-1 chosen_option_indices=[9]\n",
+  "estimated_cost_usd": 0.01081325
+}

@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://headless_planning_pipeline"]
+
+[ext_resource type="Script" path="res://tools/headless_planning_pipeline.gd" id="1"]
+
+[node name="HeadlessPlanningPipeline" type="Node"]
+script = ExtResource("1")

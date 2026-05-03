@@ -1,0 +1,44 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "hits_cells",
+      "where": "ai_units[].legal_options[]",
+      "why": "Precompute the union of all cells an option hits or covers so the planner can deterministically test required and predicted landing cells.",
+      "example_value": [
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          0
+        ]
+      ]
+    },
+    {
+      "field_name": "likely_fast_move_landing_cells",
+      "where": "enemy_units[]",
+      "why": "Expose the engine's top 1-2 predicted landing cells after movement timing so predictive shots do not depend on planner guesswork.",
+      "example_value": [
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "field_name": "resolves_after_enemy_movement",
+      "where": "ai_units[].legal_options[]",
+      "why": "Directly marks when predictive targeting should be applied for that option.",
+      "example_value": true
+    }
+  ]
+}

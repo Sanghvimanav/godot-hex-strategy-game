@@ -1,0 +1,60 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "reachable_end_cells_this_turn",
+      "where": "enemy_units[].reachable_end_cells_this_turn",
+      "why": "Makes fast-mover landing hexes explicit so the planner can target likely landing cells instead of current positions.",
+      "example_value": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          -1,
+          1
+        ]
+      ]
+    },
+    {
+      "field_name": "intercepts_enemy_reachable_cells",
+      "where": "ai_units[].legal_options[].intercepts_enemy_reachable_cells",
+      "why": "Directly marks which enemy reachable cells are hit, covered, or zoned by each legal option, enabling reliable intercept choices for rays and AoE.",
+      "example_value": {
+        "enemy_id": 123,
+        "cells": [
+          [
+            1,
+            0
+          ],
+          [
+            0,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "field_name": "post_action_pressure_cells_next_turn",
+      "where": "ai_units[].legal_options[].post_action_pressure_cells_next_turn",
+      "why": "Shows which cells the unit can threaten after taking the option, helping choose forward pressure moves over passive safety when no immediate attack exists.",
+      "example_value": [
+        [
+          -1,
+          1
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          1,
+          1
+        ]
+      ]
+    }
+  ]
+}

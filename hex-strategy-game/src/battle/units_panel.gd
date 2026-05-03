@@ -71,24 +71,24 @@ func _build_hover_content(unit: Unit) -> void:
 		hp_text += "  %d/%d E" % [unit.energy, unit.max_energy]
 	top.text = hp_text
 	top.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	top.theme_type_variation = "UiFormLabel"
 	hover_vbox.add_child(top)
 	var effects_lbl := Label.new()
 	effects_lbl.text = "Effects: %s" % unit.get_effects_display_text()
-	effects_lbl.add_theme_font_size_override("font_size", 11)
-	effects_lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
+	effects_lbl.theme_type_variation = "UiHint"
 	hover_vbox.add_child(effects_lbl)
 	var move_lbl := Label.new()
 	move_lbl.text = "Move: %s" % _format_action_keys(def.move_action_keys)
-	move_lbl.add_theme_font_size_override("font_size", 11)
+	move_lbl.theme_type_variation = "UiHint"
 	hover_vbox.add_child(move_lbl)
 	var ability_lbl := Label.new()
 	ability_lbl.text = "Abilities: %s" % _format_action_keys(def.ability_action_keys)
-	ability_lbl.add_theme_font_size_override("font_size", 11)
+	ability_lbl.theme_type_variation = "UiHint"
 	hover_vbox.add_child(ability_lbl)
 	if def.passive_action_keys.size() > 0:
 		var passive_lbl := Label.new()
 		passive_lbl.text = "Passives: %s" % _format_action_keys(def.passive_action_keys)
-		passive_lbl.add_theme_font_size_override("font_size", 11)
+		passive_lbl.theme_type_variation = "UiHint"
 		hover_vbox.add_child(passive_lbl)
 
 func _format_action_keys(keys: Array) -> String:

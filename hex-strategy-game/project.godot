@@ -29,6 +29,7 @@ Navigation="*res://src/global/navigation.gd"
 EventBus="*res://src/global/event_bus.gd"
 MultiplayerState="*res://src/global/multiplayer_state.gd"
 GameServer="*res://src/server/game_server.gd"
+HexUiTheme="*res://src/ui/hex_ui_theme.gd"
 
 [display]
 
@@ -44,5 +45,5 @@ renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
 textures/decals/filter=0
 textures/light_projectors/filter=0
-environment/defaults/default_clear_color=Color(0.0941176, 0.121569, 0.160784, 1)
+environment/defaults/default_clear_color=Color(0.04, 0.045, 0.065, 1)
 2d/snap/snap_2d_transforms_to_pixel=true

@@ -18,8 +18,14 @@ signal turn_changed(turn_number)
 signal replay_available_changed(available: bool)
 signal replay_history_changed(turn_numbers: Array, selected_turn: int)
 signal replay_finished
-## LLM opponent planning (Phase 2). `status` examples: idle, requesting, waiting, parsing, ready, classic, partial.
+## LLM opponent planning (Phase 2). `status` examples: idle, requesting, waiting, parsing, ready, failed, partial.
 signal llm_planning_status(status: String, detail: String)
+## Player requests re-running the LLM batch after a failure.
+signal llm_retry_requested
+## LLM thinking: surfaces model chain-of-thought + parsed output fields from the latest batch.
+## `source` is "ai" for the primary LLM or "drill:<group>" for a drill LLM batch.
+## `thinking` is the raw reasoning tokens (empty when the model/provider doesn't expose them).
+signal llm_thinking_updated(source: String, thinking: String, opponent_prediction: String, reasoning_summary: String)
 ## Phase 4 post-game learnings (scenario picker may show a short status line).
 signal post_game_learning_message(text: String)
 ## Resource events: supports unit-driven and scripted/environmental depletion.

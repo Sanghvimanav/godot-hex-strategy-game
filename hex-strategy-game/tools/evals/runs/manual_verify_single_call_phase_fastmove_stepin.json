@@ -1,0 +1,69 @@
+{
+  "case_id": "phase_fastmove_stepin_zergling_vs_scout_hp2_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "",
+    "notes": "",
+    "prompt_version": "",
+    "run_id": ""
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "At 2 HP from [2,0], Zergling should fast_move to [1,0] to keep pressure and reach contact next.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69474453225": 0
+    },
+    "call_timings_ms": [
+      13394
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 13394,
+          "elapsed_seconds": 13.394,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "legacy",
+    "prompt_debug": {
+      "custom_system_prompt_file": "",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for the AI side in a hex turn-based wargame. You MUST respond with a single JSON object only — no markdown fences, no other text. Shape: {\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]} opponent_prediction: 1–4 sentences predicting what EACH visible enemy unit will do THIS turn. Base predictions on recent_turns patterns: movement direction, repeated action keys, positioning, aggression level, damage taken. For enemies in fog (currently_visible < initial_count - confirmed_kills), predict the most threatening plausible position. On the first turn (no recent_turns), base opponent_prediction on scenario_description, last_known_enemy_positions, and unit_type_definitions. reasoning_summary: one short paragraph explaining how your prediction drives your action choices. actions: exactly one entry per AI unit in ai_units. Each action must use a legal_options[].action_key and a matching legal_options[].target_cell (or end_cell for movement). If unsure, pick rest/hold. CRITICAL: Resolution is simultaneous — both sides act at the same time. Phase order within a turn: fast move, fast ability, move, ability, slow move, slow ability, spawn. Each phase executes before the next. A unit with a fast move and a passive fast ability will complete before another unit can complete it's move actionDamage is applied after every ability phase. If a unit is killed, any of it's actions that have not completed during this turn will be cancelled.Because turns are simultaneous, always target where you predict enemies WILL BE after their action resolves, not where they sit now. This applies to enemy units too, if they predict your action, they can target where your units will be.rules_digest is authoritative; obey it over assumptions. scenario_description (when present) states the goal for both sides. action_definitions: full action registry (keys, ranges, energy, damage, patterns, min_range). unit_type_definitions: each unit type's description, move/ability/passive keys (*_resolved includes implicit Rest). prior_learnings: rolling distilled journal with evidence tags. Honor when consistent with rules_digest. distances_to_visible_enemies on each legal option: engine-computed hex distances — do not recompute. action_resolution_phase_index and action_resolution_phase_name on each legal option identify when that action resolves in the global phase pipeline (see rules_digest). distances_to_last_known_enemies on each legal option (when present): hex distances to enemies not currently visible but whose position was recorded (initial placement or last sighting). Use these to choose the option that CLOSES distance when advancing. last_known_enemy_positions (top-level, when present): list of out-of-sight enemies with cell, turn_last_seen, health. Positions may be stale — enemies could have moved since turn_last_seen. visible_enemy_units and last_known_enemy_positions each include ability_action_keys — the enemy's combat abilities. Cross-reference these with action_definitions to understand enemy range, damage, and min_range when predicting their behavior. A ranged enemy (min_range >= 1) will prefer to hold at range rather than advance into melee. enemy_reaction_candidates (top-level, when present): per enemy unit, plausible one-turn actions — attack_from_current_cell (hold and fire in range), move_only_no_same_turn_attack (reachable end cells; no attack same turn), non_damage_ability (recruit/rest/etc.). Use this to predict whether opponents will shoot, reposition, or use utility. Each legal option includes incoming_damage_if_enemies_hold_and_shoot_end and enemy_count_can_hit_end_if_hold: engine estimate of total damage and how many enemies can strike your option end cell if they do not move and use a damaging ability in range. is_end_cell_threatened_if_hold is true if incoming damage > 0. Use these to avoid walking into focus fire. Attack selection rule: expected_visible_hits_if_targeted is how many currently visible enemies occupy the option end cell right now. For immediate damage (especially against static targets), prefer options with expected_visible_hits_if_targeted > 0 over speculative shots at empty cells. DISTANCE RULE: When advancing safely, prefer the legal option with lowest hex_dist to the priority enemy. If incoming_damage_if_enemies_hold_and_shoot_end would kill or cripple your unit, prefer a safer option even if hex_dist is higher. Do not guess directions from coordinates — use the precomputed distances and threat fields. recent_turns: up to two completed turns (oldest-first). Each has: turn, fov_cells, died_unit_ids, damage_by_id, applied_effects, compact actions (unit_id, type, action_key, from, end). from = unit's cell at turn start; end = destination (moves) or target cell (abilities). A non-move action means the unit stayed at its from cell. Enemy intel in recent_turns is FOV-filtered: you only see enemy actions observable from your LOS. If an enemy was visible last turn but not now, your FOV likely changed — not the enemy retreating. Use from cells of recent enemy actions for last known positions. Enemies may be able to see you before you see them based on each unit's sight range.enemy_intel: initial_count, confirmed_kills (cumulative), currently_visible. Estimated remaining = initial_count - confirmed_kills. Factor unseen enemies into plans. When using OpenAI Responses API threading, prior outputs may be visible — build on continuity, but treat each new snapshot as ground truth. TACTICAL REASONING: Before choosing, calculate the damage math: how many hits can your unit take (health / enemy damage) vs how many turns to close or kill. If you can survive the approach, aggression beats evasion — wasted turns are wasted damage. Min-range gap: actions with min_range > 0 cannot hit closer targets. A unit on the same tile as a ranged attacker with min_range 1 is immune. Close to melee against ranged-only enemies to neutralize their offense. Stacking: a targeted attack on a tile with multiple enemies damages all of them. Concentrate fire on tiles where enemies converge. Focus fire: multiple units attacking the same target kill it faster than spreading damage. Eliminate threats one at a time."
+    },
+    "raw": "{\"opponent_prediction\":\"The Scout at [0,0] is most likely to stay put and fire attack_ray at the zergling, since it already has a valid shot and doing so preserves damage output. If it expects a contact threat after my move, its fallback is a short reposition with move_short, but that is less likely than simply shooting this turn.\",\"reasoning_summary\":\"The visible enemy is a single ranged Scout with immediate attack access, so I plan for a 1-damage shot and keep advancing rather than overreacting. A forward fast_move that closes distance while staying within acceptable risk best preserves pressure for a next-turn contact attempt.\",\"actions\":[{\"unit_id\":69474453225,\"action_key\":\"fast_move\",\"end_cell\":[1,0]}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Analyzing zergling movement**\n\nI'm considering our zergling's fast move options. If it moves to [1,0], [1,1], or [2,-1], the enemy scout could then use its move to stay within attack range. However, if the scout chooses to move, it can't attack this turn. If it opts for an attack, it can use the attack_ray from its current position. I need to predict the enemy's moves carefully to maintain my zergling's advantage and health. Given that the scout only deals 1 damage, my zergling's health of 2 allows for some flexibility, but I should still choose the best move.\n**Evaluating zergling safety**\n\nIf I hold my position, an incoming attack would kill one of my zerglings, but it would leave one alive. However, I could instead choose a fast move to [2,1] or [3,0], which seems safer. From those positions, the distance to the visible enemy would increase to 3, keeping my zergling out of immediate danger. I need to think strategically about whether holding or moving is the best choice for survival.\n**Evaluating enemy predictions**\n\nI’m considering whether there’s a need for knowing the last known enemy positions, and I think not. So, I’ll focus on what the definitions imply. The opponent has a single scout with a ray attack and could choose to attack, but they might also decide to keep their lane. I’ll write a short paragraph mentioning that they will probably hold and shoot from [0,0]. If we move quickly out of range, the prediction suggests they might take a short move or rest. We only see one enemy unit currently.\n**Considering tactical moves**\n\nI'm thinking about advancing to position [1,0]. It might help maintain contact pressure, but there's a risk because the enemy can shoot at us while we're unable to return fire. So, I wonder if it would be better to find a way to close in on them while ensuring we stay alive. It feels like a balance of being aggressive while also being cautious. There's a lot to weigh here!\n**Assessing zergling movement**\n\nI only have one zergling, and I’m considering my options. Choosing [1,0] seems smart since I can fast move to [0,0] next turn. But wait, the distance is just 1, so I might end up colliding or on the same tile. If I fast move into [0,0] from [1,0], could I legally engage the enemy? However, with only 2 health, an enemy attack would knock me out. I've got to think this through carefully to ensure survival.\n**Preparing for movement decision**\n\nI’m considering using fast_move to [1,0] since it's the most direct option with a distance of 1. However, there’s a risk because if I move there, I’m still within range of an enemy attack from [0,0]. If I want to be more aggressive, [1,0] is probably my best choice. I need to prepare an actions array with exact entries and ensure that my action key matches legal options. I may also need to predict the enemy's attack radius, and I'll have to make sure to format everything correctly in JSON.",
+    "usage": {
+      "input_tokens": 9673,
+      "output_tokens": 2169,
+      "reasoning_tokens": 2006,
+      "total_tokens": 11842
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_stepin_zergling_vs_scout_hp2"
+}

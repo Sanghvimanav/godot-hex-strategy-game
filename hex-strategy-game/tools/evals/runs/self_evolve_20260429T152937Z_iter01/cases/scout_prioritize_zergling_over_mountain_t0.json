@@ -1,0 +1,73 @@
+{
+  "case_id": "scout_prioritize_zergling_over_mountain_t0",
+  "chosen_option_index": 24,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T152937Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Scout should target [3,-3] with attack_ray to kill/pressure the advancing Zergling threat before focusing Mountain.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68551706317": 24
+    },
+    "call_timings_ms": [
+      20668
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 20668,
+          "elapsed_seconds": 20.668,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[] using action_key + target_cell. Use only listed unit_id values and legal action/target combinations.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then deterministically prefer the lowest legal_options[].i that matches action_key + target_cell.\n\nValidation: every chosen action_key + target_cell pair must resolve to a legal option for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.\n"
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling fast_moves to [3,-3]; Mountain rests.\",\"reasoning_summary\":\"Shoot the most likely landing hex [3,-3] before the zergling can close.\",\"actions\":[{\"unit_id\":68551706317,\"action_key\":\"attack_ray\",\"target_cell\":[3,-3]}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Evaluating attack options**\n\nI need to focus on a legal attack option that can cover the predicted landing cell. I'm considering whether the attack_ray range of 1-2 can effectively hit target cells at those distances. It seems like legal options might cover specific target cells like [2,-2]. However, I'm wondering if the only covered cells would be just [2,-2]. It's important to clarify these details to ensure a successful attack strategy!\n**Evaluating attack options**\n\nI\u2019m considering the distance range of 1-2 for some target cells, and it looks like the path might get me into the line of fire. So, if I examine the attack ray from [1,-3] to [2,-2], it covers [2,-2] and suggests I might first move to the end cell and then attack. But if that\u2019s the case, the end cell and the target seem to match, which is strange. I need to figure out the distances to visible enemies from that end position.\n**Analyzing movement and attack mechanics**\n\nI\u2019m working through the distances from [2,-2] to [4,-3] and see that it suggests a movement to a mountain, but that can't be right since I can\u2019t land there. The end cell seems to represent the target of the attack, not my position. When considering the visible enemy, it appears the unit can \"see\" the enemy at that position, yet it\u2019s not making sense. I think the path might actually detail the projectile's path, which makes the whole action resolution tricky since units can't both move and attack simultaneously.\n**Calculating distances to scout**\n\nI'm computing distances to our scout at coordinates [1, -3]. \n\nWhen I check the distance for [3, -3], it comes out to 2. \n\nFor the point [3, -2], the calculations yield 2 again, and the same goes for [4, -4] and [4, -2]. \n\nInterestingly, [5, -4] gives me a distance of 3, while [5, -3] brings it back down to 2. \n\nSo, a few of these distances reduce to 2.\n**Specifying zergling actions**\n\nI need to detail the zergling actions clearly and concisely. I'll mention \"Expect zergling fast_move to [3,-3]; shoot that hex.\" It's important to keep it brief and focus on providing the exact JSON format. For the actions array, I should include one object that specifies the unit_id as 68551706317, with the action_key set to attack_ray and the target_cell as [3,-3]. This will streamline the instructions effectively.",
+    "usage": {
+      "input_tokens": 11338,
+      "output_tokens": 2157,
+      "reasoning_tokens": 2084,
+      "total_tokens": 13495
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.0071485
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_scout_prioritize_zergling_over_mountain",
+  "runner_exit_code": 0,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n[planning-eval] wrote /Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/runs/self_evolve_20260429T152937Z_iter01/cases/scout_prioritize_zergling_over_mountain_t0.json\n[planning-eval] pass=true reason=required option exists and passes checks chosen_option_index=24 chosen_option_indices=[]\n",
+  "estimated_cost_usd": 0.0071485
+}

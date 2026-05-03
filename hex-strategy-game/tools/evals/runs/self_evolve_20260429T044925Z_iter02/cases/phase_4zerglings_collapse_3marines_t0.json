@@ -1,0 +1,60 @@
+{
+  "case_id": "phase_4zerglings_collapse_3marines_t0",
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T044925Z_iter02"
+  },
+  "grading": {
+    "correctness": 0.0,
+    "final_score": 0.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "All four Zerglings should fast_move onto [-2,1] to kill stacked Marines via fast-phase passive ordering before Marine normal-phase passive resolves.",
+  "llm": {
+    "call_timings_ms": [
+      4524
+    ],
+    "detail": {
+      "chosen_end_cell": [
+        -4,
+        2
+      ],
+      "echo_cell": [
+        -2,
+        1
+      ],
+      "error": "echo_cell_not_matching_chosen_end_cell",
+      "ok": false,
+      "option_index": 0,
+      "unit_id": 69591893755
+    },
+    "error": "echo_cell_mismatch",
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 4524,
+          "elapsed_seconds": 4.524,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "ok": false,
+    "raw": "{\"opponent_prediction\":\"Marines likely hold at [-2,1] or step to [-1,1].\",\"reasoning_summary\":\"Fast move onto [-2,1] to force same-tile contact and maximize pressure.\",\"actions\":[{\"unit_id\":69591893755,\"option_index\":0,\"echo_cell\":[-2,1]},{\"unit_id\":69726111510,\"option_index\":0,\"echo_cell\":[-2,1]},{\"unit_id\":69860329245,\"option_index\":0,\"echo_cell\":[-2,1]},{\"unit_id\":69994546980,\"option_index\":0,\"echo_cell\":[-2,1]}]}",
+    "estimated_cost_usd": 0.0
+  },
+  "mode": "live_llm",
+  "pass": false,
+  "perspective_group": "zerg",
+  "reason": "live_llm_failed: echo_cell_mismatch",
+  "scenario_id": "eval_phase_4zerglings_collapse_3marines",
+  "runner_exit_code": 2,
+  "estimated_cost_usd": 0.0
+}

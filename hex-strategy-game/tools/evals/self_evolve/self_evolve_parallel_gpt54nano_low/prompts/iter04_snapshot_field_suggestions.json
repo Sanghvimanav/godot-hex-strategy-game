@@ -1,0 +1,42 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "required_cells",
+      "where": "turn_goal_parsed.required_cells",
+      "why": "Removes ambiguity from free-text intent and lets the planner deterministically check exact destination/coverage satisfaction.",
+      "example_value": [
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          -3
+        ]
+      ]
+    },
+    {
+      "field_name": "required_action_keys",
+      "where": "turn_goal_parsed.required_action_keys",
+      "why": "Makes action-type requirements like attack_ray explicit instead of forcing text parsing.",
+      "example_value": [
+        "attack_ray"
+      ]
+    },
+    {
+      "field_name": "hit_cells_union",
+      "where": "ai_units[].legal_options[].hit_cells_union",
+      "why": "Precomputes the union of target/affected/ray/line/intercept/coverage cells so coverage checks are fast and less error-prone.",
+      "example_value": [
+        [
+          3,
+          -3
+        ],
+        [
+          2,
+          -2
+        ]
+      ]
+    }
+  ]
+}

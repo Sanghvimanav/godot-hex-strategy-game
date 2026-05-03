@@ -14,6 +14,10 @@ var planning_max_tokens: int = 2048
 var use_responses_api: bool = false
 ## For Responses API: none, minimal, low, medium, high, xhigh (model-dependent).
 var reasoning_effort: String = "medium"
+## Prompt profile for planner: "legacy" (current full prompt) or "minimal" (reset baseline).
+var planning_prompt_version: String = "legacy"
+## Experimental: run planning in two passes (enemy prediction call, then action selection call).
+var use_two_call_planning: bool = false
 ## When true, each LLM planning request writes the full user JSON snapshot to user://llm_planning_logs/ (no secrets).
 var log_planning_payloads: bool = true
 
@@ -29,6 +33,10 @@ func load_from_disk() -> void:
 	planning_max_tokens = clampi(planning_max_tokens, 256, 65536)
 	use_responses_api = bool(cf.get_value(SECTION, "use_responses_api", use_responses_api))
 	reasoning_effort = str(cf.get_value(SECTION, "reasoning_effort", reasoning_effort))
+	planning_prompt_version = str(cf.get_value(SECTION, "planning_prompt_version", planning_prompt_version)).strip_edges().to_lower()
+	if planning_prompt_version.is_empty():
+		planning_prompt_version = "legacy"
+	use_two_call_planning = bool(cf.get_value(SECTION, "use_two_call_planning", use_two_call_planning))
 	log_planning_payloads = bool(cf.get_value(SECTION, "log_planning_payloads", log_planning_payloads))
 
 
@@ -40,6 +48,8 @@ func save_to_disk() -> Error:
 	cf.set_value(SECTION, "planning_max_tokens", clampi(planning_max_tokens, 256, 65536))
 	cf.set_value(SECTION, "use_responses_api", use_responses_api)
 	cf.set_value(SECTION, "reasoning_effort", reasoning_effort.strip_edges())
+	cf.set_value(SECTION, "planning_prompt_version", planning_prompt_version.strip_edges().to_lower())
+	cf.set_value(SECTION, "use_two_call_planning", use_two_call_planning)
 	cf.set_value(SECTION, "log_planning_payloads", log_planning_payloads)
 	return cf.save(USER_CONFIG_PATH)
 

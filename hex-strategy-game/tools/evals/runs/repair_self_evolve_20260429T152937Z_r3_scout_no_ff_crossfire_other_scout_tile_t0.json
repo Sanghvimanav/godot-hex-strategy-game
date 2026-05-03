@@ -1,0 +1,82 @@
+{
+  "case_id": "scout_no_ff_crossfire_other_scout_tile_t0",
+  "experiment": {
+    "eval_set_version": "",
+    "notes": "",
+    "prompt_version": "",
+    "run_id": ""
+  },
+  "grading": {
+    "correctness": 0.0,
+    "final_score": 0.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 0.874877777777778
+  },
+  "intent": "With 1-HP Zergling moving from [-1,3] to [-1,4], scout should target the other scout tile [-1,4] to secure kill regardless of hold vs move.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68551706317": 10,
+      "68736255720": 5
+    },
+    "call_timings_ms": [
+      40044,
+      42478
+    ],
+    "latency_grader": {
+      "average_call_score": 0.874877777777778,
+      "calls": [
+        {
+          "elapsed_ms": 40044,
+          "elapsed_seconds": 40.044,
+          "score": 0.8884
+        },
+        {
+          "elapsed_ms": 42478,
+          "elapsed_seconds": 42.478,
+          "score": 0.861355555555555
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 0.874877777777778
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "legacy",
+    "prediction_usage": {
+      "input_tokens": 12526,
+      "output_tokens": 2696,
+      "reasoning_tokens": 2588,
+      "total_tokens": 15222
+    },
+    "prompt_debug": {
+      "action_input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "action_prompt": "You are the tactical planner for the AI side in a hex turn-based wargame. You MUST respond with a single JSON object only — no markdown fences, no other text. Shape: {\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]} reasoning_summary: one short paragraph explaining how the provided enemy predictions drive your action choices. actions: exactly one entry per AI unit in ai_units. Each action must use a legal_options[].action_key and a matching legal_options[].target_cell (or end_cell for movement). If unsure, pick rest/hold. IMPORTANT: enemy_prediction_hypotheses is already provided in the snapshot from a prior prediction pass. Treat those top1 entries as the likely enemy actions this turn. Do NOT re-derive predictions; do NOT emit opponent_prediction. Use the predicted enemy end cells to decide where to shoot (aim at predicted landing hexes against fast movers) and where to stand (avoid their predicted firing lanes). CRITICAL: Resolution is simultaneous — both sides act at the same time. Each legal option includes action_resolution_phase_index and action_resolution_phase_name — use them instead of guessing phase from action_key. Phase order within a turn: fast move, fast ability, move, ability, slow move, slow ability, spawn. Each phase executes before the next. A unit with a fast move and a passive fast ability will complete before another unit can complete it's move actionDamage is applied after every ability phase. If a unit is killed, any of it's actions that have not completed during this turn will be cancelled.Because turns are simultaneous, always target where predicted enemies WILL BE after their action resolves, not where they sit now. rules_digest is authoritative; obey it over assumptions. scenario_description (when present) states the goal for both sides. action_definitions: full action registry (keys, ranges, energy, damage, patterns, min_range). unit_type_definitions: each unit type's description, move/ability/passive keys (*_resolved includes implicit Rest). prior_learnings: rolling distilled journal with evidence tags. Honor when consistent with rules_digest. distances_to_visible_enemies on each legal option: engine-computed hex distances — do not recompute. distances_to_last_known_enemies on each legal option (when present): hex distances to enemies not currently visible. Use to CLOSE distance when advancing. last_known_enemy_positions (top-level, when present): list of out-of-sight enemies with cell, turn_last_seen, health. Positions may be stale. visible_enemy_units and last_known_enemy_positions include ability_action_keys — cross-reference with action_definitions for enemy range/damage. Each legal option includes pred_damage_at_end, pred_enemies_hitting, and pred_end_threatened when enemy_prediction_hypotheses was merged — engine recomputed from each enemy top1 vs that option end cell (validated with action_definitions geometry). Use these as your primary damage-at-end estimate. If those fields are absent, fall back to incoming_damage_if_enemies_hold_and_shoot_end / enemy_count_can_hit_end_if_hold / is_end_cell_threatened_if_hold when present. action_resolution_phase_index and action_resolution_phase_name identify when this option's action runs in the global phase pipeline (see rules_digest). When predictions are merged, predicted_enemy_damage_action_phase_index and predicted_enemy_damage_timing_vs_our_action compare your phase to predicted enemy damaging actions: our_action_resolves_first means you finish repositioning before their predicted attacks resolve, so pred_damage_at_end applies if they target your end hex; predicted_enemy_damage_resolves_first means their damage may happen before your action completes—read pred_damage_resolution_note when present. Attack selection rule: expected_visible_hits_if_targeted is how many currently visible enemies occupy the option end cell right now. Prefer options with expected_visible_hits_if_targeted > 0 for immediate damage over speculative shots. DISTANCE RULE: When advancing safely, prefer the legal option with lowest hex_dist to the priority enemy. If pred_damage_at_end would kill or cripple your unit, prefer a safer option even if hex_dist is higher. Do not guess directions from coordinates — use the precomputed distance and pred_* fields. recent_turns: up to two completed turns (oldest-first). Each has: turn, fov_cells, died_unit_ids, damage_by_id, applied_effects, compact actions. Enemy intel in recent_turns is FOV-filtered. enemy_intel: initial_count, confirmed_kills (cumulative), currently_visible. Factor unseen enemies into plans. TACTICAL REASONING: Calculate damage math: how many hits your unit can take vs turns to close or kill. If you can survive the approach, aggression beats evasion. Min-range gap: actions with min_range > 0 cannot hit closer targets. Close to melee against ranged-only enemies. Stacking: a targeted attack on a tile with multiple enemies damages all. Focus fire kills faster than spreading damage.",
+      "payload_mutation_file": "",
+      "payload_profile": "baseline",
+      "prediction_input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "prediction_prompt": "Prediction-only pass. You are analyzing a hex turn-based wargame snapshot from the AI side's perspective. Predict the single most likely one-turn action for EACH enemy unit (top1 only). CRITICAL: Resolution is simultaneous — both sides act at the same time. Phase order within a turn: fast move, fast ability, move, ability, slow move, slow ability, spawn. Each phase executes before the next. A unit with a fast move and a passive fast ability will complete before another unit can complete it's move actionDamage is applied after every ability phase. If a unit is killed, any of it's actions that have not completed during this turn will be cancelled.Because turns are simultaneous, always target where you predict enemies WILL BE after their action resolves, not where they sit now. This applies to enemy units too, if they predict your action, they can target where your units will be and the enemy unit will prefer that over movingBase predictions on: recent_turns patterns, visible_enemy_units positions and ability_action_keys, last_known_enemy_positions, scenario_description, unit_type_definitions, and action_definitions (for range/min_range/damage). For enemies in fog, extrapolate from last-known cells and typical behavior for their unit type (ranged units prefer holding at range; melee units advance). enemy_units_legal_options (when present): each non-AI unit's full engine legal_options (same shape as ai_units legal_options: i, action_key, path, end, is_move). Use these so each enemy top1.action_key and end match a real option index i. This snapshot omits per-AI-option hold-and-shoot threat numbers and omits enemy_reaction_candidates — use enemy_units_legal_options plus action_definitions. Return strict JSON only — no markdown, no extra text. Shape: {\"opponent_prediction\":\"string\",\"enemy_predictions\":[{\"enemy_unit_id\":NUMBER,\"top1\":{\"action_key\":\"string\",\"end\":[q,r],\"confidence\":0.0}}]} opponent_prediction: 1–4 sentences describing what each enemy will do THIS turn. enemy_predictions: one entry per enemy unit (use unit_id from visible_enemy_units or last_known_enemy_positions). top1 is the only predicted action. action_key MUST come from action_definitions. end is [q,r] axial coords for move destination or target cell. confidence in [0,1]. Do NOT return actions for our units."
+    },
+    "raw": "{\"reasoning_summary\":\"The enemy’s top prediction is a fast move to [-1,4], so I’m aiming our first Scout’s ray at that landing hex to catch the zergling after it resolves movement. Our second Scout is already on that predicted hex, so it should step off it first to avoid being the landing target and to keep a safe firing lane next turn.\",\"actions\":[{\"unit_id\":68551706317,\"action_key\":\"attack_ray\",\"target_cell\":[-1,4]},{\"unit_id\":68736255720,\"action_key\":\"move_short\",\"target_cell\":[0,4]}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Considering tactical moves**\n\nI’m thinking about moving to the vacated starting tile to attack. But what if the enemy occupies my starting tile and has a passive attack? Could moving into their old tile help me avoid contact? It’s tricky because our scout at [-1,4] is already occupying that area, so if the enemy moves there, it might displace them. This strategy presents some challenges, and I need to think it through more carefully.\n**Analyzing attack options**\n\nI'm noting that from the position [0,4], the attack ray could affect both current and predicted enemy cells. From position [-2,4], I think I have some attack options that include [-1,4], but I'm hesitating on whether those are valid. It seems that legal options from [-1,4] already allow for an attack ray to [0,4]. So after moving to [-2,4], those future attack options might not matter this turn.\n**Evaluating enemy threats**\n\nI'm considering whether resting my scout could leave a cell vulnerable if the enemy lands there. If the enemy fast-moves to [-1,4], my resting scout might be at risk. However, if my first scout can attack, it might be worth the risk. I could also move to [-2,4] to create safety, and it seems that move is indeed safe. I need to understand the order of phases, as the enemy's abilities may allow them to attack during my scout's turn.\n**Assessing scout movements**\n\nI'm evaluating the risks of my first scout at [-1,3] attacking, especially since the enemy's passive might trigger first. If the enemy fast-moves to [-1,4], that cell contains my second scout, making it a risky position. Moving the second scout would help avoid a direct conflict with the enemy. I need to decide which move to make, possibly to [0,4], [-2,4], or [0,3], ensuring I'm maximizing distance from the enemy and avoiding their attack options.\n**Choosing a movement strategy**\n\nI'm considering my movement options. The position at [0,3] feels too exposed since it has a distance of 1 from the enemy. Moving to [0,4] could give me a distance of 2, keeping me safer from the predicted landing. Going to [-2,4] also puts me at distance 1, which might not be ideal. I want to preserve a firing lane to the southeast, but I'm worried about losing synergy with my scouts. It looks like [0,4] could be the best choice.\n**Planning strategic moves**\n\nI need to make sure that the enemy's predicted top landing cell is potentially [-1,4]. I think it’s essential to craft a concise reasoning summary that references their predicted fast movement to the eastern adjacent hex. My plan is to focus on shooting the landing hex while the other scout sidelines to avoid becoming the target. I’ll be sure to keep everything in a clean JSON format to present the information clearly.",
+    "usage": {
+      "input_tokens": 15087,
+      "output_tokens": 3028,
+      "reasoning_tokens": 2897,
+      "total_tokens": 18115
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": true
+  },
+  "mode": "live_llm",
+  "pass": false,
+  "perspective_group": "terran",
+  "reason": "required unit id=68736255720 chose move_short, expected attack_ray",
+  "scenario_id": "eval_scout_no_ff_crossfire_other_scout_tile"
+}

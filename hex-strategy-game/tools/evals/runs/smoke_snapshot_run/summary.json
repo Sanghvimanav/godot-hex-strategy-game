@@ -1,0 +1,22 @@
+{
+  "run_meta": {
+    "run_id": "smoke_snapshot_run",
+    "created_at": "2026-04-28T02:57:42.270066Z",
+    "mode": "snapshot",
+    "prompt_version": "p_v001",
+    "eval_set_version": "eval_v001",
+    "thinking_level": "",
+    "model_override": "",
+    "notes": "",
+    "git_sha": "5632b9b590908f340a90cb1abcc268a83285afe4"
+  },
+  "total_cases": 5,
+  "pass_cases": 5,
+  "fail_cases": 0,
+  "pass_rate": 1.0,
+  "avg_final_score": 1.0,
+  "avg_speed_on_pass": 1.0,
+  "total_tokens": 0,
+  "estimated_cost_usd": 0.0,
+  "estimated_cost_usd_per_eval_turn": 0.0
+}

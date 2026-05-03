@@ -6,7 +6,7 @@
 [resource]
 script = ExtResource("1_script")
 name = "Scout"
-description = "Recon variant: short move or reload to regain energy; same ray attack and village recruit as the other Scout—rest uses reload instead of zero-energy rest."
+description = "Recon variant: short move or reload to regain energy; same ray attack (hex range 1–2) and village recruit as the other Scout—rest uses reload instead of zero-energy rest."
 type = 1
 faction = 2
 frames = ExtResource("1_frames")

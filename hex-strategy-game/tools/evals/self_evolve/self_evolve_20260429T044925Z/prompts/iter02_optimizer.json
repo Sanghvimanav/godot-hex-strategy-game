@@ -1,0 +1,823 @@
+{
+  "raw": "{\"new_system_prompt\":\"You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\\n{\\\"opponent_prediction\\\":\\\"string\\\",\\\"reasoning_summary\\\":\\\"string\\\",\\\"actions\\\":[{\\\"unit_id\\\":NUMBER,\\\"option_index\\\":NUMBER,\\\"echo_cell\\\":[q,r]}]}\\nChoose exactly one action per AI unit, using only ai_units[].legal_options[].i.\\n\\nDeterministic policy per unit:\\n1) Enforce hard intent constraints first from payload/global intent/unit intent: required_action_type, required_cell(s), allowed_end_cells, retreat, stay_out_of_range, or instructions to target/hit/end at cell X.\\n2) For attacks, \\\"hit X\\\" is satisfied if X is anywhere in that option's real coverage: target_cell, affected_cells, ray_cells, line_cells, or intercept_cells. The option does NOT need target_cell==X.\\n3) If an enemy can move before your hit resolves, prefer a legal attack whose coverage contains the predicted landing cell. For AOE/ray/line, choose the target_cell that makes coverage include the landing cell. If any legal attack covers a required or predicted landing cell, do not replace it with move/fast_move/rest unless intent forbids attacking.\\n4) Otherwise choose: lethal attack on highest-threat enemy > highest immediate damage > any attack on highest-threat enemy.\\n5) If no attack is chosen, obey movement intent: retreat/stay_out_of_range/allowed_end_cells first; else move/fast_move that most reduces distance to the key enemy/objective and creates fastest next-turn contact. If fast-phase same-tile contact/passive timing matters, prefer the contact-producing fast_move.\\n6) Tie-break: exact intent satisfaction > landing-cell coverage > attack > safer end (lower pred_damage_at_end or incoming_damage_if_enemies_hold_and_shoot_end) > shorter post-action distance > lower i.\\n\\nOutput rules:\\n- One action per AI unit.\\n- option_index must equal the chosen legal option's i.\\n- echo_cell MUST be copied exactly from the chosen option: end_cell if present, else target_cell if present, else the unit's current cell.\\n- Never use affected_cells, predicted landing cells, or intended hit cells as echo_cell unless that exact cell is also the chosen option's end_cell or target_cell.\\n- If an attack hits X via AOE/ray/line while targeting Y, that option is valid and echo_cell is Y, not X.\\n- Keep both strings brief and only mention cells that appear in the chosen option metadata.\",\"payload_mutation_spec\":{\"remove_paths\":[],\"set_values\":{\"planner_hints.echo_cell_contract\":\"echo_cell = chosen option end_cell else target_cell else unit current cell; copy exactly\",\"planner_hints.coverage_rule\":\"attack satisfies hit/landing cell if that cell appears in target_cell, affected_cells, ray_cells, line_cells, or intercept_cells even when target_cell differs\",\"planner_hints.priority_rule\":\"if any legal attack covers a required or predicted landing cell, prefer that attack over move/fast_move/rest unless intent forbids attacking\"},\"copy_paths\":[]},\"suggested_snapshot_fields_to_add\":[{\"field_name\":\"resolved_echo_cell\",\"where\":\"ai_units[].legal_options[].resolved_echo_cell\",\"why\":\"Precomputes the exact cell the model must emit, eliminating echo_cell inference errors.\",\"example_value\":[-1,-1]},{\"field_name\":\"coverage_cells_union\",\"where\":\"ai_units[].legal_options[].coverage_cells_union\",\"why\":\"Gives one normalized list of all cells an option can affect, making AOE/ray/line landing-cell checks deterministic.\",\"example_value\":[[-1,-1],[-1,-2]]},{\"field_name\":\"creates_fast_phase_contact\",\"where\":\"ai_units[].legal_options[].creates_fast_phase_contact\",\"why\":\"Marks fast_move options that cause same-tile contact/passive timing interactions, which several failed cases depended on.\",\"example_value\":true}],\"rationale\":\"The failures cluster into two issues: the model outputs echo_cell from the intended victim/landing cell instead of the chosen option's actual end_cell/target_cell, and it sometimes rejects valid AOE attacks because the landing cell is covered indirectly rather than targeted directly. The revised prompt separates selection logic from output encoding and makes both deterministic.\",\"expected_fix\":\"Should stop echo_cell mismatches by forcing exact copying from chosen option metadata, while also restoring correct attack selection in cases where an AOE/ray/line attack covers a forced or predicted landing cell even though target_cell differs.\"}",
+  "parsed": {
+    "new_system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER,\"echo_cell\":[q,r]}]}\nChoose exactly one action per AI unit, using only ai_units[].legal_options[].i.\n\nDeterministic policy per unit:\n1) Enforce hard intent constraints first from payload/global intent/unit intent: required_action_type, required_cell(s), allowed_end_cells, retreat, stay_out_of_range, or instructions to target/hit/end at cell X.\n2) For attacks, \"hit X\" is satisfied if X is anywhere in that option's real coverage: target_cell, affected_cells, ray_cells, line_cells, or intercept_cells. The option does NOT need target_cell==X.\n3) If an enemy can move before your hit resolves, prefer a legal attack whose coverage contains the predicted landing cell. For AOE/ray/line, choose the target_cell that makes coverage include the landing cell. If any legal attack covers a required or predicted landing cell, do not replace it with move/fast_move/rest unless intent forbids attacking.\n4) Otherwise choose: lethal attack on highest-threat enemy > highest immediate damage > any attack on highest-threat enemy.\n5) If no attack is chosen, obey movement intent: retreat/stay_out_of_range/allowed_end_cells first; else move/fast_move that most reduces distance to the key enemy/objective and creates fastest next-turn contact. If fast-phase same-tile contact/passive timing matters, prefer the contact-producing fast_move.\n6) Tie-break: exact intent satisfaction > landing-cell coverage > attack > safer end (lower pred_damage_at_end or incoming_damage_if_enemies_hold_and_shoot_end) > shorter post-action distance > lower i.\n\nOutput rules:\n- One action per AI unit.\n- option_index must equal the chosen legal option's i.\n- echo_cell MUST be copied exactly from the chosen option: end_cell if present, else target_cell if present, else the unit's current cell.\n- Never use affected_cells, predicted landing cells, or intended hit cells as echo_cell unless that exact cell is also the chosen option's end_cell or target_cell.\n- If an attack hits X via AOE/ray/line while targeting Y, that option is valid and echo_cell is Y, not X.\n- Keep both strings brief and only mention cells that appear in the chosen option metadata.",
+    "payload_mutation_spec": {
+      "remove_paths": [],
+      "set_values": {
+        "planner_hints.echo_cell_contract": "echo_cell = chosen option end_cell else target_cell else unit current cell; copy exactly",
+        "planner_hints.coverage_rule": "attack satisfies hit/landing cell if that cell appears in target_cell, affected_cells, ray_cells, line_cells, or intercept_cells even when target_cell differs",
+        "planner_hints.priority_rule": "if any legal attack covers a required or predicted landing cell, prefer that attack over move/fast_move/rest unless intent forbids attacking"
+      },
+      "copy_paths": []
+    },
+    "suggested_snapshot_fields_to_add": [
+      {
+        "field_name": "resolved_echo_cell",
+        "where": "ai_units[].legal_options[].resolved_echo_cell",
+        "why": "Precomputes the exact cell the model must emit, eliminating echo_cell inference errors.",
+        "example_value": [
+          -1,
+          -1
+        ]
+      },
+      {
+        "field_name": "coverage_cells_union",
+        "where": "ai_units[].legal_options[].coverage_cells_union",
+        "why": "Gives one normalized list of all cells an option can affect, making AOE/ray/line landing-cell checks deterministic.",
+        "example_value": [
+          [
+            -1,
+            -1
+          ],
+          [
+            -1,
+            -2
+          ]
+        ]
+      },
+      {
+        "field_name": "creates_fast_phase_contact",
+        "where": "ai_units[].legal_options[].creates_fast_phase_contact",
+        "why": "Marks fast_move options that cause same-tile contact/passive timing interactions, which several failed cases depended on.",
+        "example_value": true
+      }
+    ],
+    "rationale": "The failures cluster into two issues: the model outputs echo_cell from the intended victim/landing cell instead of the chosen option's actual end_cell/target_cell, and it sometimes rejects valid AOE attacks because the landing cell is covered indirectly rather than targeted directly. The revised prompt separates selection logic from output encoding and makes both deterministic.",
+    "expected_fix": "Should stop echo_cell mismatches by forcing exact copying from chosen option metadata, while also restoring correct attack selection in cases where an AOE/ray/line attack covers a forced or predicted landing cell even though target_cell differs."
+  },
+  "failed_cases": [
+    {
+      "case_id": "baneling_explode_vs_2marines_hp3_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260429T044925Z_iter02"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "Baneling stacked with two 3-HP Marines should choose explode for immediate lethal value.",
+      "llm": {
+        "call_timings_ms": [
+          2649
+        ],
+        "detail": {
+          "chosen_end_cell": [
+            -1,
+            0
+          ],
+          "echo_cell": [
+            0,
+            0
+          ],
+          "error": "echo_cell_not_matching_chosen_end_cell",
+          "ok": false,
+          "option_index": 0,
+          "unit_id": 70766298872
+        },
+        "error": "echo_cell_mismatch",
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 2649,
+              "elapsed_seconds": 2.649,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "ok": false,
+        "raw": "{\"opponent_prediction\":\"Both Marines at [0,0] likely hold or step only if forced; either way [0,0] stays in blast.\",\"reasoning_summary\":\"Explode on [0,0] for max damage to both visible Marines.\",\"actions\":[{\"unit_id\":70766298872,\"option_index\":0,\"echo_cell\":[0,0]}]}",
+        "estimated_cost_usd": 0.0
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "zerg",
+      "reason": "live_llm_failed: echo_cell_mismatch",
+      "scenario_id": "eval_baneling_explode_vs_2marines_hp3",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.0,
+      "_file": "baneling_explode_vs_2marines_hp3_t0.json"
+    },
+    {
+      "case_id": "marine_aoe_branch_zerg_to_neg11_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260429T044925Z_iter02"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "With the Zergling forced to [-1,-1], Marine should choose attack_short on [-1,-1] to secure damage.",
+      "llm": {
+        "call_timings_ms": [
+          6133
+        ],
+        "detail": {
+          "chosen_end_cell": [
+            -3,
+            -1
+          ],
+          "echo_cell": [
+            -1,
+            -2
+          ],
+          "error": "echo_cell_not_matching_chosen_end_cell",
+          "ok": false,
+          "option_index": 0,
+          "unit_id": 68400711373
+        },
+        "error": "echo_cell_mismatch",
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 6133,
+              "elapsed_seconds": 6.133,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "ok": false,
+        "raw": "{\"opponent_prediction\":\"Zergling likely fast_moves to [-1,-2]\",\"reasoning_summary\":\"Attack landing cell [-1,-2] before its move resolves\",\"actions\":[{\"unit_id\":68400711373,\"option_index\":0,\"echo_cell\":[-1,-2]}]}",
+        "estimated_cost_usd": 0.0
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "terran",
+      "reason": "live_llm_failed: echo_cell_mismatch",
+      "scenario_id": "eval_marine_aoe_branch_zerg_to_neg11",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.0,
+      "_file": "marine_aoe_branch_zerg_to_neg11_t0.json"
+    },
+    {
+      "case_id": "marine_aoe_branch_zerg_to_neg1neg2_t0",
+      "chosen_option_index": 4,
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260429T044925Z_iter02"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "With the Zergling forced to [-1,-2], Marine should still choose attack_short on [-1,-1] to hit via AOE.",
+      "llm": {
+        "base_url": "https://api.openai.com/v1",
+        "by_unit_id": {
+          "68400711373": 4
+        },
+        "call_timings_ms": [
+          3587
+        ],
+        "echo_cell_by_unit_id": {
+          "68400711373": [
+            -1,
+            -2
+          ]
+        },
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 3587,
+              "elapsed_seconds": 3.587,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "model": "gpt-5.4-mini",
+        "ok": true,
+        "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T044925Z/prompts/iter01_payload_mutation.json",
+        "payload_profile": "baseline",
+        "planning_max_tokens": 16128,
+        "planning_prompt_version": "minimal",
+        "prompt_debug": {
+          "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T044925Z/prompts/iter01_prompt.txt",
+          "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+          "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T044925Z/prompts/iter01_payload_mutation.json",
+          "payload_profile": "baseline",
+          "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER,\"echo_cell\":[q,r]}]}\nChoose exactly one action per AI unit using only ai_units[].legal_options[].i.\n\nDeterministic policy per unit:\n0) Intent constraints override everything. If payload or intent specifies required_action_type, required_cell(s), allowed_end_cells, retreat/stay_out_of_range, or says to target/hit/end at cell X, satisfy that exactly. For move/fast_move, X must equal end_cell. For attacks, choose an ATTACK whose real coverage contains X: target_cell, affected_cells, ray_cells, line_cells, or intercept_cells. Do not substitute a nearby pressure cell when an exact intent match exists. If multiple legal options satisfy intent, pick the lowest option_index.\n1) Versus enemies that can move before your hit resolves, prefer attacks covering predicted landing cells, not current cells. For ray/line/AOE, aim at the landing cell itself. If both current and landing cells are hittable, choose the landing cell unless intent explicitly requires current cell. Do not replace such an attack with move/fast_move/rest if any legal attack covers a required or predicted landing cell. Only move/fast_move onto a predicted landing cell if no legal attack covers one. A listed legal attack remains legal even if the target tile is ally-occupied.\n2) Otherwise choose a lethal attack on the highest-threat enemy; else highest immediate damage; else attack the higher-threat enemy.\n3) Otherwise follow movement intent: if intent says retreat or stay out of range, choose a legal end_cell that satisfies that or lies in allowed_end_cells; else choose the forward move/fast_move that most reduces distance to the key enemy/objective and creates next-turn contact.\n4) Tiebreak: exact intent match > landing-cell attack > legal attack > safer end (lower pred_damage_at_end or incoming_damage_if_enemies_hold_and_shoot_end) > shorter distance to nearest enemy after action > lower option_index.\n\nValidation:\n- One action for every AI unit.\n- option_index must exist for that unit.\n- echo_cell = end_cell if present, else target_cell if present, else the unit current cell.\n- If reasoning_summary or opponent_prediction names a cell, that cell must appear in the chosen option metadata.\n- Keep both strings brief and concrete."
+        },
+        "raw": "{\"opponent_prediction\":\"Zergling likely fast_moves to [-1,-2] or [-1,-1].\",\"reasoning_summary\":\"No attack covers a predicted landing cell; advance to [-1,-2] to keep contact pressure.\",\"actions\":[{\"unit_id\":68400711373,\"option_index\":4,\"echo_cell\":[-1,-2]}]}",
+        "reasoning_effort": "low",
+        "thinking": "",
+        "usage": {
+          "input_tokens": 9000,
+          "output_tokens": 385,
+          "reasoning_tokens": 306,
+          "total_tokens": 9385
+        },
+        "use_responses_api": true,
+        "use_two_call_planning": false,
+        "estimated_cost_usd": 0.00302
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "terran",
+      "reason": "chosen action key move_short != required attack_short",
+      "scenario_id": "eval_marine_aoe_branch_zerg_to_neg1neg2",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.00302,
+      "_file": "marine_aoe_branch_zerg_to_neg1neg2_t0.json"
+    },
+    {
+      "case_id": "phase_4zerglings_collapse_3marines_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260429T044925Z_iter02"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "All four Zerglings should fast_move onto [-2,1] to kill stacked Marines via fast-phase passive ordering before Marine normal-phase passive resolves.",
+      "llm": {
+        "call_timings_ms": [
+          4524
+        ],
+        "detail": {
+          "chosen_end_cell": [
+            -4,
+            2
+          ],
+          "echo_cell": [
+            -2,
+            1
+          ],
+          "error": "echo_cell_not_matching_chosen_end_cell",
+          "ok": false,
+          "option_index": 0,
+          "unit_id": 69591893755
+        },
+        "error": "echo_cell_mismatch",
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 4524,
+              "elapsed_seconds": 4.524,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "ok": false,
+        "raw": "{\"opponent_prediction\":\"Marines likely hold at [-2,1] or step to [-1,1].\",\"reasoning_summary\":\"Fast move onto [-2,1] to force same-tile contact and maximize pressure.\",\"actions\":[{\"unit_id\":69591893755,\"option_index\":0,\"echo_cell\":[-2,1]},{\"unit_id\":69726111510,\"option_index\":0,\"echo_cell\":[-2,1]},{\"unit_id\":69860329245,\"option_index\":0,\"echo_cell\":[-2,1]},{\"unit_id\":69994546980,\"option_index\":0,\"echo_cell\":[-2,1]}]}",
+        "estimated_cost_usd": 0.0
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "zerg",
+      "reason": "live_llm_failed: echo_cell_mismatch",
+      "scenario_id": "eval_phase_4zerglings_collapse_3marines",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.0,
+      "_file": "phase_4zerglings_collapse_3marines_t0.json"
+    },
+    {
+      "case_id": "phase_4zerglings_focus_marine_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260429T044925Z_iter02"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "All Zerglings should fast_move to [-1,2] to focus-kill the Marine before the Marine's normal-phase passive can resolve.",
+      "llm": {
+        "call_timings_ms": [
+          5293
+        ],
+        "detail": {
+          "chosen_end_cell": [
+            -1,
+            1
+          ],
+          "echo_cell": [
+            -1,
+            2
+          ],
+          "error": "echo_cell_not_matching_chosen_end_cell",
+          "ok": false,
+          "option_index": 0,
+          "unit_id": 69323458285
+        },
+        "error": "echo_cell_mismatch",
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 5293,
+              "elapsed_seconds": 5.293,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "ok": false,
+        "raw": "{\"opponent_prediction\":\"Marine may hold [-1,2] or step to [0,1]\",\"reasoning_summary\":\"Fast-move onto [-1,2] to meet the Marine before it acts\",\"actions\":[{\"unit_id\":69323458285,\"option_index\":0,\"echo_cell\":[-1,2]},{\"unit_id\":69457676040,\"option_index\":0,\"echo_cell\":[-1,2]},{\"unit_id\":69591893775,\"option_index\":0,\"echo_cell\":[-1,2]},{\"unit_id\":69726111510,\"option_index\":0,\"echo_cell\":[-1,2]}]}",
+        "estimated_cost_usd": 0.0
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "zerg",
+      "reason": "live_llm_failed: echo_cell_mismatch",
+      "scenario_id": "eval_phase_4zerglings_focus_marine",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.0,
+      "_file": "phase_4zerglings_focus_marine_t0.json"
+    },
+    {
+      "case_id": "phase_fastmove_contact_zergling_vs_scout_neg11_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260429T044925Z_iter02"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "Zergling should fast_move to [0,0] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+      "llm": {
+        "call_timings_ms": [
+          2928
+        ],
+        "detail": {
+          "chosen_end_cell": [
+            -2,
+            1
+          ],
+          "echo_cell": [
+            0,
+            0
+          ],
+          "error": "echo_cell_not_matching_chosen_end_cell",
+          "ok": false,
+          "option_index": 0,
+          "unit_id": 69071800041
+        },
+        "error": "echo_cell_mismatch",
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 2928,
+              "elapsed_seconds": 2.928,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "ok": false,
+        "raw": "{\"opponent_prediction\":\"Scout likely holds or steps off [0,0] with move_short.\",\"reasoning_summary\":\"Fast move to [0,0] for immediate contact and best hit chance before the Scout moves.\",\"actions\":[{\"unit_id\":69071800041,\"option_index\":0,\"echo_cell\":[0,0]}]}",
+        "estimated_cost_usd": 0.0
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "zerg",
+      "reason": "live_llm_failed: echo_cell_mismatch",
+      "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout_neg11",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.0,
+      "_file": "phase_fastmove_contact_zergling_vs_scout_neg11_t0.json"
+    },
+    {
+      "case_id": "phase_fastmove_stepin_zergling_vs_scout_hp2_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260429T044925Z_iter02"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "At 2 HP from [2,0], Zergling should fast_move to [1,0] to keep pressure and reach contact next.",
+      "llm": {
+        "call_timings_ms": [
+          3804
+        ],
+        "detail": {
+          "chosen_end_cell": [
+            1,
+            0
+          ],
+          "echo_cell": [
+            2,
+            1
+          ],
+          "error": "echo_cell_not_matching_chosen_end_cell",
+          "ok": false,
+          "option_index": 0,
+          "unit_id": 69071800041
+        },
+        "error": "echo_cell_mismatch",
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 3804,
+              "elapsed_seconds": 3.804,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "ok": false,
+        "raw": "{\"opponent_prediction\":\"Scout at [0,0] likely uses attack_ray if we stay in range.\",\"reasoning_summary\":\"Fast move to [2,1] to leave current fire lane and keep pressure.\",\"actions\":[{\"unit_id\":69071800041,\"option_index\":0,\"echo_cell\":[2,1]}]}",
+        "estimated_cost_usd": 0.0
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "zerg",
+      "reason": "live_llm_failed: echo_cell_mismatch",
+      "scenario_id": "eval_phase_fastmove_stepin_zergling_vs_scout_hp2",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.0,
+      "_file": "phase_fastmove_stepin_zergling_vs_scout_hp2_t0.json"
+    },
+    {
+      "case_id": "phase_zergling_retreat_vs_3marines_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260429T044925Z_iter02"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "Zergling should retreat from [-3,2] to [-4,3], [-4,2], or [-3,3] to stay out of Marine range while Marines target [-3,2].",
+      "llm": {
+        "call_timings_ms": [
+          3770
+        ],
+        "detail": {
+          "chosen_end_cell": [
+            -4,
+            2
+          ],
+          "echo_cell": [
+            -2,
+            1
+          ],
+          "error": "echo_cell_not_matching_chosen_end_cell",
+          "ok": false,
+          "option_index": 0,
+          "unit_id": 69591893755
+        },
+        "error": "echo_cell_mismatch",
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 3770,
+              "elapsed_seconds": 3.77,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "ok": false,
+        "raw": "{\"opponent_prediction\":\"Marines likely hold at [-2,1] or move short; landing at [-2,1] is the key contact.\",\"reasoning_summary\":\"Fast move to [-2,1] for same-tile pressure; no legal attack covers that landing cell.\",\"actions\":[{\"unit_id\":69591893755,\"option_index\":0,\"echo_cell\":[-2,1]}]}",
+        "estimated_cost_usd": 0.0
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "zerg",
+      "reason": "live_llm_failed: echo_cell_mismatch",
+      "scenario_id": "eval_phase_zergling_retreat_vs_3marines",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.0,
+      "_file": "phase_zergling_retreat_vs_3marines_t0.json"
+    },
+    {
+      "case_id": "scout_no_ff_crossfire_other_scout_tile_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260429T044925Z_iter02"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "With 1-HP Zergling moving from [-1,3] to [-1,4], scout should target the other scout tile [-1,4] to secure kill regardless of hold vs move.",
+      "llm": {
+        "call_timings_ms": [
+          8001
+        ],
+        "detail": {
+          "chosen_end_cell": [
+            -2,
+            3
+          ],
+          "echo_cell": [
+            -1,
+            4
+          ],
+          "error": "echo_cell_not_matching_chosen_end_cell",
+          "ok": false,
+          "option_index": 0,
+          "unit_id": 68149053133
+        },
+        "error": "echo_cell_mismatch",
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 8001,
+              "elapsed_seconds": 8.001,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "ok": false,
+        "raw": "{\"opponent_prediction\":\"Zergling likely fast_moves to [-1,4]\",\"reasoning_summary\":\"Both Scouts shoot the landing line; first covers [-1,4], second covers [-1,3].\",\"actions\":[{\"unit_id\":68149053133,\"option_index\":0,\"echo_cell\":[-1,4]},{\"unit_id\":68333602536,\"option_index\":0,\"echo_cell\":[-1,3]}]}",
+        "estimated_cost_usd": 0.0
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "terran",
+      "reason": "live_llm_failed: echo_cell_mismatch",
+      "scenario_id": "eval_scout_no_ff_crossfire_other_scout_tile",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.0,
+      "_file": "scout_no_ff_crossfire_other_scout_tile_t0.json"
+    },
+    {
+      "case_id": "scout_no_ff_stepin_to_friendly_tile_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260429T044925Z_iter02"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "With 1-HP Zergling moving from [-1,2] to [-1,3], scout should target [-1,3] even though a friendly scout occupies that tile.",
+      "llm": {
+        "base_url": "https://api.openai.com/v1",
+        "by_unit_id": {
+          "68149053133": 16,
+          "68333602536": 9
+        },
+        "call_timings_ms": [
+          9241
+        ],
+        "echo_cell_by_unit_id": {
+          "68149053133": [
+            -1,
+            2
+          ],
+          "68333602536": [
+            -1,
+            2
+          ]
+        },
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 9241,
+              "elapsed_seconds": 9.241,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "model": "gpt-5.4-mini",
+        "ok": true,
+        "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T044925Z/prompts/iter01_payload_mutation.json",
+        "payload_profile": "baseline",
+        "planning_max_tokens": 16128,
+        "planning_prompt_version": "minimal",
+        "prompt_debug": {
+          "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T044925Z/prompts/iter01_prompt.txt",
+          "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+          "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T044925Z/prompts/iter01_payload_mutation.json",
+          "payload_profile": "baseline",
+          "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER,\"echo_cell\":[q,r]}]}\nChoose exactly one action per AI unit using only ai_units[].legal_options[].i.\n\nDeterministic policy per unit:\n0) Intent constraints override everything. If payload or intent specifies required_action_type, required_cell(s), allowed_end_cells, retreat/stay_out_of_range, or says to target/hit/end at cell X, satisfy that exactly. For move/fast_move, X must equal end_cell. For attacks, choose an ATTACK whose real coverage contains X: target_cell, affected_cells, ray_cells, line_cells, or intercept_cells. Do not substitute a nearby pressure cell when an exact intent match exists. If multiple legal options satisfy intent, pick the lowest option_index.\n1) Versus enemies that can move before your hit resolves, prefer attacks covering predicted landing cells, not current cells. For ray/line/AOE, aim at the landing cell itself. If both current and landing cells are hittable, choose the landing cell unless intent explicitly requires current cell. Do not replace such an attack with move/fast_move/rest if any legal attack covers a required or predicted landing cell. Only move/fast_move onto a predicted landing cell if no legal attack covers one. A listed legal attack remains legal even if the target tile is ally-occupied.\n2) Otherwise choose a lethal attack on the highest-threat enemy; else highest immediate damage; else attack the higher-threat enemy.\n3) Otherwise follow movement intent: if intent says retreat or stay out of range, choose a legal end_cell that satisfies that or lies in allowed_end_cells; else choose the forward move/fast_move that most reduces distance to the key enemy/objective and creates next-turn contact.\n4) Tiebreak: exact intent match > landing-cell attack > legal attack > safer end (lower pred_damage_at_end or incoming_damage_if_enemies_hold_and_shoot_end) > shorter distance to nearest enemy after action > lower option_index.\n\nValidation:\n- One action for every AI unit.\n- option_index must exist for that unit.\n- echo_cell = end_cell if present, else target_cell if present, else the unit current cell.\n- If reasoning_summary or opponent_prediction names a cell, that cell must appear in the chosen option metadata.\n- Keep both strings brief and concrete."
+        },
+        "raw": "{\"opponent_prediction\":\"Zergling likely fast-moves off [-1,2], so I\u2019m keeping both Scouts on the firing lane.\",\"reasoning_summary\":\"Both Scouts use ray attacks on the visible Zergling at [-1,2] for a lethal hit if it stays.\",\"actions\":[{\"unit_id\":68149053133,\"option_index\":16,\"echo_cell\":[-1,2]},{\"unit_id\":68333602536,\"option_index\":9,\"echo_cell\":[-1,2]}]}",
+        "reasoning_effort": "low",
+        "thinking": "**Considering possible moves**\n\nI'm thinking about scouting at coordinates -1,3 and whether a fast move there means occupying the same tile as the scout. That could enable a passive attack, potentially against an enemy looking to do the same. If an enemy unit is at [-1,3], would it cause a passive attack on my scout? Also, zergling passive attacks affect units on the same tile. I'm considering how this all plays out strategically!\n**Crafting attack options**\n\nI see that both units have attack options that could hit the current cell. Since the enemy health is at one, any hit would result in a kill if I stay in the current position. However, the units may also choose to move. I've noticed that unit 681 has option 16 and unit 683 has option 9, which are both lower indexes, so those seem like sensible choices. I want to avoid moving or resting since there are attacks available. Let\u2019s keep this reasoning concise!",
+        "usage": {
+          "input_tokens": 14800,
+          "output_tokens": 897,
+          "reasoning_tokens": 786,
+          "total_tokens": 15697
+        },
+        "use_responses_api": true,
+        "use_two_call_planning": false,
+        "estimated_cost_usd": 0.005494
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "terran",
+      "reason": "required unit id=68149053133 chose end [-1, 2], expected [-1,3]",
+      "scenario_id": "eval_scout_no_ff_stepin_to_friendly_tile",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.005494,
+      "_file": "scout_no_ff_stepin_to_friendly_tile_t0.json"
+    },
+    {
+      "case_id": "scout_prioritize_zergling_over_mountain_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260429T044925Z_iter02"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "Scout should target [3,-3] with attack_ray to kill/pressure the advancing Zergling threat before focusing Mountain.",
+      "llm": {
+        "call_timings_ms": [
+          5654
+        ],
+        "detail": {
+          "chosen_end_cell": [
+            0,
+            -3
+          ],
+          "echo_cell": [
+            1,
+            -2
+          ],
+          "error": "echo_cell_not_matching_chosen_end_cell",
+          "ok": false,
+          "option_index": 0,
+          "unit_id": 68149053133
+        },
+        "error": "echo_cell_mismatch",
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 5654,
+              "elapsed_seconds": 5.654,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "ok": false,
+        "raw": "{\"opponent_prediction\":\"Zergling to [3,-3]\",\"reasoning_summary\":\"No legal shot reaches that landing cell, so Scout moves to [1,-2] to pressure the Zergling next turn.\",\"actions\":[{\"unit_id\":68149053133,\"option_index\":0,\"echo_cell\":[1,-2]}]}",
+        "estimated_cost_usd": 0.0
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "terran",
+      "reason": "live_llm_failed: echo_cell_mismatch",
+      "scenario_id": "eval_scout_prioritize_zergling_over_mountain",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.0,
+      "_file": "scout_prioritize_zergling_over_mountain_t0.json"
+    },
+    {
+      "case_id": "zergling_commit_two_landing_hexes_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260429T044925Z_iter02"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "Zergling should commit with fast_move to one of the valid pressure hexes [-1,1] or [0,1], despite potential incoming scout damage.",
+      "llm": {
+        "call_timings_ms": [
+          5145
+        ],
+        "detail": {
+          "chosen_end_cell": [
+            -2,
+            2
+          ],
+          "echo_cell": [
+            -1,
+            1
+          ],
+          "error": "echo_cell_not_matching_chosen_end_cell",
+          "ok": false,
+          "option_index": 0,
+          "unit_id": 69071800041
+        },
+        "error": "echo_cell_mismatch",
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 5145,
+              "elapsed_seconds": 5.145,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "ok": false,
+        "raw": "{\"opponent_prediction\":\"Scout likely holds at [0,0] or steps to a neighboring hex.\",\"reasoning_summary\":\"Fast move to [-1,1] to close on [0,0] while staying safe.\",\"actions\":[{\"unit_id\":69071800041,\"option_index\":0,\"echo_cell\":[-1,1]}]}",
+        "estimated_cost_usd": 0.0
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "zerg",
+      "reason": "live_llm_failed: echo_cell_mismatch",
+      "scenario_id": "eval_zergling_commit_two_landing_hexes",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.0,
+      "_file": "zergling_commit_two_landing_hexes_t0.json"
+    }
+  ]
+}

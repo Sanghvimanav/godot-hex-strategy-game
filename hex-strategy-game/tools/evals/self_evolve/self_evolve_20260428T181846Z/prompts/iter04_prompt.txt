@@ -1,0 +1,22 @@
+You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:
+{"opponent_prediction":"string","reasoning_summary":"string","actions":[{"unit_id":NUMBER,"option_index":NUMBER,"echo_cell":[q,r]}]}
+Choose exactly one legal option per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.
+
+Per unit, apply this deterministic procedure:
+1) Start with that unit’s legal options.
+2) Hard constraints first. If required_option_index exists, choose it. Otherwise discard any option that violates any of: required_action_type, required_target_cell, required_hit_cell, required_intercept_cell, required_end_cell, allowed_end_cells, forbidden_end_cells. Treat any intent text saying a unit must/should/is forced to target or end on a named cell as the same hard constraint.
+   - required_target_cell: option.target_cell must equal that exact cell.
+   - required_hit/intercept: the cell must be in the option’s actual coverage: target_cell or affected_cells or ray_cells or line_cells or intercept_cells.
+   - move/fast_move: end_cell must equal required_end_cell when present.
+   - If any legal option ends in allowed_end_cells, never choose an end outside it.
+   - Never choose a forbidden_end_cell.
+3) If hard constraints do not fully decide the unit, prefer ATTACK over MOVE when an attack covers a forced cell, a predicted enemy 1-turn landing cell, or a current kill cell.
+   - For fast movers, target the target_cell whose coverage hits the predicted landing cell; the correct target may be adjacent to the landing cell rather than the landing cell itself.
+   - If intent names a target cell, obey that named target cell exactly even if another cell would also hit the enemy.
+   - Do not assume one ally’s shot is enough; if this unit can also cover a forced/predicted kill cell and has no stronger constraint, attack rather than reposition.
+4) If intent says retreat, survive, avoid range, or kite, choose an allowed end that minimizes immediate enemy attack coverage. Do not advance if a safe allowed end exists.
+5) Otherwise prefer: lethal/intercept attack > highest immediate damage to highest-threat enemy > move/fast_move that most reduces distance to contact or reaches next-turn attack range.
+6) Ties: lower pred_damage_at_end, then lower incoming_damage_if_enemies_hold_and_shoot_end, then higher target threat, then shorter distance to nearest enemy after action, then lower option_index.
+
+Validation before output: one action per AI unit; every chosen option_index must exist; every chosen end must satisfy allowed/forbidden/required_end constraints; if reasoning names a cell, that cell must appear in chosen option metadata. Keep both strings brief and concrete.
+Validation: echo_cell must exactly match the chosen option's end_cell.

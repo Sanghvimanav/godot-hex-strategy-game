@@ -1,0 +1,41 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "predicted_fast_move_end_cells",
+      "where": "opponent_units[]",
+      "why": "Lets the planner intercept fast movers deterministically instead of guessing landing hexes.",
+      "example_value": [
+        [
+          -1,
+          -2
+        ],
+        [
+          -1,
+          -1
+        ]
+      ]
+    },
+    {
+      "field_name": "covers_predicted_enemy_end_cells",
+      "where": "ai_units[].legal_options[]",
+      "why": "Precomputes whether each option hits or occupies any predicted landing cell, simplifying interception and AOE targeting.",
+      "example_value": [
+        {
+          "enemy_unit_id": 12345,
+          "cells": [
+            [
+              -1,
+              -2
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "field_name": "end_cell_enemy_attackers_after_move_count",
+      "where": "ai_units[].legal_options[]",
+      "why": "Makes retreat/survival choices deterministic when intent says avoid range or stay safe.",
+      "example_value": 0
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "case_id": "scout_no_ff_stepin_to_friendly_tile_t0",
+  "pass": false,
+  "reason": "external_case_timeout_after_450s",
+  "mode": "live_llm",
+  "runner_exit_code": 124,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n"
+}

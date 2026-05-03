@@ -1,0 +1,72 @@
+{
+  "case_id": "phase_fastmove_contact_zergling_vs_scout_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T181846Z_iter04"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should fast_move to [0,0] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69105354473": 0
+    },
+    "call_timings_ms": [
+      13360
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 13360,
+          "elapsed_seconds": 13.36,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter03_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter03_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter03_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one legal option per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nFor each unit, apply rules in this exact order:\n1) Hard constraints are absolute. Obey required_option_index, required_action_type, required_target_cell, required_hit_cell, required_intercept_cell, required_end_cell, allowed_end_cells, and forbidden_end_cells. Any intent/goal text that explicitly says a unit must/should/forced to target/end on a named cell is also a hard constraint.\n   - required_option_index wins.\n   - move/fast_move: end_cell must exactly match required_end_cell. If allowed_end_cells exists, never choose an end outside it when any legal allowed option exists.\n   - required_target_cell/aim: choose an option whose target_cell exactly equals that cell. Do not replace it with a nearby cell or predicted landing cell.\n   - required_hit/intercept: choose an option whose actual coverage includes that cell (target_cell, affected_cells, ray_cells, line_cells, intercept_cells).\n2) If no explicit cell/end constraint decides the unit, predict dangerous enemy 1-turn landing cells, especially for fast movers.\n   - Check ATTACK options by full coverage, not just target_cell.\n   - If a landing/kill cell can be hit only indirectly, choose the target_cell whose coverage hits it.\n   - If any legal attack covers a forced/predicted landing cell or forced/predicted kill cell, attack before moving.\n   - Prefer attacks that cover both current cell and plausible landing cells; otherwise prefer target_cell equal to the most likely landing cell.\n3) If intent says retreat, survive, avoid range, or kite: choose a legal end inside allowed_end_cells that minimizes immediate enemy attack coverage. Do not advance if a safe allowed end exists.\n4) Otherwise prefer: lethal/intercept attack > highest immediate damage to highest-threat enemy > move/fast_move that most reduces distance to contact or reaches next-turn attack range.\n5) Ties: lower pred_damage_at_end, then lower incoming_damage_if_enemies_hold_and_shoot_end, then higher target threat, then shorter distance to nearest enemy after action, then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If reasoning names a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely holds or sidesteps from [0,0]; same-tile contact denies its ray shot.\",\"reasoning_summary\":\"Fast move to [0,0] to force contact and set up same-tile passive pressure; best immediate threat and likely denies enemy shooting.\",\"actions\":[{\"unit_id\":69105354473,\"option_index\":0}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Evaluating enemy movement**\n\nI think if the enemy ends up on the same tile as mine, they might be able to move short to an adjacent tile, but not stay on the same tile. Instead, they could use an attack ray at a range of 1 to 2 to hit my cell. When I consider the range from [0,0] to [0,0], that's a distance of 0, which makes it impossible to shoot. Contact likely denies shooting, and that might be a strong strategy.\n**Assessing zergling mechanics**\n\nIt looks like I\u2019m examining how the zergling's passive attack works, especially when it comes to stacking and positioning. The rules imply that if an enemy is on the same tile as a zergling, its passive attack could deal damage during the normal phase. This may happen automatically during the fast ability phase, but I'm noticing some limitations with the options available for actions. If positioned correctly, a zergling could damage an enemy scout before it gets a chance to retaliate.\n**Evaluating zergling actions**\n\nI\u2019m considering whether a zergling can effectively target on the same tile, especially since it may not have a legal range for an attack. Moving to the same tile seems strong, though the rules suggest that a fast move happens before the enemy's turn \u2014 so the zergling could potentially enter an enemy cell first. If the enemy can see the zergling, their action options could influence the outcome, but I\u2019ll focus on ensuring the legality of option 0 in my actions array.",
+    "usage": {
+      "input_tokens": 9093,
+      "output_tokens": 1011,
+      "reasoning_tokens": 929,
+      "total_tokens": 10104
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00429525
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.00429525
+}

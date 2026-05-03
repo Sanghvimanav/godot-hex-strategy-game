@@ -1,0 +1,44 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "resolved_cover_cells",
+      "where": "ai_units[].legal_options[]",
+      "why": "Single union of all cells actually hit/affected by the option; simplifies exact-cell and predicted-landing matching for AOE/ray/line/intercept attacks.",
+      "example_value": [
+        [
+          -1,
+          -2
+        ],
+        [
+          -1,
+          -1
+        ]
+      ]
+    },
+    {
+      "field_name": "reachable_end_cells_this_turn",
+      "where": "enemy_units[]",
+      "why": "Provides engine-computed legal move/fast_move landing cells for each enemy, improving fast-mover landing prediction.",
+      "example_value": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          2,
+          1
+        ]
+      ]
+    },
+    {
+      "field_name": "turns_to_contact_after_resolve",
+      "where": "ai_units[].legal_options[]",
+      "why": "Lets the planner prefer direct pressure endpoints instead of safe lateral drift when tempo matters.",
+      "example_value": 1
+    }
+  ]
+}

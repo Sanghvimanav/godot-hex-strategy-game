@@ -1,0 +1,73 @@
+{
+  "case_id": "phase_fastmove_contact_zergling_vs_scout_far_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260503T044433Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should fast_move to [3,-2] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69206017768": 0
+    },
+    "call_timings_ms": [
+      29450
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 29450,
+          "elapsed_seconds": 29.45,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[] using action_key + target_cell. Use only listed unit_id values and legal action/target combinations.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Survival override: if enemy top1 predictions converge on your current/near cells and at least one legal move/fast_move materially lowers incoming threat this turn, choose the safer endpoint instead of contact. Prefer options with lower pred_damage_at_end (or incoming_damage_if_enemies_hold_and_shoot_end when pred_* absent), then lower enemy_count_can_hit_end_if_hold. If you are outnumbered locally (for example 1 unit vs 2+ enemies in contact range), prioritize retreat/survival over aggressive contact.\n5) No-friendly-fire targeting rule: friendly occupancy on a target cell does NOT block your attack choice. If a legal attack on a friendly-occupied cell secures a kill on a predicted enemy landing cell (especially 1-HP targets), prefer that attack over repositioning.\n6) Multi-unit kill coordination: when multiple allied units each have legal attacks that can kill the same predicted 1-HP enemy (or guaranteed kill tile), choose ATTACK actions for all such units this turn unless an attacker is strictly unable to attack that tile legally.\n7) Min-range intercept rule: if a predicted enemy landing cell equals your current cell and your attack has min_range > 0 (cannot target same-cell), do NOT default to move. Prefer a legal attack on an adjacent/intercept cell that still secures the kill (often enemy current/start cell or paired crossfire cell) over repositioning.\n8) Anti-overcommit rule: when a lone unit faces a clustered 3+ enemy stack, do not move onto the enemy-occupied stack unless it produces an immediate decisive kill advantage this turn; otherwise choose a retreat/safe fast_move endpoint.\n9) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. For pressure-only move choices, prefer endpoints that are on-axis toward immediate contact (avoid sideways drift when a direct contact lane exists).\n10) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; if multiple legal_options rows still tie on action_key + target_cell, pick the first matching row in the listed legal_options array order (top-first).\n\nValidation: every chosen action_key + target_cell pair must resolve to a legal option for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.\n"
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely attacks from [3,-2] or holds contact there.\",\"reasoning_summary\":\"Fast move to [3,-2] for direct contact and best pressure with no extra threat.\",\"actions\":[{\"unit_id\":69206017768,\"action_key\":\"fast_move\",\"target_cell\":[3,-2]}]}",
+    "reasoning_effort": "high",
+    "thinking": "**Choosing zergling action**\n\nI need to output exactly one JSON object for the action of the AI unit, a zergling, at coordinates [4,-2]. I must pick a legal option from the available choices. The enemy scout is at [3,-2] with 2 health, and my zergling has 3 health. The legal options include fast movement or reloading. However, since my fast move occurs before the enemy's, I realize I can only choose to move. So, I need to decide on the movement.\n**Analyzing movement options**\n\nI\u2019m considering whether I can intercept the enemy by moving onto a cell they might occupy. However, since I can\u2019t attack, I need to choose between making contact or prioritizing survival. My zergling is currently at [4,-2], and the enemy scout is at [3,-2], which is adjacent. If I fast move to [3,-2], I\u2019ll occupy the same cell as the enemy. I need to know if that\u2019s allowed, and it seems that it is. But then, what happens next?\n**Predicting enemy actions**\n\nIf the enemy chooses to move short, it might leave my zergling alone, but I can\u2019t be sure about that. I need to keep Rule 4 in mind: if enemy predictions are close to my current position and I have a legal move that lowers the incoming threat, I should go for a safer endpoint. I have to consider potential enemy actions, like attacking or moving to different cells. Their movement will likely resolve after my fast move, so I need to predict their landing cells carefully.\n**Considering enemy strategies**\n\nI\u2019m thinking that since we can\u2019t attack, moving onto the enemy cell might stop them from attacking the same cell, as their range can't target it. But I wonder if they might just move away using a short move or decide to attack from their current position instead? It seems I'm evaluating various strategies here to avoid potential conflicts. Let's explore how this move might play out in the game!\n**Analyzing movement mechanics**\n\nI'm mulling over movement resolution for the zergling. If we move to [3,-2], what happens if the enemy uses move_short? The enemy could opt for various moves, including potentially moving to my position if it's unoccupied. I'm considering occupancy rules \u2013 in hex games, can two units share the same cell? It appears that legal options for movement may allow occupying the same cell, particularly during combat. I need to pick a legal movement option, ideally one that predicts lower damage.\n**Deciding on aggressive moves**\n\nI'm looking at the situation where moving to [3,-2] has the lowest damage of 0 and involves visible enemy contact. According to Rule 9 about pressure, this could mean I should take that aggressive move. Since there\u2019s only one enemy and I'm not overcommitting, I'll proceed with fast_move to [3,-2]. For the opponent_prediction string, I should note the likely actions, like \"Scout likely attacks from [3,-2] or moves to [4,-2].\" However, I need to remember to include only cells that are in the chosen option metadata.\n**Refining prediction statements**\n\nI\u2019m thinking about how to communicate my action effectively. I can definitely mention [3,-2] since it\u2019s in the metadata. If I refer to the enemy's current cell, that makes sense too. My reasoning summary needs to be brief and clear, so I could state, \"Fast move onto [3,-2] to force contact; the enemy can respond from that cell.\" But I realize that saying \"enemy answer from that cell\" isn\u2019t precise enough; I need to clarify that point.\n**Structuring JSON format**\n\nI want to ensure that I create the JSON format with just one object, containing opponent_prediction, reasoning_summary, and an actions array. The reasoning_summary could say, \u201cFast move to [3,-2] for direct contact; safest and most aggressive.\u201d For opponent_prediction, I\u2019ll state, \u201cScout likely attacks from [3,-2],\u201d because that's a clear target. I\u2019ll also make sure action_key is set to \u201cfast_move\u201d using target_cell and end_cell. I\u2019ll produce this as JSON with no markdown.",
+    "usage": {
+      "input_tokens": 8118,
+      "output_tokens": 2030,
+      "reasoning_tokens": 1957,
+      "total_tokens": 10148
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.0060895
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout_far",
+  "runner_exit_code": 0,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n[planning-eval] wrote /Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/runs/self_evolve_20260503T044433Z_iter01/cases/phase_fastmove_contact_zergling_vs_scout_far_t0.json\n[planning-eval] pass=true reason=required option exists and passes checks chosen_option_index=0 chosen_option_indices=[]\n",
+  "estimated_cost_usd": 0.0060895
+}

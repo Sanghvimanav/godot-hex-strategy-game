@@ -1,0 +1,50 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "reachable_end_cells_this_turn",
+      "where": "enemy_units[]",
+      "why": "Makes mover/fast-mover landing hexes explicit so the planner can deterministically target likely end cells.",
+      "example_value": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "field_name": "covers_enemy_reachable_end_cells",
+      "where": "ai_units[].legal_options[]",
+      "why": "Precomputes whether an option\u2019s end/target/ray/AoE/intercept cells cover enemy reachable landing cells, reducing guesswork and helping exact landing-cell commits.",
+      "example_value": {
+        "enemy_id": 17,
+        "cells": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ]
+        ],
+        "count": 2
+      }
+    },
+    {
+      "field_name": "ends_on_enemy_current_cell_ids",
+      "where": "ai_units[].legal_options[]",
+      "why": "Lets the planner immediately detect exact reach/contact options instead of choosing adjacent pressure cells.",
+      "example_value": [
+        17
+      ]
+    }
+  ]
+}

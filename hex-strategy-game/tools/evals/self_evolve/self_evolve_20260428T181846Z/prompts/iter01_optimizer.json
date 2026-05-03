@@ -1,0 +1,287 @@
+{
+  "raw": "{\"new_system_prompt\":\"You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\\n{\\\"opponent_prediction\\\":\\\"string\\\",\\\"reasoning_summary\\\":\\\"string\\\",\\\"actions\\\":[{\\\"unit_id\\\":NUMBER,\\\"option_index\\\":NUMBER}]}\\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\\n\\nApply rules in this order for each unit:\\n1) Hard constraints first. If payload intent/goal/constraints name a required option, required target cell, required hit/intercept cell, required end cell, allowed_end_cells, or forbidden_end_cells, obey them exactly. For move/fast_move, match end_cell only. For attacks, distinguish AIM from HIT: if the named cell is the attack target/aim cell, choose an option whose target_cell exactly equals that cell, even if damage lands via AOE/ray on another cell. If the named cell is a hit/intercept cell, choose an attack whose actual coverage includes it (target_cell, affected_cells, ray_cells, line_cells, intercept_cells). Never replace a named cell with a nearby cell or predicted landing cell.\\n2) Fast-mover interception. Otherwise, predict 1-2 likely landing cells for dangerous enemies that can move before your hit resolves. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE, target the predicted landing cell itself when possible. Only choose move/fast_move onto a predicted landing cell if no legal attack by that unit can cover any predicted landing cell.\\n3) Do not drop coverage just because another ally can also cover it. If a unit has a legal attack covering the critical predicted landing/kill cell, prefer that attack over a pressure move unless rule 1 forbids it.\\n4) Otherwise choose a lethal attack; else highest immediate damage against the highest-threat enemy.\\n5) Otherwise, if intent/goal says retreat, survive, avoid range, or kite, choose a legal move/fast_move ending outside immediate enemy attack coverage; if allowed_end_cells exist, choose among them only. Else choose the most aggressive legal move/fast_move that reduces distance to key enemies/objectives most.\\n6) Ties: lower pred_damage_at_end; then lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\\n\\nValidation: every chosen option_index must exist for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.\",\"payload_mutation_spec\":{\"remove_paths\":[],\"set_values\":{\"planner_context.strict_json_only\":true,\"planner_context.named_attack_target_cell_is_binding\":true,\"planner_context.cover_predicted_fast_mover_landings\":true,\"planner_context.allowed_end_cells_are_hard_constraints\":true},\"copy_paths\":[{\"from\":\"scenario.intent\",\"to\":\"planner.intent\"},{\"from\":\"turn.goal\",\"to\":\"planner.goal\"}]},\"suggested_snapshot_fields_to_add\":[{\"field_name\":\"predicted_fast_move_end_cells\",\"where\":\"opponent_units[]\",\"why\":\"Lets the planner intercept fast movers deterministically instead of guessing landing hexes.\",\"example_value\":[[-1,-2],[-1,-1]]},{\"field_name\":\"covers_predicted_enemy_end_cells\",\"where\":\"ai_units[].legal_options[]\",\"why\":\"Precomputes whether each option hits or occupies any predicted landing cell, simplifying interception and AOE targeting.\",\"example_value\":[{\"enemy_unit_id\":12345,\"cells\":[[-1,-2]]}]},{\"field_name\":\"end_cell_enemy_attackers_after_move_count\",\"where\":\"ai_units[].legal_options[]\",\"why\":\"Makes retreat/survival choices deterministic when intent says avoid range or stay safe.\",\"example_value\":0}],\"rationale\":\"The failures came from three gaps: the prompt treated a named attack aim cell as interchangeable with the enemy landing cell, it did not explicitly honor allowed retreat destinations, and it let one unit stop covering a critical landing/kill cell just because another ally already did. The revised prompt makes named cells and allowed_end_cells hard constraints, separates attack aim cells from hit cells, and adds a deterministic rule that each unit should still prefer a covering attack over a pressure move when relevant.\",\"expected_fix\":\"Marine AOE cases should pick the attack whose target_cell is the named aim hex (for example [-1,-1]) even when the actual victim lands on an adjacent covered hex. Retreat scenarios should stay within allowed_end_cells and prefer safe endpoints outside enemy coverage. Multi-unit interception scenarios should keep both eligible units on attacks that cover the critical landing/kill cell instead of sending one forward to move.\"}",
+  "parsed": {
+    "new_system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nApply rules in this order for each unit:\n1) Hard constraints first. If payload intent/goal/constraints name a required option, required target cell, required hit/intercept cell, required end cell, allowed_end_cells, or forbidden_end_cells, obey them exactly. For move/fast_move, match end_cell only. For attacks, distinguish AIM from HIT: if the named cell is the attack target/aim cell, choose an option whose target_cell exactly equals that cell, even if damage lands via AOE/ray on another cell. If the named cell is a hit/intercept cell, choose an attack whose actual coverage includes it (target_cell, affected_cells, ray_cells, line_cells, intercept_cells). Never replace a named cell with a nearby cell or predicted landing cell.\n2) Fast-mover interception. Otherwise, predict 1-2 likely landing cells for dangerous enemies that can move before your hit resolves. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE, target the predicted landing cell itself when possible. Only choose move/fast_move onto a predicted landing cell if no legal attack by that unit can cover any predicted landing cell.\n3) Do not drop coverage just because another ally can also cover it. If a unit has a legal attack covering the critical predicted landing/kill cell, prefer that attack over a pressure move unless rule 1 forbids it.\n4) Otherwise choose a lethal attack; else highest immediate damage against the highest-threat enemy.\n5) Otherwise, if intent/goal says retreat, survive, avoid range, or kite, choose a legal move/fast_move ending outside immediate enemy attack coverage; if allowed_end_cells exist, choose among them only. Else choose the most aggressive legal move/fast_move that reduces distance to key enemies/objectives most.\n6) Ties: lower pred_damage_at_end; then lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.",
+    "payload_mutation_spec": {
+      "remove_paths": [],
+      "set_values": {
+        "planner_context.strict_json_only": true,
+        "planner_context.named_attack_target_cell_is_binding": true,
+        "planner_context.cover_predicted_fast_mover_landings": true,
+        "planner_context.allowed_end_cells_are_hard_constraints": true
+      },
+      "copy_paths": [
+        {
+          "from": "scenario.intent",
+          "to": "planner.intent"
+        },
+        {
+          "from": "turn.goal",
+          "to": "planner.goal"
+        }
+      ]
+    },
+    "suggested_snapshot_fields_to_add": [
+      {
+        "field_name": "predicted_fast_move_end_cells",
+        "where": "opponent_units[]",
+        "why": "Lets the planner intercept fast movers deterministically instead of guessing landing hexes.",
+        "example_value": [
+          [
+            -1,
+            -2
+          ],
+          [
+            -1,
+            -1
+          ]
+        ]
+      },
+      {
+        "field_name": "covers_predicted_enemy_end_cells",
+        "where": "ai_units[].legal_options[]",
+        "why": "Precomputes whether each option hits or occupies any predicted landing cell, simplifying interception and AOE targeting.",
+        "example_value": [
+          {
+            "enemy_unit_id": 12345,
+            "cells": [
+              [
+                -1,
+                -2
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "field_name": "end_cell_enemy_attackers_after_move_count",
+        "where": "ai_units[].legal_options[]",
+        "why": "Makes retreat/survival choices deterministic when intent says avoid range or stay safe.",
+        "example_value": 0
+      }
+    ],
+    "rationale": "The failures came from three gaps: the prompt treated a named attack aim cell as interchangeable with the enemy landing cell, it did not explicitly honor allowed retreat destinations, and it let one unit stop covering a critical landing/kill cell just because another ally already did. The revised prompt makes named cells and allowed_end_cells hard constraints, separates attack aim cells from hit cells, and adds a deterministic rule that each unit should still prefer a covering attack over a pressure move when relevant.",
+    "expected_fix": "Marine AOE cases should pick the attack whose target_cell is the named aim hex (for example [-1,-1]) even when the actual victim lands on an adjacent covered hex. Retreat scenarios should stay within allowed_end_cells and prefer safe endpoints outside enemy coverage. Multi-unit interception scenarios should keep both eligible units on attacks that cover the critical landing/kill cell instead of sending one forward to move."
+  },
+  "failed_cases": [
+    {
+      "case_id": "marine_aoe_branch_zerg_to_neg1neg2_t0",
+      "chosen_option_index": 11,
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260428T181846Z_iter01"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "With the Zergling forced to [-1,-2], Marine should still choose attack_short on [-1,-1] to hit via AOE.",
+      "llm": {
+        "base_url": "https://api.openai.com/v1",
+        "by_unit_id": {
+          "68434265805": 11
+        },
+        "call_timings_ms": [
+          7763
+        ],
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 7763,
+              "elapsed_seconds": 7.763,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "model": "gpt-5.4-mini",
+        "ok": true,
+        "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+        "payload_profile": "baseline",
+        "planning_max_tokens": 16128,
+        "planning_prompt_version": "minimal",
+        "prompt_debug": {
+          "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+          "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+          "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+          "payload_profile": "baseline",
+          "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+        },
+        "raw": "{\"opponent_prediction\":\"Zergling fast_moves to [-1,-2].\",\"reasoning_summary\":\"Intercept the forced landing cell [-1,-2] with attack_short option 11.\",\"actions\":[{\"unit_id\":68434265805,\"option_index\":11}]}",
+        "reasoning_effort": "medium",
+        "thinking": "**Evaluating attack options**\n\nI'm considering option 12, which covers cells [-1,-1] and [-1,-2]. I need to pick the lowest-index legal option that precisely hits the target cell. Since we don't require exact coverage here, I have to follow Rule 2, prioritizing a legal attack that reaches the predicted landing cell. That makes me lean towards options 11 or 12, with option 11 being the lowest index covering [-1,-2]. I\u2019ll check if it matches the target\u2014looks like it does! I choose option 11 for interception.\n**Reviewing opponent predictions**\n\nI think the opponent's prediction regarding the cell should be included in the option metadata. Specifically, cell [-1,-2] is actually in option 11's metadata. According to the rules, if the opponent's prediction or reasoning summary mentions a cell, it has to appear in the chosen option's metadata too. Since it does, everything checks out! I feel like I'm on the right track here, ensuring that I'm following the guidelines correctly.",
+        "usage": {
+          "input_tokens": 8931,
+          "output_tokens": 577,
+          "reasoning_tokens": 516,
+          "total_tokens": 9508
+        },
+        "use_responses_api": true,
+        "use_two_call_planning": false,
+        "estimated_cost_usd": 0.00338675
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "terran",
+      "reason": "chosen end [-1, -2] != required [-1,-1]",
+      "scenario_id": "eval_marine_aoe_branch_zerg_to_neg1neg2",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.00338675,
+      "_file": "marine_aoe_branch_zerg_to_neg1neg2_t0.json"
+    },
+    {
+      "case_id": "phase_zergling_retreat_vs_3marines_t0",
+      "chosen_option_index": 4,
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260428T181846Z_iter01"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "Zergling should retreat from [-3,2] to [-4,3], [-4,2], or [-3,3] to stay out of Marine range while Marines target [-3,2].",
+      "llm": {
+        "base_url": "https://api.openai.com/v1",
+        "by_unit_id": {
+          "69625448187": 4
+        },
+        "call_timings_ms": [
+          10401
+        ],
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 10401,
+              "elapsed_seconds": 10.401,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "model": "gpt-5.4-mini",
+        "ok": true,
+        "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+        "payload_profile": "baseline",
+        "planning_max_tokens": 16128,
+        "planning_prompt_version": "minimal",
+        "prompt_debug": {
+          "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+          "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+          "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+          "payload_profile": "baseline",
+          "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+        },
+        "raw": "{\"opponent_prediction\":\"Marines likely hold at [-2,1] or step off it.\",\"reasoning_summary\":\"Fast move to [-2,1] for immediate same-tile contact; no attack option exists.\",\"actions\":[{\"unit_id\":69625448187,\"option_index\":4}]}",
+        "reasoning_effort": "medium",
+        "thinking": "**Considering movement rules**\n\nI don\u2019t see an explicit goal here. According to the rules, I should choose a legal attack if the coverage includes a predicted landing. However, since zerglings have no legal attack, I can only move or fast move to the predicted landing cell if no attack can cover any predicted landing cell. So, moving onto the predicted landing cell seems to be the right move.",
+        "usage": {
+          "input_tokens": 10663,
+          "output_tokens": 805,
+          "reasoning_tokens": 738,
+          "total_tokens": 11468
+        },
+        "use_responses_api": true,
+        "use_two_call_planning": false,
+        "estimated_cost_usd": 0.00427575
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "zerg",
+      "reason": "chosen fast_move end not in allowed_end_cells",
+      "scenario_id": "eval_phase_zergling_retreat_vs_3marines",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.00427575,
+      "_file": "phase_zergling_retreat_vs_3marines_t0.json"
+    },
+    {
+      "case_id": "scout_no_ff_crossfire_other_scout_tile_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260428T181846Z_iter01"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "With 1-HP Zergling moving from [-1,3] to [-1,4], scout should target the other scout tile [-1,4] to secure kill regardless of hold vs move.",
+      "llm": {
+        "base_url": "https://api.openai.com/v1",
+        "by_unit_id": {
+          "68182607565": 10,
+          "68367156968": 2
+        },
+        "call_timings_ms": [
+          22035
+        ],
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 22035,
+              "elapsed_seconds": 22.035,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "model": "gpt-5.4-mini",
+        "ok": true,
+        "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+        "payload_profile": "baseline",
+        "planning_max_tokens": 16128,
+        "planning_prompt_version": "minimal",
+        "prompt_debug": {
+          "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+          "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+          "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+          "payload_profile": "baseline",
+          "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+        },
+        "raw": "{\"opponent_prediction\":\"Zergling fast_moves to [-1,4].\",\"reasoning_summary\":\"Scout 68182607565 shoots the landing cell [-1,4]; Scout 68367156968 steps to [-1,3] to keep pressure after the move.\",\"actions\":[{\"unit_id\":68182607565,\"option_index\":10},{\"unit_id\":68367156968,\"option_index\":2}]}",
+        "reasoning_effort": "medium",
+        "thinking": "**Considering game mechanics**\n\nI\u2019m thinking about the rules regarding \"friendly fire\" and passive attacks from enemy Zerglings on the same tile. It seems that an enemy Zergling's passive attack might damage entities in that tile, but we don't actually control that part, which complicates things. Also, there's the attack_ray option for the scout that covers the current cell but doesn\u2019t seem to account for movement. It's a bit tricky to navigate all these mechanics!\n**Analyzing scout movement**\n\nI\u2019m considering whether the second scout could try moving to -1,3. This would put it in the cell left empty by the enemy, but there's an enemy at -1,4. Our first scout could potentially attack the enemy there, while the second scout moving to -1,3 might reduce the distance to the enemy. But then, if the enemy quickly moves back to -1,4, the second scout would just be staying put, with only a distance of 1 between them.\n**Evaluating scout strategy**\n\nI\u2019m considering the situation where an enemy lands on our scout. Maybe we want a second scout to maintain lane control? I should inspect the option metadata for the second scout. If I move it short from index 2 to -1 and 3, there's end_has_visible_enemy as true, and it\u2019s expected to have one hit because it would land in the enemy's current cell before their move. But since the enemy moves first, it feels like the rules might complicate things.\n**Evaluating legal options**\n\nI need to find the lowest-index legal option that can precisely reach the target cell. There\u2019s also the option for a short move, maybe to positions like 0 or 3, but those aren't exact matches. I see that using attack_ray with an index of 10 does cover the landing cell adequately. I\u2019ll focus on ensuring I\u2019m selecting the most appropriate resolution method.",
+        "usage": {
+          "input_tokens": 14555,
+          "output_tokens": 2300,
+          "reasoning_tokens": 2208,
+          "total_tokens": 16855
+        },
+        "use_responses_api": true,
+        "use_two_call_planning": false,
+        "estimated_cost_usd": 0.00823875
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "terran",
+      "reason": "required unit id=68367156968 chose move_short, expected attack_ray",
+      "scenario_id": "eval_scout_no_ff_crossfire_other_scout_tile",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.00823875,
+      "_file": "scout_no_ff_crossfire_other_scout_tile_t0.json"
+    }
+  ]
+}

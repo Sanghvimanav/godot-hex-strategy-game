@@ -1,0 +1,46 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "coverage_cells",
+      "where": "ai_units[].legal_options[]",
+      "why": "Normalized union of all cells actually hit or covered by an option; removes ambiguity when matching required cells or predicted landing cells.",
+      "example_value": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          0
+        ]
+      ]
+    },
+    {
+      "field_name": "predicted_landing_cells",
+      "where": "enemy_units[]",
+      "why": "Engine-ranked likely post-move landing cells for fast movers; makes interception decisions less guessy and more consistent.",
+      "example_value": [
+        [
+          1,
+          0
+        ],
+        [
+          1,
+          1
+        ]
+      ]
+    },
+    {
+      "field_name": "covers_predicted_enemy_ids",
+      "where": "ai_units[].legal_options[]",
+      "why": "Precomputed link from an option to enemies whose predicted landing cells it covers; helps avoid mistakenly moving when an attack already intercepts.",
+      "example_value": [
+        67947726541
+      ]
+    }
+  ]
+}

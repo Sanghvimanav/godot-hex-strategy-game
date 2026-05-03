@@ -1,0 +1,73 @@
+{
+  "case_id": "phase_fastmove_contact_zergling_vs_scout_hp1_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260503T044433Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Even at 1 HP, Zergling should fast_move to [0,0] to force contact and damage the Scout.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69206017768": 0
+    },
+    "call_timings_ms": [
+      25650
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 25650,
+          "elapsed_seconds": 25.65,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[] using action_key + target_cell. Use only listed unit_id values and legal action/target combinations.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Survival override: if enemy top1 predictions converge on your current/near cells and at least one legal move/fast_move materially lowers incoming threat this turn, choose the safer endpoint instead of contact. Prefer options with lower pred_damage_at_end (or incoming_damage_if_enemies_hold_and_shoot_end when pred_* absent), then lower enemy_count_can_hit_end_if_hold. If you are outnumbered locally (for example 1 unit vs 2+ enemies in contact range), prioritize retreat/survival over aggressive contact.\n5) No-friendly-fire targeting rule: friendly occupancy on a target cell does NOT block your attack choice. If a legal attack on a friendly-occupied cell secures a kill on a predicted enemy landing cell (especially 1-HP targets), prefer that attack over repositioning.\n6) Multi-unit kill coordination: when multiple allied units each have legal attacks that can kill the same predicted 1-HP enemy (or guaranteed kill tile), choose ATTACK actions for all such units this turn unless an attacker is strictly unable to attack that tile legally.\n7) Min-range intercept rule: if a predicted enemy landing cell equals your current cell and your attack has min_range > 0 (cannot target same-cell), do NOT default to move. Prefer a legal attack on an adjacent/intercept cell that still secures the kill (often enemy current/start cell or paired crossfire cell) over repositioning.\n8) Anti-overcommit rule: when a lone unit faces a clustered 3+ enemy stack, do not move onto the enemy-occupied stack unless it produces an immediate decisive kill advantage this turn; otherwise choose a retreat/safe fast_move endpoint.\n9) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. For pressure-only move choices, prefer endpoints that are on-axis toward immediate contact (avoid sideways drift when a direct contact lane exists).\n10) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; if multiple legal_options rows still tie on action_key + target_cell, pick the first matching row in the listed legal_options array order (top-first).\n\nValidation: every chosen action_key + target_cell pair must resolve to a legal option for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.\n"
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely keeps pressure from nearby; [0,0] is the safest end.\",\"reasoning_summary\":\"Fast move to [0,0] lowers incoming damage to 0 versus 1 on the other ends.\",\"actions\":[{\"unit_id\":69206017768,\"action_key\":\"fast_move\",\"target_cell\":[0,0]}]}",
+    "reasoning_effort": "high",
+    "thinking": "**Exploring passive attack mechanics**\n\nI'm analyzing the passive action key \u201cattack_passive\u201d and its associated definitions. It seems like this ability might auto-resolve on the same tile, and I wonder if you can fast move onto an enemy to trigger it. The action definitions note attack_passive as a fast ability, but it\u2019s not in the legal options list, suggesting passive actions might not be selectable. This raises questions about whether a passive attack happens automatically after a fast move if units end up sharing a tile. I've got to think through the rules carefully!\n**Evaluating Zergling movement options**\n\nI\u2019m considering how the enemy can move from [0,0] to an adjacent cell during the move phase, which would leave the same tile. My zergling's fast move to [0,0] before the enemy could allow contact, but if a passive attack happens immediately upon entering that tile, it might only deal 1 damage, which wouldn\u2019t be enough to kill. I\u2019m thinking about whether to choose reload instead. However, I want to maintain aggressive pressure or ensure survival. I need to check if any attack could impact where the enemy might land.\n**Analyzing movement options**\n\nI\u2019m evaluating if I should move my unit to [0,0]. We have an enemy scout nearby at [0,0], which can attack my current position at [1,0]. However, the legal options data for [0,0] shows it can't hit my unit if I move there. This is because the attack range minimum is 1, meaning if my unit and the enemy scout end up in the same cell, they can't directly attack each other. Interesting strategic consideration!\n**Considering zergling strategy**\n\nSo, if my zergling ends up on [0,0], the enemy moving away shouldn't hurt us. That spot seems both safe and aggressive. But if I attack and there\u2019s an enemy on the same tile, I might only deal 1 damage, leaving the enemy alive with 1 HP. I need to think about whether both units can share a tile during the phase of the game. It seems the enemy scout doesn\u2019t have a fast ability, but I need to confirm how the passive attack resolves. That's a key detail!\n**Evaluating attack scenarios**\n\nIf my zergling fast-moves onto [0,0], the passive attack might trigger during the fast ability phase, causing damage to the enemy on the same tile. Since the enemy doesn\u2019t have a fast ability, the damage would resolve before it can move. If I only deal 1 damage, the enemy scout will remain at 1 HP. I\u2019m wondering if occupying the same tile might result in the enemy also damaging itself, but I need to check the specific game rules for that. It's a bit convoluted!\n**Validating cell references**\n\nI need to ensure that if either the opponent's prediction or reasoning summary mentions a specific cell, it should definitely be included in the chosen option metadata. So, I should only mention those cells that are actually present in the chosen option metadata. This makes things clear and valid, so I\u2019m keeping it straightforward by checking the cells at positions like [0,0] or [1,0], but being careful not to introduce unnecessary options.",
+    "usage": {
+      "input_tokens": 8137,
+      "output_tokens": 2406,
+      "reasoning_tokens": 2327,
+      "total_tokens": 10543
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00684625
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout_hp1",
+  "runner_exit_code": 0,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n[planning-eval] wrote /Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/runs/self_evolve_20260503T044433Z_iter01/cases/phase_fastmove_contact_zergling_vs_scout_hp1_t0.json\n[planning-eval] pass=true reason=required option exists and passes checks chosen_option_index=0 chosen_option_indices=[]\n",
+  "estimated_cost_usd": 0.00684625
+}

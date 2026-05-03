@@ -1,24 +1,24 @@
 extends RefCounted
 class_name LlmLearningsIngest
 ## Reads Markdown under user://ai_learnings/; builds bounded text for planning JSON `prior_learnings`.
-## Primary: canonical `ai_learnings.md`: optional leading `## Distilled` block, then sessions separated by a line containing only --- (newest session first).
-## Fallback: any other top-level `*.md` by modified time, newest first.
+## Primary: canonical `ai_learnings.md` contains ONLY the rolling `## Distilled` block.
+## Session archives live as individual files under user://ai_learnings/sessions/ (newest-first by filename).
 
-## No trailing slash — use path_join for files (DirAccess.open is picky on some platforms).
 const USER_LEARNINGS_ROOT := "user://ai_learnings"
 const CANONICAL_LEARNINGS_FILENAME := "ai_learnings.md"
-## Last K session archives (after Distilled) injected into the planner as learnings-only snippets.
-const MAX_SESSION_SNIPPETS := 3
-## Legacy: max whole session files when reading non-canonical markdown.
-const MAX_SESSION_FILES := 8
+const SESSIONS_SUBFOLDER := "sessions"
+## Max session archive files kept on disk; oldest pruned when exceeded.
+const MAX_SESSION_FILES := 40
+## Recent session files read for post-game context.
+const MAX_SESSION_SNIPPETS_FOR_POST_GAME := 8
 ## Char budget for rolling distilled block in planner prompt.
-const MAX_DISTILLED_INJECT_CHARS := 2400
-## Rough total char budget for the injected prior_learnings block (distilled + recent session learnings + legacy).
-const MAX_INJECT_CHARS := 4200
+const MAX_DISTILLED_INJECT_CHARS := 8000
+## Rough total char budget for the injected prior_learnings block.
+const MAX_INJECT_CHARS := 10000
 ## Cap when passing distilled into post-game JSON.
-const MAX_POSTGAME_DISTILLED_EXCERPT_CHARS := 8000
+const MAX_POSTGAME_DISTILLED_EXCERPT_CHARS := 12000
 ## Cap for recent session learnings excerpt in post-game JSON.
-const MAX_POSTGAME_RECENT_SESSION_CHARS := 2500
+const MAX_POSTGAME_RECENT_SESSION_CHARS := 4000
 
 const _SECTION_NAMES: Array[String] = [
 	"Metadata",
@@ -33,7 +33,12 @@ static func canonical_learnings_path() -> String:
 	return USER_LEARNINGS_ROOT.path_join(CANONICAL_LEARNINGS_FILENAME)
 
 
+static func sessions_dir_path() -> String:
+	return USER_LEARNINGS_ROOT.path_join(SESSIONS_SUBFOLDER)
+
+
 ## Split canonical file text into session chunks (newest-first file order preserved).
+## Kept for backwards compat with old format files that have embedded sessions.
 static func split_canonical_markdown_into_sessions(md: String) -> PackedStringArray:
 	var raw: PackedStringArray = md.split("\n---\n")
 	var out: PackedStringArray = PackedStringArray()
@@ -44,7 +49,8 @@ static func split_canonical_markdown_into_sessions(md: String) -> PackedStringAr
 	return out
 
 
-## If the first segment is `## Distilled`, it is the rolling summary; remaining segments are per-match archives (newest first).
+## Parse canonical file. New format: distilled-only. Old format: distilled + --- + sessions.
+## Returns { distilled: String, sessions: PackedStringArray }.
 static func parse_canonical_file(md: String) -> Dictionary:
 	var distilled := ""
 	var sessions: PackedStringArray = PackedStringArray()
@@ -71,6 +77,53 @@ static func ensure_directory() -> void:
 		var err := d.make_dir_recursive("ai_learnings")
 		if err != OK:
 			push_warning("LlmLearningsIngest: could not create ai_learnings (err %d)" % err)
+
+
+static func ensure_sessions_directory() -> void:
+	ensure_directory()
+	var d := DirAccess.open(USER_LEARNINGS_ROOT)
+	if d == null:
+		push_warning("LlmLearningsIngest: cannot open %s" % USER_LEARNINGS_ROOT)
+		return
+	if not d.dir_exists(SESSIONS_SUBFOLDER):
+		var err := d.make_dir(SESSIONS_SUBFOLDER)
+		if err != OK:
+			push_warning("LlmLearningsIngest: could not create sessions dir (err %d)" % err)
+
+
+## Deletes all learnings: canonical file + all session archives.
+static func clear_saved_learnings_from_disk() -> Dictionary:
+	ensure_directory()
+	var deleted := 0
+	var failed := 0
+	var dir := DirAccess.open(USER_LEARNINGS_ROOT)
+	if dir == null:
+		return { "ok": false, "deleted_count": 0, "failed": 0 }
+	dir.list_dir_begin()
+	var fn := dir.get_next()
+	while fn != "":
+		if not dir.current_is_dir() and not fn.begins_with(".") and fn.ends_with(".md"):
+			var err := dir.remove(fn)
+			if err == OK:
+				deleted += 1
+			else:
+				failed += 1
+		fn = dir.get_next()
+	dir.list_dir_end()
+	var sess_dir := DirAccess.open(sessions_dir_path())
+	if sess_dir != null:
+		sess_dir.list_dir_begin()
+		fn = sess_dir.get_next()
+		while fn != "":
+			if not sess_dir.current_is_dir() and fn.ends_with(".md"):
+				var err := sess_dir.remove(fn)
+				if err == OK:
+					deleted += 1
+				else:
+					failed += 1
+			fn = sess_dir.get_next()
+		sess_dir.list_dir_end()
+	return { "ok": true, "deleted_count": deleted, "failed": failed }
 
 
 ## Parse one Markdown string: section name -> array of bullet lines (leading "- " stripped).
@@ -136,7 +189,85 @@ static func map_bounds_learnings_block(map_bounds: Dictionary) -> String:
 	return "## Map boundaries (automatic)\n\n- %s" % bullet
 
 
-## Plain-text excerpt of ## Learnings bullets from the first `max_sessions` session archives (canonical file order).
+## List session archive files in sessions/ dir, sorted newest-first (by filename which is timestamp-prefixed).
+static func list_session_files_newest_first() -> PackedStringArray:
+	ensure_sessions_directory()
+	var dir := DirAccess.open(sessions_dir_path())
+	if dir == null:
+		return PackedStringArray()
+	var files: Array = []
+	dir.list_dir_begin()
+	var fn := dir.get_next()
+	while fn != "":
+		if not dir.current_is_dir() and fn.ends_with(".md"):
+			files.append(fn)
+		fn = dir.get_next()
+	dir.list_dir_end()
+	files.sort()
+	files.reverse()
+	var out: PackedStringArray = PackedStringArray()
+	for f in files:
+		out.append(str(f))
+	return out
+
+
+## Write a session archive to sessions/ dir. Returns the full path written. Prunes oldest files beyond MAX_SESSION_FILES.
+static func write_session_archive(content: String, scenario_id: String) -> String:
+	ensure_sessions_directory()
+	var dt: Dictionary = Time.get_datetime_dict_from_system()
+	var ts := "%04d%02d%02d_%02d%02d%02d" % [
+		int(dt.get("year", 0)), int(dt.get("month", 0)), int(dt.get("day", 0)),
+		int(dt.get("hour", 0)), int(dt.get("minute", 0)), int(dt.get("second", 0)),
+	]
+	var safe_id := scenario_id.replace("/", "_").replace(" ", "_")
+	var filename := "session_%s_%s.md" % [ts, safe_id]
+	var path := sessions_dir_path().path_join(filename)
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		push_warning("LlmLearningsIngest: could not write session %s" % path)
+		return ""
+	f.store_string(content.strip_edges())
+	f.close()
+	_prune_old_sessions()
+	return path
+
+
+static func _prune_old_sessions() -> void:
+	var files := list_session_files_newest_first()
+	if files.size() <= MAX_SESSION_FILES:
+		return
+	var dir := DirAccess.open(sessions_dir_path())
+	if dir == null:
+		return
+	for i in range(MAX_SESSION_FILES, files.size()):
+		dir.remove(str(files[i]))
+
+
+## Read the distilled-only canonical file.
+static func read_distilled_from_disk() -> String:
+	var path := canonical_learnings_path()
+	if not FileAccess.file_exists(path):
+		return ""
+	var raw := FileAccess.get_file_as_string(path)
+	var parsed := parse_canonical_file(raw)
+	return str(parsed.get("distilled", "")).strip_edges()
+
+
+## Write distilled-only to the canonical file (no sessions embedded).
+static func write_distilled_to_disk(distilled_md: String) -> String:
+	ensure_directory()
+	var path := canonical_learnings_path()
+	var d := distilled_md.strip_edges()
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		push_warning("LlmLearningsIngest: could not write %s" % path)
+		return ""
+	f.store_string(d)
+	f.close()
+	return path
+
+
+## Plain-text excerpt of ## Learnings bullets from session archive content strings.
 static func build_recent_session_learnings_text(
 	sessions: PackedStringArray,
 	max_sessions: int,
@@ -162,140 +293,55 @@ static func build_recent_session_learnings_text(
 	return s
 
 
-## Text for post-game JSON: capped rolling distill + capped recent session learnings only.
-static func extract_prior_context_for_post_game() -> Dictionary:
-	ensure_directory()
-	var path := canonical_learnings_path()
-	if not FileAccess.file_exists(path):
-		return { "distilled": "", "recent_session_learnings": "" }
-	var parsed: Dictionary = parse_canonical_file(FileAccess.get_file_as_string(path))
-	var d: String = str(parsed.get("distilled", "")).strip_edges()
-	if d.length() > MAX_POSTGAME_DISTILLED_EXCERPT_CHARS:
-		d = d.substr(0, MAX_POSTGAME_DISTILLED_EXCERPT_CHARS) + "\n…"
-	var sessions: PackedStringArray = parsed.get("sessions", PackedStringArray()) as PackedStringArray
-	var r: String = build_recent_session_learnings_text(
+## Read recent session files and build learnings text for post-game context.
+static func read_recent_sessions_for_post_game() -> String:
+	var files := list_session_files_newest_first()
+	var sessions: PackedStringArray = PackedStringArray()
+	var base := sessions_dir_path()
+	for i in range(mini(files.size(), MAX_SESSION_SNIPPETS_FOR_POST_GAME)):
+		var path := base.path_join(str(files[i]))
+		if FileAccess.file_exists(path):
+			sessions.append(FileAccess.get_file_as_string(path).strip_edges())
+	return build_recent_session_learnings_text(
 		sessions,
-		12,
+		MAX_SESSION_SNIPPETS_FOR_POST_GAME,
 		MAX_POSTGAME_RECENT_SESSION_CHARS,
 	)
+
+
+## Text for post-game JSON: capped rolling distill + capped recent session learnings.
+static func extract_prior_context_for_post_game() -> Dictionary:
+	var d := read_distilled_from_disk()
+	if d.length() > MAX_POSTGAME_DISTILLED_EXCERPT_CHARS:
+		d = d.substr(0, MAX_POSTGAME_DISTILLED_EXCERPT_CHARS) + "\n…"
+	var r := read_recent_sessions_for_post_game()
 	return { "distilled": d, "recent_session_learnings": r }
 
 
-static func _list_md_newest_first() -> PackedStringArray:
-	var entries: Array = []
-	var dir := DirAccess.open(USER_LEARNINGS_ROOT)
-	if dir == null:
-		return PackedStringArray()
-	dir.list_dir_begin()
-	var fn := dir.get_next()
-	while fn != "":
-		if (
-			not dir.current_is_dir()
-			and not fn.begins_with(".")
-			and fn.ends_with(".md")
-			and fn != CANONICAL_LEARNINGS_FILENAME
-		):
-			var path: String = USER_LEARNINGS_ROOT.path_join(fn)
-			var mt: int = 0
-			if FileAccess.file_exists(path):
-				mt = FileAccess.get_modified_time(path)
-			entries.append({ "path": path, "name": fn, "mtime": mt })
-		fn = dir.get_next()
-	dir.list_dir_end()
-
-	entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["mtime"]) > int(b["mtime"]))
-	var out: PackedStringArray = PackedStringArray()
-	for e in entries:
-		out.append(str(e["path"]))
-	return out
-
-
+## Build prior_learnings block for the planning prompt. Distilled-only (no session snippets).
 static func build_prompt_block_for_planner(map_bounds: Dictionary = {}) -> String:
 	ensure_directory()
 	var bounds_block := map_bounds_learnings_block(map_bounds)
 
-	var chunks: PackedStringArray = PackedStringArray()
-	var used := 0
-
-	var canonical_path := canonical_learnings_path()
-	var used_canonical := false
-	if FileAccess.file_exists(canonical_path):
-		var canonical_full: String = FileAccess.get_file_as_string(canonical_path)
-		if not canonical_full.strip_edges().is_empty():
-			used_canonical = true
-			var parsed: Dictionary = parse_canonical_file(canonical_full)
-			var distilled: String = str(parsed.get("distilled", "")).strip_edges()
-			if not distilled.is_empty():
-				var sep_cost: int = 1 if chunks.size() > 0 else 0
-				var hdr: String = "--- rolling distilled summary (ranked learnings, contradictions, experiments) ---\n"
-				var room: int = MAX_INJECT_CHARS - used - sep_cost - hdr.length()
-				if room > 48:
-					var dchunk: String = distilled
-					var soft_cap: int = mini(MAX_DISTILLED_INJECT_CHARS, room)
-					if dchunk.length() > soft_cap:
-						dchunk = dchunk.substr(0, soft_cap) + "\n…"
-					var dblock: String = hdr + dchunk
-					if chunks.size() > 0:
-						chunks.append("")
-						used += 1
-					chunks.append(dblock)
-					used += dblock.length()
-			var sess: PackedStringArray = parsed.get("sessions", PackedStringArray()) as PackedStringArray
-			var budget: int = maxi(0, MAX_INJECT_CHARS - used - 80)
-			var recent: String = build_recent_session_learnings_text(sess, MAX_SESSION_SNIPPETS, budget)
-			if not recent.is_empty():
-				if chunks.size() > 0:
-					chunks.append("")
-					used += 1
-				chunks.append(recent)
-				used += recent.length()
-
-	if not used_canonical:
-		var paths := _list_md_newest_first()
-		var count_legacy := 0
-		for path in paths:
-			if count_legacy >= MAX_SESSION_FILES:
-				break
-			count_legacy += 1
-			if not FileAccess.file_exists(path):
-				push_warning("LlmLearningsIngest: missing file %s" % path)
-				continue
-			var md := FileAccess.get_file_as_string(path)
-			var sections := parse_markdown_sections(md)
-			var all_empty := true
-			for k in ["Learnings", "Contradictions", "Experiments", "Result", "Metadata"]:
-				if (sections.get(k, []) as Array).size() > 0:
-					all_empty = false
-					break
-			if all_empty:
-				continue
-			var fname := path.get_file()
-			var block := _format_sections_for_file(fname, sections)
-			if block.is_empty():
-				continue
-			var need_sep := chunks.size() > 0
-			var add_len := block.length() + (1 if need_sep else 0)
-			if used + add_len > MAX_INJECT_CHARS:
-				if used > 0:
-					chunks.append("… (truncated; older sessions omitted)")
-				break
-			if need_sep:
-				chunks.append("")
-			chunks.append(block)
-			used += add_len
-
-	if chunks.is_empty() and bounds_block.is_empty():
+	var distilled := read_distilled_from_disk()
+	if distilled.is_empty() and bounds_block.is_empty():
 		return "(no prior learnings yet)"
 
 	var header := (
-		"Prior learnings from user://ai_learnings/ai_learnings.md (rolling distilled summary plus recent per-match learnings). "
+		"Prior learnings from the AI's rolling distilled journal (categorized: Universal principles, Unit tactics, Active contradictions, Experiments). "
+		+ "Each learning has an evidence tag [games: N, W-L, last: date]. Higher-evidence learnings are more reliable. "
 		+ "Honor when consistent with legal_options and rules_digest; ignore otherwise.\n"
 	)
 	var parts: PackedStringArray = PackedStringArray()
 	if not bounds_block.is_empty():
 		parts.append(bounds_block)
-	if not chunks.is_empty():
+	if not distilled.is_empty():
 		if parts.size() > 0:
 			parts.append("")
-		parts.append("\n".join(chunks))
+		var hdr := "--- rolling distilled summary (universal principles, unit tactics, contradictions, experiments) ---\n"
+		var capped := distilled
+		if capped.length() > MAX_DISTILLED_INJECT_CHARS:
+			capped = capped.substr(0, MAX_DISTILLED_INJECT_CHARS) + "\n…"
+		parts.append(hdr + capped)
+
 	return header + "\n".join(parts)

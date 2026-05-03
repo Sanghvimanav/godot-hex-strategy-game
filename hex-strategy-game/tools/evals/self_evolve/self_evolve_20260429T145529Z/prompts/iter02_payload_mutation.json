@@ -1,0 +1,10 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.intent_priority": "STRICT",
+    "planner_context.no_inferred_cells": true,
+    "planner_context.fast_mover_targeting": "TARGET_PREDICTED_LANDING_CELL_IF_LEGAL",
+    "planner_context.reasoning_style": "SHORT_DETERMINISTIC"
+  },
+  "copy_paths": []
+}

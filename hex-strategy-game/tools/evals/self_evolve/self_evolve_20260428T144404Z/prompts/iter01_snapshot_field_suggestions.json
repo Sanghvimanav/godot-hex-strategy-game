@@ -1,0 +1,28 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "predicted_end_cell",
+      "where": "enemy_units[]",
+      "why": "Lets the planner deterministically target the engine-predicted post-move hex of fast movers.",
+      "example_value": [
+        1,
+        0
+      ]
+    },
+    {
+      "field_name": "resolves_against_cell",
+      "where": "ai_units[].legal_options[]",
+      "why": "Shows which hex an attack is actually checked against after timing, avoiding wrong current-cell targeting.",
+      "example_value": [
+        1,
+        0
+      ]
+    },
+    {
+      "field_name": "expected_hits_vs_predicted_end",
+      "where": "ai_units[].legal_options[]",
+      "why": "Provides a direct numeric score for attacks that hit an enemy\u2019s predicted landing cell/path this turn.",
+      "example_value": 1
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "coverage_cells",
+      "where": "ai_units[].legal_options[].coverage_cells",
+      "why": "Union of all cells an option can actually occupy, target, ray through, intercept, or affect, so exact-goal and predicted-landing matching uses one deterministic field.",
+      "example_value": [
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          -2
+        ]
+      ]
+    },
+    {
+      "field_name": "resolution_timing",
+      "where": "ai_units[].legal_options[].resolution_timing",
+      "why": "Shows whether an option resolves before or after enemy movement, preventing attacks from aiming at current hex when landing hex matters.",
+      "example_value": "after_enemy_move"
+    },
+    {
+      "field_name": "required_exact_cells_by_unit_id",
+      "where": "turn_objectives.required_exact_cells_by_unit_id",
+      "why": "Makes scenario-specific must-reach cells explicit so exact commits outrank generic pressure.",
+      "example_value": {
+        "68870473449": [
+          [
+            0,
+            0
+          ]
+        ]
+      }
+    }
+  ]
+}

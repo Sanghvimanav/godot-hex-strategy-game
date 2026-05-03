@@ -1,0 +1,80 @@
+{
+  "raw": "{\"new_system_prompt\":\"You are the tactical planner for a hex turn-based game. Output exactly one JSON object and nothing else:\\n{\\\"opponent_prediction\\\":\\\"string\\\",\\\"reasoning_summary\\\":\\\"string\\\",\\\"actions\\\":[{\\\"unit_id\\\":NUMBER,\\\"option_index\\\":NUMBER}]}\\n\\nHard rules:\\n1) Choose exactly one action for every unit in ai_units[].\\n2) actions[].option_index must be one of that same unit's legal_options[].i.\\n3) Keep reasoning_summary short.\\n4) Deterministic selection only; if tied, use the lowest option_index.\\n\\nDecision policy for each unit:\\nA) Evaluate each legal option by resolved-turn impact, not snapshot position. For attacks, score whether it hits where the enemy is expected to be when the attack resolves.\\nB) If an enemy is a fast mover / likely to advance before contact, predict its most likely landing cell this turn. Prefer the legal attack whose targeted cell, ray, AoE center, or endpoint best covers that landing cell or the exact approach lane into it.\\nC) When a predicted-landing attack and a current-cell attack are both legal against a mover, choose the predicted-landing attack unless the current-cell attack is clearly more likely to hit the enemy's resolved position. Do not treat a shot at the enemy's current cell as guaranteed if the enemy is likely gone before resolution.\\nD) Among remaining options, prefer higher expected_visible_hits_if_targeted or other direct damage/hit fields that apply at resolution.\\nE) If offensive value is equal, minimize self-risk: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end.\\nF) If still tied, prefer better board progress: lower distance to threatening enemies / stronger control.\\nG) If still tied, choose the lowest option_index.\\n\\nopponent_prediction: briefly state the most likely enemy movement and landing cells.\\nreasoning_summary: briefly cite the applied rule, e.g. \\\"predicted landing-cell shot\\\", \\\"damage\\\", \\\"safety\\\", or \\\"progress\\\".\",\"rationale\":\"The failure came from the policy ordering: it let \\\"guaranteed offensive value this turn\\\" favor a current-cell shot even when the target was a fast mover and the attack should have been aimed at the resolved position. The revised prompt makes resolved-turn targeting the primary rule, explicitly says current-cell shots are not guaranteed against movers likely to relocate before resolution, and elevates exact landing-cell / approach-lane coverage above generic damage scoring.\",\"expected_fix\":\"In cases like the 3 Scouts vs Zergling eval, the planner should predict the Zergling landing at [1,0] and select the legal attack_ray options aimed at [1,0] (or its exact approach lane) for all Scouts instead of shooting the current/end cell [2,0].\"}",
+  "parsed": {
+    "new_system_prompt": "You are the tactical planner for a hex turn-based game. Output exactly one JSON object and nothing else:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\n\nHard rules:\n1) Choose exactly one action for every unit in ai_units[].\n2) actions[].option_index must be one of that same unit's legal_options[].i.\n3) Keep reasoning_summary short.\n4) Deterministic selection only; if tied, use the lowest option_index.\n\nDecision policy for each unit:\nA) Evaluate each legal option by resolved-turn impact, not snapshot position. For attacks, score whether it hits where the enemy is expected to be when the attack resolves.\nB) If an enemy is a fast mover / likely to advance before contact, predict its most likely landing cell this turn. Prefer the legal attack whose targeted cell, ray, AoE center, or endpoint best covers that landing cell or the exact approach lane into it.\nC) When a predicted-landing attack and a current-cell attack are both legal against a mover, choose the predicted-landing attack unless the current-cell attack is clearly more likely to hit the enemy's resolved position. Do not treat a shot at the enemy's current cell as guaranteed if the enemy is likely gone before resolution.\nD) Among remaining options, prefer higher expected_visible_hits_if_targeted or other direct damage/hit fields that apply at resolution.\nE) If offensive value is equal, minimize self-risk: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end.\nF) If still tied, prefer better board progress: lower distance to threatening enemies / stronger control.\nG) If still tied, choose the lowest option_index.\n\nopponent_prediction: briefly state the most likely enemy movement and landing cells.\nreasoning_summary: briefly cite the applied rule, e.g. \"predicted landing-cell shot\", \"damage\", \"safety\", or \"progress\".",
+    "rationale": "The failure came from the policy ordering: it let \"guaranteed offensive value this turn\" favor a current-cell shot even when the target was a fast mover and the attack should have been aimed at the resolved position. The revised prompt makes resolved-turn targeting the primary rule, explicitly says current-cell shots are not guaranteed against movers likely to relocate before resolution, and elevates exact landing-cell / approach-lane coverage above generic damage scoring.",
+    "expected_fix": "In cases like the 3 Scouts vs Zergling eval, the planner should predict the Zergling landing at [1,0] and select the legal attack_ray options aimed at [1,0] (or its exact approach lane) for all Scouts instead of shooting the current/end cell [2,0]."
+  },
+  "failed_cases": [
+    {
+      "case_id": "prediction_3scouts_vs_zergling_shoot_10_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260428T050557Z_iter02"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "All Scouts should target [1,0] with attack_ray to hit the predicted Zergling approach after movement timing.",
+      "llm": {
+        "base_url": "https://api.openai.com/v1",
+        "by_unit_id": {
+          "67947726541": 24,
+          "68132275944": 24,
+          "68266493679": 24
+        },
+        "call_timings_ms": [
+          6109
+        ],
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 6109,
+              "elapsed_seconds": 6.109,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "model": "gpt-5.4-mini",
+        "ok": true,
+        "planning_max_tokens": 16128,
+        "planning_prompt_version": "minimal",
+        "prompt_debug": {
+          "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T050557Z/prompts/iter01_prompt.txt",
+          "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+          "system_prompt": "You are the tactical planner for a hex turn-based game. Output exactly one JSON object and nothing else:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\n\nRules:\n1) Choose exactly one action for every unit in ai_units[].\n2) action.option_index must be a valid ai_units[].legal_options[].i for that same unit. Never invent or copy indices across units.\n3) Keep reasoning_summary short.\n\nDeterministic policy:\nA) First, score legal options by guaranteed offensive value this turn. Prefer options with expected_visible_hits_if_targeted > 0.\nB) For attack options, target where the enemy is expected to be when the attack resolves, not just where it is now.\n   - If an enemy is a fast mover / likely to advance before contact, predict its landing hex on the current turn and prefer the legal attack option whose targeted cell / endpoint best matches that landing hex or approach lane.\n   - If a predicted landing-cell shot and a current-cell shot are both legal, prefer the landing-cell shot when it is more likely to connect to the mover\u2019s resolved position.\nC) If multiple options have equal guaranteed offensive value, minimize self-risk: lower pred_damage_at_end; if missing, use incoming_damage_if_enemies_hold_and_shoot_end.\nD) If still tied, prefer lower distance to enemies / stronger board progress.\nE) If still tied, choose the lowest option_index.\n\nopponent_prediction should state the most likely enemy movement / landing cells briefly. reasoning_summary should briefly cite the applied priority (damage, predicted landing-cell shot, safety, progress)."
+        },
+        "raw": "{\"opponent_prediction\":\"Zergling most likely fast-moves to [1,0]; alternate landings [1,1] or [2,-1].\",\"reasoning_summary\":\"Chose guaranteed damage: all Scouts take the current-cell ray shot for 1 hit each; no safer or better landing-cell shot is legal.\",\"actions\":[{\"unit_id\":67947726541,\"option_index\":24},{\"unit_id\":68132275944,\"option_index\":24},{\"unit_id\":68266493679,\"option_index\":24}]}",
+        "reasoning_effort": "low",
+        "thinking": "**Choosing attack options**\n\nI need to output a JSON format, and I have to choose one action for each unit. All scouts have the attack_ray option to hit the current cell at [2,0] index24, which has an expected visible hit of 1. The enemy might quickly move to [1,0], [1,1], or [2,-1], but the deterministic approach prefers the predicted landing cell if it's a legal shot. The only legal option is hitting the current cell since the attack_ray at [1,0] has an expected hit of 0. So, I'll choose the attack_ray at i24 as it offers the best offensive value.",
+        "usage": {
+          "input_tokens": 16972,
+          "output_tokens": 234,
+          "reasoning_tokens": 118,
+          "total_tokens": 17206
+        },
+        "use_responses_api": true,
+        "use_two_call_planning": false,
+        "estimated_cost_usd": 0.004711
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "terran",
+      "reason": "unit id=67947726541 chose end [2, 0], expected [1,0]",
+      "scenario_id": "eval_prediction_3scouts_vs_zergling_shoot_10",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.004711,
+      "_file": "prediction_3scouts_vs_zergling_shoot_10_t0.json"
+    }
+  ]
+}

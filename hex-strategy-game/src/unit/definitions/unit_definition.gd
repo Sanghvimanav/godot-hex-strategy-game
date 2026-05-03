@@ -2,6 +2,7 @@ class_name UnitDefinition
 extends Resource
 
 enum Type {
+	# Reserved to preserve serialized enum values in existing .tres files.
 	Knight,
 	Scout,
 	Mage,

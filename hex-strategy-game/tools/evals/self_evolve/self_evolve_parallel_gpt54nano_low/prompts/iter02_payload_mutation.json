@@ -1,0 +1,8 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.attack_matching_fallback": "If intent/prediction names a cell and an attack option has target_cell equal to that cell, count it as matching even when coverage arrays are absent.",
+    "planner_context.prefer_attack_on_predicted_landing": true
+  },
+  "copy_paths": []
+}

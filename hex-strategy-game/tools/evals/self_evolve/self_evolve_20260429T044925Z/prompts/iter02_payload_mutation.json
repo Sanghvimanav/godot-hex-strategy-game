@@ -1,0 +1,9 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_hints.echo_cell_contract": "echo_cell = chosen option end_cell else target_cell else unit current cell; copy exactly",
+    "planner_hints.coverage_rule": "attack satisfies hit/landing cell if that cell appears in target_cell, affected_cells, ray_cells, line_cells, or intercept_cells even when target_cell differs",
+    "planner_hints.priority_rule": "if any legal attack covers a required or predicted landing cell, prefer that attack over move/fast_move/rest unless intent forbids attacking"
+  },
+  "copy_paths": []
+}

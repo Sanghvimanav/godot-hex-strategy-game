@@ -1,0 +1,9 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.deterministic_mode": true,
+    "planner_context.attack_timing_rule": "If attack resolves after enemy movement, evaluate only predicted enemy landing cells/end cells.",
+    "planner_context.fast_mover_rule": "Explicitly predict fast_move endpoints and prefer options whose actual affected cells include that landing cell; for ray/line ties prefer target_cell==predicted landing cell."
+  },
+  "copy_paths": []
+}

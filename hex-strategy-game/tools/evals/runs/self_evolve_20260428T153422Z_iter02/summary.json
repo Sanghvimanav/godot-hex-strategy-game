@@ -1,0 +1,42 @@
+{
+  "run_meta": {
+    "run_id": "self_evolve_20260428T153422Z_iter02",
+    "created_at": "2026-04-28T15:36:18.713189Z",
+    "mode": "live_llm",
+    "prompt_version": "p_current_settings",
+    "eval_set_version": "eval_v001",
+    "thinking_level": "low",
+    "model_override": "",
+    "notes": "",
+    "planning_prompt_version": "minimal",
+    "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter01_prompt.txt",
+    "payload_profile": "baseline",
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter01_payload_mutation.json",
+    "git_sha": "5632b9b590908f340a90cb1abcc268a83285afe4",
+    "manifest": "",
+    "model_version": "gpt-5.4-mini",
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "planning_max_tokens": 16128,
+    "base_url": "https://api.openai.com/v1"
+  },
+  "total_cases": 12,
+  "pass_cases": 9,
+  "fail_cases": 3,
+  "failed_case_ids": [
+    "prediction_3scouts_vs_zergling_shoot_10_t0",
+    "zergling_commit_two_landing_hexes_t0",
+    "drill_zergling_vs_scout_three_turn_reach_00_t3"
+  ],
+  "failed_case_reasons": {
+    "prediction_3scouts_vs_zergling_shoot_10_t0": "unit id=67947726541 chose end [2, 0], expected [1,0]",
+    "zergling_commit_two_landing_hexes_t0": "chosen fast_move end not in allowed_end_cells",
+    "drill_zergling_vs_scout_three_turn_reach_00_t3": "chosen end [2, 0] != required [0,0]"
+  },
+  "pass_rate": 0.75,
+  "avg_final_score": 0.75,
+  "avg_speed_on_pass": 1.0,
+  "total_tokens": 130296,
+  "estimated_cost_usd": 0.04003075,
+  "estimated_cost_usd_per_eval_turn": 0.0033359
+}

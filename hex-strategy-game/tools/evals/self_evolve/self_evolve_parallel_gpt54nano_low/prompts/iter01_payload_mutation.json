@@ -1,0 +1,19 @@
+{
+  "remove_paths": [
+    "failed_cases[].raw_response_excerpt"
+  ],
+  "set_values": {
+    "revision_focus": "Treat required and predicted landing cells as satisfied by attack coverage arrays, not only by target/end cells.",
+    "determinism_bias": "Prefer the lowest-index legal attack that covers a required or predicted landing cell before considering movement."
+  },
+  "copy_paths": [
+    {
+      "from": "failed_cases[].intent",
+      "to": "failed_cases[].goal_summary"
+    },
+    {
+      "from": "failed_cases[].reason",
+      "to": "failed_cases[].failure_summary"
+    }
+  ]
+}

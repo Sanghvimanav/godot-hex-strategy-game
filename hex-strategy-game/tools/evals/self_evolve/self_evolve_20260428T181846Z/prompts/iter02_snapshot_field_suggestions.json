@@ -1,0 +1,41 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "reachable_end_cells_1t",
+      "where": "snapshot.enemy_units[]",
+      "why": "Exposes exact one-turn move/fast_move landing cells so the planner can target predicted landings deterministically.",
+      "example_value": [
+        [
+          -1,
+          4
+        ],
+        [
+          -1,
+          3
+        ],
+        [
+          -2,
+          4
+        ]
+      ]
+    },
+    {
+      "field_name": "constraint_match",
+      "where": "snapshot.ai_units[].legal_options[]",
+      "why": "Precomputed booleans for exact target-cell match, hit/intercept coverage match, exact end-cell match, allowed-end membership, and forbidden-end violation reduce aim-vs-hit mistakes and whitelist misses.",
+      "example_value": {
+        "matches_required_target_cell": true,
+        "covers_required_hit_cell": false,
+        "matches_required_end_cell": false,
+        "in_allowed_end_cells": true,
+        "violates_forbidden_end_cells": false
+      }
+    },
+    {
+      "field_name": "reaches_attack_range_next_turn",
+      "where": "snapshot.ai_units[].legal_options[]",
+      "why": "Helps melee/pressure units prefer advancing options when retreat is not explicitly requested.",
+      "example_value": true
+    }
+  ]
+}

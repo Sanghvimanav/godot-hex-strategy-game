@@ -1,0 +1,369 @@
+{
+  "cases": [
+    {
+      "case_id": "phase_fastmove_contact_zergling_vs_scout_t0",
+      "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout",
+      "perspective_group": "zerg",
+      "unit_name": "Zergling",
+      "turn": 1,
+      "intent": "Zergling should fast_move to [0,0] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+      "checks": {
+        "required_action_key": "fast_move",
+        "required_end_cell": [0, 0],
+        "forbid_action_keys": [
+          "reload",
+          "recharge",
+          "rest_no_energy"
+        ],
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "fast_move",
+          "allowed_end_cells": [
+            [0, 0]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "phase_fastmove_contact_zergling_vs_scout_neg11_t0",
+      "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout_neg11",
+      "perspective_group": "zerg",
+      "unit_name": "Zergling",
+      "turn": 1,
+      "intent": "Zergling should fast_move to [0,0] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+      "checks": {
+        "required_action_key": "fast_move",
+        "required_end_cell": [0, 0],
+        "forbid_action_keys": [
+          "reload",
+          "recharge",
+          "rest_no_energy"
+        ],
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "fast_move",
+          "allowed_end_cells": [
+            [0, 0]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "phase_fastmove_contact_zergling_vs_scout_hp1_t0",
+      "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout_hp1",
+      "perspective_group": "zerg",
+      "unit_name": "Zergling",
+      "turn": 1,
+      "intent": "Even at 1 HP, Zergling should fast_move to [0,0] to force contact and damage the Scout.",
+      "checks": {
+        "required_action_key": "fast_move",
+        "required_end_cell": [0, 0],
+        "forbid_action_keys": [
+          "reload",
+          "recharge",
+          "rest_no_energy"
+        ],
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "fast_move",
+          "allowed_end_cells": [
+            [0, 0]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "phase_fastmove_stepin_zergling_vs_scout_hp2_t0",
+      "scenario_id": "eval_phase_fastmove_stepin_zergling_vs_scout_hp2",
+      "perspective_group": "zerg",
+      "unit_name": "Zergling",
+      "turn": 1,
+      "intent": "At 2 HP from [2,0], Zergling should fast_move to [1,0] to keep pressure and reach contact next.",
+      "checks": {
+        "required_action_key": "fast_move",
+        "required_end_cell": [1, 0],
+        "forbid_action_keys": [
+          "reload",
+          "recharge",
+          "rest_no_energy"
+        ],
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "fast_move",
+          "allowed_end_cells": [
+            [1, 0]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "phase_fastmove_contact_zergling_vs_scout_far_t0",
+      "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout_far",
+      "perspective_group": "zerg",
+      "unit_name": "Zergling",
+      "turn": 1,
+      "intent": "Zergling should fast_move to [3,-2] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+      "checks": {
+        "required_action_key": "fast_move",
+        "required_end_cell": [3, -2],
+        "forbid_action_keys": [
+          "reload",
+          "recharge",
+          "rest_no_energy"
+        ],
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "fast_move",
+          "allowed_end_cells": [
+            [3, -2]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "phase_4zerglings_focus_marine_t0",
+      "scenario_id": "eval_phase_4zerglings_focus_marine",
+      "perspective_group": "zerg",
+      "turn": 1,
+      "intent": "All Zerglings should fast_move to [-1,2] to focus-kill the Marine before the Marine's normal-phase passive can resolve.",
+      "checks": {
+        "all_units_with_name_must_choose": {
+          "unit_name": "Zergling",
+          "required_action_key": "fast_move",
+          "required_end_cell": [-1, 2]
+        },
+        "forbid_action_keys": [
+          "reload",
+          "recharge",
+          "rest_no_energy"
+        ],
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "fast_move",
+          "allowed_end_cells": [
+            [-1, 2]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "prediction_3scouts_vs_zergling_shoot_10_t0",
+      "scenario_id": "eval_prediction_3scouts_vs_zergling_shoot_10",
+      "perspective_group": "terran",
+      "turn": 1,
+      "intent": "All Scouts should target [1,0] with attack_ray to hit the predicted Zergling approach after movement timing.",
+      "checks": {
+        "all_units_with_name_must_choose": {
+          "unit_name": "Scout",
+          "required_action_key": "attack_ray",
+          "required_end_cell": [1, 0]
+        },
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "attack_ray",
+          "allowed_end_cells": [
+            [1, 0]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "zergling_commit_two_landing_hexes_t0",
+      "scenario_id": "eval_zergling_commit_two_landing_hexes",
+      "perspective_group": "zerg",
+      "unit_name": "Zergling",
+      "turn": 1,
+      "intent": "Zergling should commit with fast_move to one of the valid pressure hexes [-1,1] or [0,1], despite potential incoming scout damage.",
+      "checks": {
+        "required_action_key": "fast_move",
+        "forbid_action_keys": [
+          "reload",
+          "recharge",
+          "rest_no_energy"
+        ],
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "fast_move",
+          "allowed_end_cells": [
+            [-1, 1],
+            [0, 1]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "scout_prioritize_zergling_over_mountain_t0",
+      "scenario_id": "eval_scout_prioritize_zergling_over_mountain",
+      "perspective_group": "terran",
+      "unit_name": "Scout",
+      "turn": 1,
+      "intent": "Scout should target [3,-3] with attack_ray to kill/pressure the advancing Zergling threat before focusing Mountain.",
+      "checks": {
+        "required_action_key": "attack_ray",
+        "required_end_cell": [3, -3],
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "attack_ray",
+          "allowed_end_cells": [
+            [3, -3]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "drill_zergling_vs_scout_three_turn_reach_00_t3",
+      "scenario_id": "drill_zergling_vs_scout",
+      "perspective_group": "zerg",
+      "unit_name": "Zergling",
+      "turn": 1,
+      "intent": "Zergling should fast_move to [2,0] on turn 1, accepting potential damage to maintain attack tempo and reach the Scout before dying.",
+      "checks": {
+        "required_action_key": "fast_move",
+        "required_end_cell": [2, 0],
+        "forbid_action_keys": [
+          "reload",
+          "recharge",
+          "rest_no_energy"
+        ],
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "fast_move",
+          "allowed_end_cells": [
+            [2, 0]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "marine_aoe_branch_zerg_to_neg11_t0",
+      "scenario_id": "eval_marine_aoe_branch_zerg_to_neg11",
+      "perspective_group": "terran",
+      "unit_name": "Marine",
+      "turn": 1,
+      "intent": "With the Zergling forced to [-1,-1], Marine should choose attack_short on [-1,-1] to secure damage.",
+      "checks": {
+        "required_action_key": "attack_short",
+        "required_end_cell": [-1, -1],
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "attack_short",
+          "allowed_end_cells": [
+            [-1, -1]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "marine_aoe_branch_zerg_to_neg1neg2_t0",
+      "scenario_id": "eval_marine_aoe_branch_zerg_to_neg1neg2",
+      "perspective_group": "terran",
+      "unit_name": "Marine",
+      "turn": 1,
+      "intent": "With the Zergling forced to [-1,-2], Marine should still choose attack_short on [-1,-1] to hit via AOE.",
+      "checks": {
+        "required_action_key": "attack_short",
+        "required_end_cell": [-1, -1],
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "attack_short",
+          "allowed_end_cells": [
+            [-1, -1]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "phase_zergling_retreat_vs_3marines_t0",
+      "scenario_id": "eval_phase_zergling_retreat_vs_3marines",
+      "perspective_group": "zerg",
+      "unit_name": "Zergling",
+      "turn": 1,
+      "intent": "Zergling should retreat from [-3,2] to [-4,3], [-4,2], or [-3,3] to stay out of Marine range while Marines target [-3,2].",
+      "checks": {
+        "required_action_key": "fast_move",
+        "forbid_action_keys": [
+          "reload",
+          "recharge",
+          "rest_no_energy"
+        ],
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "fast_move",
+          "allowed_end_cells": [
+            [-4, 3],
+            [-4, 2],
+            [-3, 3]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "phase_4zerglings_collapse_3marines_t0",
+      "scenario_id": "eval_phase_4zerglings_collapse_3marines",
+      "perspective_group": "zerg",
+      "turn": 1,
+      "intent": "All four Zerglings should fast_move onto [-2,1] to kill stacked Marines via fast-phase passive ordering before Marine normal-phase passive resolves.",
+      "checks": {
+        "all_units_with_name_must_choose": {
+          "unit_name": "Zergling",
+          "required_action_key": "fast_move",
+          "required_end_cell": [-2, 1]
+        },
+        "forbid_action_keys": [
+          "reload",
+          "recharge",
+          "rest_no_energy"
+        ],
+        "forbid_any_other_end_cell_for_action_key": {
+          "action_key": "fast_move",
+          "allowed_end_cells": [
+            [-2, 1]
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "baneling_explode_vs_2marines_hp3_t0",
+      "scenario_id": "eval_baneling_explode_vs_2marines_hp3",
+      "perspective_group": "zerg",
+      "unit_name": "Baneling",
+      "turn": 1,
+      "intent": "Baneling stacked with two 3-HP Marines should choose explode for immediate lethal value.",
+      "checks": {
+        "required_action_key": "explode",
+        "forbid_action_keys": [
+          "reload",
+          "recharge",
+          "rest_no_energy"
+        ]
+      }
+    },
+    {
+      "case_id": "scout_no_ff_stepin_to_friendly_tile_t0",
+      "scenario_id": "eval_scout_no_ff_stepin_to_friendly_tile",
+      "perspective_group": "terran",
+      "turn": 1,
+      "intent": "With 1-HP Zergling moving from [-1,2] to [-1,3], scout should target [-1,3] even though a friendly scout occupies that tile.",
+      "checks": {
+        "per_unit_requirements": [
+          {
+            "unit_name": "Scout",
+            "start_cell": [-1, 4],
+            "required_action_key": "attack_ray",
+            "required_end_cell": [-1, 3]
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "scout_no_ff_crossfire_other_scout_tile_t0",
+      "scenario_id": "eval_scout_no_ff_crossfire_other_scout_tile",
+      "perspective_group": "terran",
+      "turn": 1,
+      "intent": "With 1-HP Zergling moving from [-1,3] to [-1,4], scout should target the other scout tile [-1,4] to secure kill regardless of hold vs move.",
+      "checks": {
+        "per_unit_requirements": [
+          {
+            "unit_name": "Scout",
+            "start_cell": [-1, 3],
+            "required_action_key": "attack_ray",
+            "required_end_cell": [-1, 4]
+          },
+          {
+            "unit_name": "Scout",
+            "start_cell": [-1, 4],
+            "required_action_key": "attack_ray",
+            "required_end_cell": [-1, 3]
+          }
+        ]
+      }
+    }
+  ]
+}

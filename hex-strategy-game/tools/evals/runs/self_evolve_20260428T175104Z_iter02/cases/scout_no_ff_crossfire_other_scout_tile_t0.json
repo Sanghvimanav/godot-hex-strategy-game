@@ -1,0 +1,72 @@
+{
+  "case_id": "scout_no_ff_crossfire_other_scout_tile_t0",
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T175104Z_iter02"
+  },
+  "grading": {
+    "correctness": 0.0,
+    "final_score": 0.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "With 1-HP Zergling moving from [-1,3] to [-1,4], scout should target the other scout tile [-1,4] to secure kill regardless of hold vs move.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "67947726541": 6,
+      "68132275944": 9
+    },
+    "call_timings_ms": [
+      20808
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 20808,
+          "elapsed_seconds": 20.808,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T175104Z/prompts/iter01_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T175104Z/prompts/iter01_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T175104Z/prompts/iter01_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nFor each unit, apply the first matching rule:\n1) Exact scenario constraints. If the payload names required_end_cell, allowed_end_cells, required_target_cell, required_hit_cell, or any explicit finish/end/target/hit cell for this unit, restrict to legal options that exactly satisfy it. move/fast_move match only end_cell. Attacks match only real coverage: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. Never replace an exact/allowed cell with a nearby pressure cell. If multiple allowed cells exist, choose only among those, then use tiebreakers.\n2) Fast-mover interception. If an enemy can move before your hit resolves, predict 1-2 likely landing cells from its legal move/fast_move options and stated goal. If one landing cell is forced or explicitly named, treat it as exact. Prefer a legal ATTACK whose real coverage includes a predicted landing cell. For ray/line/AOE/intercept attacks, target the landing cell itself, not the enemy\u2019s current cell. Friendly occupancy of that cell does not matter if the option is legal. Move/fast_move onto a predicted landing cell only if no legal attack covers any required/predicted landing cell.\n3) Lethal/damage. Otherwise choose a legal attack that kills; else highest immediate damage to the highest-threat enemy.\n4) Survival retreat. Otherwise retreat only if the scenario explicitly favors survival OR the current cell is threatened by multiple enemies and the retreat strictly lowers expected incoming damage versus every forward option.\n5) Pressure commit. Otherwise choose the most aggressive legal move/fast_move that reduces distance to key enemies/objectives and maximizes next-turn contact. Do not sidestep to a merely safer cell when a legal forward pressure cell exists.\n\nTiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling likely fast_moves to [-1,4] or [0,3] to pressure a scout.\",\"reasoning_summary\":\"Scout at [-1,3] takes the contact hit on [-1,3]; scout at [-1,4] keeps pressure with the ray on [-1,3].\",\"actions\":[{\"unit_id\":67947726541,\"option_index\":6},{\"unit_id\":68132275944,\"option_index\":9}]}",
+    "reasoning_effort": "low",
+    "thinking": "**Considering opponent prediction**\n\nI need to predict my opponent's moves, possibly focusing on zerglings and their fast movement to various landing cells. However, I have to keep in mind that my actions resolve before the enemy's fast move. Specifically, the enemy's fast move occurs in phase 0, before my move and abilities. There's a rule about fast-moving enemies: if they can move before my hit resolves, I should predict their landing cells since zerglings can land on multiple options.\n**Planning enemy prediction**\n\nI\u2019m considering that the enemy at [-1,3] can move quickly, so our attacks during the ability phase won\u2019t land if it retreats. We don't have a fast move option, but we need to predict its landing cell and target that. The enemy has six possible moves, likely toward our scouts at [-1,4] or [-2,3]. It might choose [-1,4] to engage, so we should focus on intercepting by targeting those predicted landing cells for our scouts.\n**Assessing enemy movement options**\n\nI\u2019m thinking the enemy will likely fast-move to [-1,4] to land on the same tile as scout2. Scout2 has an option to move to [-1,3], but that's not an attack. The attack targets don\u2019t land on the cell. Option 9 targets [-1,3], which is the current cell, not a landing cell. If the enemy moves to [-1,3], it couldn\u2019t stay. I need to focus on likely landing cells based on the enemy's goal, which may be to pressure our scouts at [-1,4] or [-2,4]. However, we lack attack coverage there.\n**Evaluating attack ray options**\n\nI'm looking at the attack ray options, which show a path from the starting point to the end point. However, it seems the expected visible hits will be zero unless the end cell actually has an enemy present. The only options available involve moving into an enemy-occupied cell. I need to think about how to adjust my strategy based on this limitation, ensuring I focus on cells with enemies to effectively utilize my attack rays.\n**Evaluating scout actions**\n\nI need to act for each unit. It seems like both should choose actions 6 and 2, but they must be legal and exact. For scout1 at [-1,3], action 6 is the only one with an enemy present. Scout2 at [-1,4] has option 2, moving to [-1,3], but that might not be useful since the enemy could fast-move back. However, moving toward the enemy's cell might be beneficial. The best choice may be option 9 for scout2 and option 6 for scout1.\n**Deciding on attack strategies**\n\nI\u2019m weighing options for attacking the enemy\u2019s current cell, which might result in a kill if the enemy doesn\u2019t move. If the enemy fast-moves to [-1,4], scout2 at [-1,4] might hit if the enemy lands there, but I\u2019m not confident about that. I need to focus on immediate damage, but I also need to predict landing cells per the rules. Since the zergling could land near scout2, it seems best for both scouts to choose actions that maintain pressure. I'll pick option 6 for scout1 and option 9 for scout2.",
+    "usage": {
+      "input_tokens": 13209,
+      "output_tokens": 1579,
+      "reasoning_tokens": 1475,
+      "total_tokens": 14788
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00646025
+  },
+  "mode": "live_llm",
+  "pass": false,
+  "perspective_group": "terran",
+  "reason": "required unit id=67947726541 chose rest_no_energy, expected attack_ray",
+  "scenario_id": "eval_scout_no_ff_crossfire_other_scout_tile",
+  "runner_exit_code": 2,
+  "estimated_cost_usd": 0.00646025
+}

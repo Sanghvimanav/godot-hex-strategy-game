@@ -1,0 +1,72 @@
+{
+  "case_id": "marine_aoe_branch_zerg_to_neg11_t0",
+  "chosen_option_index": 12,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T153946Z_iter02"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "With the Zergling forced to [-1,-1], Marine should choose attack_short on [-1,-1] to secure damage.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68199384781": 12
+    },
+    "call_timings_ms": [
+      20153
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 20153,
+          "elapsed_seconds": 20.153,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153946Z/prompts/iter01_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153946Z/prompts/iter01_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153946Z/prompts/iter01_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Never invent unit ids or option indices.\n\nDeterministic policy per unit:\n1) Exact commit rule: if any legal option can end on a required goal cell, an enemy\u2019s current cell, or the strongest contact/finish cell this turn, choose the lowest-index such option. Prefer exact reach over \"safer pressure\" or adjacent hedge cells.\n2) Attack rule: otherwise choose a legal attack that secures a kill; else highest immediate damage on the highest-threat enemy.\n3) Landing-cell rule: predict each dangerous enemy mover/fast mover\u2019s 1-2 most likely landing hexes from its mobility and firing lanes. Prefer the legal option whose end cell, target cell, ray cell, AoE cell, or intercept line exactly covers one of those landing hexes. For rays/lines, aim at the landing hex itself. If two landing hexes are plausible and you can legally occupy one, commit to one of those exact hexes, not a nearby compromise cell. This rule can override a different hit on a lower-priority target.\n4) Pressure rule: if no good attack exists, choose the most aggressive move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not default to retreat.\n5) Tiebreakers: lower pred_damage_at_end; if missing, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted, higher target threat, shorter distance to nearest enemy after action, lower option_index.\n\nValidation before output: each chosen option_index must exist for that unit, and any cell named in opponent_prediction or reasoning_summary must be an actual cell from the chosen option\u2019s metadata. Keep opponent_prediction and reasoning_summary brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling fast_moves to [-1,-1].\",\"reasoning_summary\":\"Commit to [-1,-1] with attack_short so the landing hex is covered exactly.\",\"actions\":[{\"unit_id\":68199384781,\"option_index\":12}]}",
+    "reasoning_effort": "low",
+    "thinking": "**Analyzing attack options**\n\nI'm evaluating options for moving and attacking in relation to an enemy's position. If a marine is at [-2,-1], potential attack positions include [-1,-2] or [-1,-1]. I need to ensure the attack's area of effect covers direction 2, likely south-east. The enemy's predicted landing hex at [-1,-1] indicates that if I choose this position, the area of effect will hit adjacent cells, and since it\u2019s occupied by the enemy, that\u2019s where the attack should be directed to damage them.\n**Exploring attack strategies**\n\nAlright, if the enemy moves to a certain spot, I\u2019m thinking the marine could also move to [-1,-1] and use a passive attack. But the instructions specify an area of effect (AoE) attack, which might mean targeting [-1,-1] if that cell is occupied by an enemy. The attack options indicate that the end cells may not be the target. So, if the marine ends up on [-1,-1], the AoE could potentially damage the enemy on that same cell.\n**Evaluating attack options**\n\nI\u2019m thinking about how the marine should attack at coordinates [-1, -1] to deal AOE damage. It seems like the chosen attack option is centered on that cell, so when the zergling moves there, it will get hit. Now, I need to pick the exact low-index commit for this option, perhaps i=12 since it targets [-1, -1]. I'll also check that a legal option exists. Yes, it does. Now, I just need to output the JSON.",
+    "usage": {
+      "input_tokens": 8710,
+      "output_tokens": 850,
+      "reasoning_tokens": 788,
+      "total_tokens": 9560
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.0038775
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_marine_aoe_branch_zerg_to_neg11",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.0038775
+}

@@ -1,0 +1,29 @@
+{
+  "case_id": "phase_4zerglings_focus_marine_t0",
+  "chosen_option_indices": [
+    1,
+    1,
+    1,
+    1
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "metadata_shape_snapshot_check"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "All Zerglings should fast_move to [-1,2] to focus-kill the Marine before the Marine's normal-phase passive can resolve.",
+  "matched_unit_count": 4,
+  "mode": "snapshot",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists for all 4 units named Zergling",
+  "scenario_id": "eval_phase_4zerglings_focus_marine",
+  "estimated_cost_usd": 0.0
+}

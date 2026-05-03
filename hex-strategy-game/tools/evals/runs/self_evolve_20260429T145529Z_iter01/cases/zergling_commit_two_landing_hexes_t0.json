@@ -1,0 +1,73 @@
+{
+  "case_id": "zergling_commit_two_landing_hexes_t0",
+  "chosen_option_index": 2,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T145529Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 0.8531,
+    "formula": "correctness * speed_score",
+    "speed_score": 0.8531
+  },
+  "intent": "Zergling should commit with fast_move to one of the valid pressure hexes [-1,1] or [0,1], despite potential incoming scout damage.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69474453225": 2
+    },
+    "call_timings_ms": [
+      43221
+    ],
+    "latency_grader": {
+      "average_call_score": 0.8531,
+      "calls": [
+        {
+          "elapsed_ms": 43221,
+          "elapsed_seconds": 43.221,
+          "score": 0.8531
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 0.8531
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[] using action_key + target_cell. Use only listed unit_id values and legal action/target combinations.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then deterministically prefer the lowest legal_options[].i that matches action_key + target_cell.\n\nValidation: every chosen action_key + target_cell pair must resolve to a legal option for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.\n"
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely shoots from place or steps inward.\",\"reasoning_summary\":\"Fast-move to [-1,1] for the closest contact lane; it also pressures a likely enemy step.\",\"actions\":[{\"unit_id\":69474453225,\"action_key\":\"fast_move\",\"target_cell\":[-1,1]}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Evaluating aggressive positioning**\n\nI'm assessing which move is more aggressive: the zergling moving to [0,1] or [-1,1]. Both positions are one space away from the enemy at [0,0], but moving to [0,1] might put me in a better spot for next turn contact. If the enemy goes to [0,1], my zergling will occupy the same tile after a fast move, allowing for a potential attack. However, there's a risk that the enemy could also target my zergling. I need to think about the best interception strategy here.\n**Analyzing move strategy**\n\nI'm considering the moves to make, focusing on legal options without an attack. If there\u2019s no legal attack covering the predicted landing cell, I\u2019ll move there, especially if the enemy is dangerous and can move. For this enemy, a Scout at [0,0] is facing a zergling at [-1,2]. I need to think about the best options that maintain distance or get into range. The enemy has an attack ray at range 1-2, so I\u2019ll have to keep that in mind!\n**Assessing enemy movement**\n\nI\u2019m thinking about how to anticipate a dangerous enemy that might move before my hit resolves. For each enemy, I\u2019ll predict 1-2 likely landing cells. Since this enemy isn\u2019t a fast mover and may choose to attack instead, I need to think through the implications of my move resolving first. They might attack from their new position. I should predict where they might move to maintain their lane, likely to [0,1] or [-1,1], but they could also choose to attack directly without moving, which complicates things!\n**Deciding on my move**\n\nI need to think about the enemy's likely attack on either my current position or any new adjacent cell I occupy. I\u2019m considering moving to [0,1] or [-1,1]. Which is the more aggressive option? Moving to [0,1] seems better since it intersects with the enemy's potential landing cell and threatens same-tile contact if they decide to move there. However, both moves are valid predicted landing cells according to rule 2, but the first matching rule doesn\u2019t apply here.\n**Considering opponent predictions**\n\nI'm weighing the choice between the end cells, considering if [-1,1] is \"most aggressive\" compared to [0,1]. I might still want to default to the lowest index. If I mention opponent behavior like likely attacks toward [-1,1], my reasoning should clearly reflect that. I need to make sure any cell included in my reasoning also appears in the chosen option metadata. My opponent's prediction should be brief and to the point, making it concrete.\n**Clarifying metadata requirements**\n\nI noticed that if the opponent prediction or reasoning summary mentions a cell, it has to be in the chosen option metadata. That means any cell referred to should be included in that metadata. However, our metadata doesn\u2019t cover enemy cells. So, it might be safer not to mention any cells other than our target cell. I could keep it generic, saying something like, \u201cScout likely shoots or shifts,\u201d without using coordinates. The reasoning summary could also focus on our chosen cell if necessary.\n**Evaluating moves in strategy**\n\nSo, I'm determining the best move in the game, focusing on the target cell and the lowest-index legal options. I need to consider that the enemy might move to either [0,1] or [-1,1], while I also plan my move to the predicted landing cell. Both options threaten the enemy, but maybe [0,1] is more straightforward since it creates a direct path. The distance calculations from my starting point to the enemy show both paths reduce the distance equally, but [0,1] can block the enemy\u2019s move.\n**Assessing enemy movement**\n\nI\u2019m trying to figure out which landing spot the enemy is more likely to use. While their attack might matter more than movement, it seems that moving to [0,1] would make the most sense for them, rather than [\u22121,1]. As a tie-breaker, I could opt for [\u22121,1], but it\u2019s essential to follow the predicted landing cells. Moving to [0,1] leads directly toward our position at [-1,2], while [-1,1] would be closer and more aggressive for contact, especially since they can already shoot.\n**Deciding on movement options**\n\nI'm considering whether to move to [0,1] or [1,0] to maintain distance from potential attacks. It feels like I need to think strategically about which option will keep me safer. Using a tiebreaker based on incoming damage is a good idea if the enemies are holding positions and ready to shoot. So, it looks like I should prioritize whichever move helps minimize potential damage while still allowing me some room to maneuver.\n**Considering enemy predictions**\n\nI\u2019m evaluating if the predicted landing cell of the enemy is at [-1,1]. Yes, the enemy\u2019s move can end there, which is great! I need to determine the action key for a fast move to that target cell. I should also consider that the opponent may shoot or step inward without clear coordinates. I want to summarize the reasoning for my action as fast-moving to contact at [-1,1] and blocking the nearest lane. I just need to ensure the action key and target cell are legal options. Then I'll format the JSON object successfully.",
+    "usage": {
+      "input_tokens": 8920,
+      "output_tokens": 3525,
+      "reasoning_tokens": 3452,
+      "total_tokens": 12445
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00928
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_zergling_commit_two_landing_hexes",
+  "runner_exit_code": 0,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n[planning-eval] wrote /Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/runs/self_evolve_20260429T145529Z_iter01/cases/zergling_commit_two_landing_hexes_t0.json\n[planning-eval] pass=true reason=required option exists and passes checks chosen_option_index=2 chosen_option_indices=[]\n",
+  "estimated_cost_usd": 0.00928
+}

@@ -155,7 +155,7 @@ static func _test_target_damage_effect_spawns_for_scout_and_hydralisk(tests: Nod
 	var root := Node2D.new()
 	tests.add_child(root)
 	var player := Node2D.new()
-	player.name = "player"
+	player.name = "terran"
 	root.add_child(player)
 	var scout_def := load("res://src/unit/definitions/scout.tres") as UnitDefinition
 	var hydralisk_def := load("res://src/unit/definitions/hydralisk.tres") as UnitDefinition
@@ -229,10 +229,10 @@ static func _test_handle_support_heals_absolute_target_and_spawns_effect(tests: 
 	var root := Node2D.new()
 	tests.add_child(root)
 	var player := Node2D.new()
-	player.name = "player"
+	player.name = "terran"
 	root.add_child(player)
 	var opponent := Node2D.new()
-	opponent.name = "opponent"
+	opponent.name = "zerg"
 	root.add_child(opponent)
 	var medic_def := load("res://src/unit/definitions/medic.tres") as UnitDefinition
 	var marine_def := load("res://src/unit/definitions/marine.tres") as UnitDefinition

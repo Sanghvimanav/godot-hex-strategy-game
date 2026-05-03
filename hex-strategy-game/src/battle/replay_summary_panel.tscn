@@ -26,6 +26,7 @@ theme_override_constants/separation = 6
 
 [node name="title" type="Label" parent="margin/vbox"]
 layout_mode = 2
+theme_type_variation = &"UiFormLabel"
 text = "Last turn"
 horizontal_alignment = 1
 

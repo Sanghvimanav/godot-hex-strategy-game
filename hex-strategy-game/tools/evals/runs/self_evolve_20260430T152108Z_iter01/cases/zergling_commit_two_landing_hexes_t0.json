@@ -1,0 +1,73 @@
+{
+  "case_id": "zergling_commit_two_landing_hexes_t0",
+  "chosen_option_index": 1,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260430T152108Z_iter01"
+  },
+  "grading": {
+    "correctness": 0.0,
+    "final_score": 0.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 0.998155555555556
+  },
+  "intent": "Zergling should commit with fast_move to one of the valid pressure hexes [-1,1] or [0,1], despite potential incoming scout damage.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69474453225": 1
+    },
+    "call_timings_ms": [
+      30166
+    ],
+    "latency_grader": {
+      "average_call_score": 0.998155555555556,
+      "calls": [
+        {
+          "elapsed_ms": 30166,
+          "elapsed_seconds": 30.166,
+          "score": 0.998155555555556
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 0.998155555555556
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[] using action_key + target_cell. Use only listed unit_id values and legal action/target combinations.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Survival override: if enemy top1 predictions converge on your current/near cells and at least one legal move/fast_move materially lowers incoming threat this turn, choose the safer endpoint instead of contact. Prefer options with lower pred_damage_at_end (or incoming_damage_if_enemies_hold_and_shoot_end when pred_* absent), then lower enemy_count_can_hit_end_if_hold. If you are outnumbered locally (for example 1 unit vs 2+ enemies in contact range), prioritize retreat/survival over aggressive contact.\n5) No-friendly-fire targeting rule: friendly occupancy on a target cell does NOT block your attack choice. If a legal attack on a friendly-occupied cell secures a kill on a predicted enemy landing cell (especially 1-HP targets), prefer that attack over repositioning.\n6) Multi-unit kill coordination: when multiple allied units each have legal attacks that can kill the same predicted 1-HP enemy (or guaranteed kill tile), choose ATTACK actions for all such units this turn unless an attacker is strictly unable to attack that tile legally.\n7) Min-range intercept rule: if a predicted enemy landing cell equals your current cell and your attack has min_range > 0 (cannot target same-cell), do NOT default to move. Prefer a legal attack on an adjacent/intercept cell that still secures the kill (often enemy current/start cell or paired crossfire cell) over repositioning.\n8) Anti-overcommit rule: when a lone unit faces a clustered 3+ enemy stack, do not move onto the enemy-occupied stack unless it produces an immediate decisive kill advantage this turn; otherwise choose a retreat/safe fast_move endpoint.\n9) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. For pressure-only move choices, prefer endpoints that are on-axis toward immediate contact (avoid sideways drift when a direct contact lane exists).\n10) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then deterministically prefer the lowest legal_options[].i that matches action_key + target_cell.\n\nValidation: every chosen action_key + target_cell pair must resolve to a legal option for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.\n"
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely steps toward my lane; I retreat to [-2,3].\",\"reasoning_summary\":\"[-2,3] is the safest fast_move endpoint with 0 incoming damage.\",\"actions\":[{\"unit_id\":69474453225,\"action_key\":\"fast_move\",\"target_cell\":[-2,3]}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Evaluating Zergling movement**\n\nI'm considering the mechanics of zerglings and their passive attack, which damages units on the same tile. Moving onto the enemy\u2019s cell might not be allowed, so I can't collide directly. I might need to consider moving to adjacent cells like [0,1] or [-1,1]. I also think to predict enemy landing cells from [0,0], focusing on the closest options, but I need to keep my predictions brief and concrete. So, should I go with the likely moves?\n**Calculating axial distance**\n\nI need to compute the axial distance from [-1,2] to [0,0]. I think dq=1, dr=-2, and ds=1 will help, but it seems like the maximum distance might be 2. Actually, I remember that the hex distance formula is (|dq|+|dr|+|ds|)/2, and since ds = -dq-dr, I can get 1. This gives me a sum of 4 divided by 2, which equals 2. So, can the enemy at [0,0] attack my current cell?\n**Evaluating attack options**\n\nI\u2019m analyzing the range for potential attacks. The range is likely between 1 to 2 units, with options for adjacent or slightly distant targets. Right now, the distance is set at 2, which makes the current cell possibly eligible for an attack. I need to confirm if my cell coordinates are legally attackable based on the enemy's ray options. It looks like those include end cells along their attack paths. So, the attack can definitely reach the target hex at distances of 1 or 2.\n**Assessing movement risks**\n\nCurrently, my cell at [-1,2] isn't within the enemy's legal options, so they can't attack me right now. However, if I fast-move to [0,2], that puts me in their line of sight. I need to check if [0,2] is a legal target for the enemy, and it is. If the enemy moves to [0,1], they could also hit me from there. I have different endpoints to consider based on potential threats, and I want to focus on the safest move that minimizes incoming danger.\n**Considering enemy movements**\n\nI\u2019m thinking about the possible movements of the enemy. It looks like they could move to [0,1], [1,0], or [-1,0]. I need to assess how these positions could impact my strategy. Each of these moves could potentially put them in a better position to attack or limit my options. Keeping track of their likely placements helps me plan a safer course of action. Let's see how this might influence my next move!\n**Evaluating legal moves**\n\nI\u2019m considering the legal moves I can make to lower my incoming threat this turn. Since there are safe endpoints where I take 0 damage, retreat seems best. I need to decide between the points [-2,3] and [-1,3]. They\u2019re equidistant from the enemy. The safest moves are ordered, with [-2,3] being a second option. I\u2019ll choose the fast move to [-2,3] and keep in mind that if opponent prediction mentions a cell, it must be included in the chosen metadata.\n**Clarifying metadata requirements**\n\nI\u2019m thinking about including [0,1], but I can only do that if the chosen option metadata contains it, which it doesn't. So, I won't mention cells not in the chosen metadata. I can refer to general enemy movement without mentioning specific cells. It's safer to avoid any cell names except for my chosen endpoint [-2,3]. I'll confirm that includes the end cell in the metadata. I need to ensure the action key and target cell match the legal option exactly, and my JSON will reflect this. I\u2019ll mention how the enemy likely moves toward me, so I retreat to [-2,3].\n**Crafting concise reasoning**\n\nI\u2019ve included cell [-2,3] in the chosen metadata, so that\u2019s good. Now, it\u2019s time to keep the reasoning summary brief while still ensuring clarity. I want to present everything in a straightforward manner, so I\u2019m focusing on being concise. I need to ensure that any details I provide support the action I\u2019m taking, without unnecessary elaboration. The key is maintaining the essential information while keeping it clean and precise.",
+    "usage": {
+      "input_tokens": 9268,
+      "output_tokens": 2088,
+      "reasoning_tokens": 2014,
+      "total_tokens": 11356
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.006493
+  },
+  "mode": "live_llm",
+  "pass": false,
+  "perspective_group": "zerg",
+  "reason": "chosen fast_move end not in allowed_end_cells",
+  "scenario_id": "eval_zergling_commit_two_landing_hexes",
+  "runner_exit_code": 2,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n[planning-eval] wrote /Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/runs/self_evolve_20260430T152108Z_iter01/cases/zergling_commit_two_landing_hexes_t0.json\n[planning-eval] pass=false reason=chosen fast_move end not in allowed_end_cells chosen_option_index=1 chosen_option_indices=[]\n",
+  "estimated_cost_usd": 0.006493
+}

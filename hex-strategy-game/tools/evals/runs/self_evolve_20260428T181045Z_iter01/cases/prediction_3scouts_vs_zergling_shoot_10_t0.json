@@ -1,0 +1,79 @@
+{
+  "case_id": "prediction_3scouts_vs_zergling_shoot_10_t0",
+  "chosen_option_indices": [
+    12,
+    12,
+    12
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T181045Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 0.8618,
+    "formula": "correctness * speed_score",
+    "speed_score": 0.8618
+  },
+  "intent": "All Scouts should target [1,0] with attack_ray to hit the predicted Zergling approach after movement timing.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "67947726541": 12,
+      "68132275944": 12,
+      "68266493679": 12
+    },
+    "call_timings_ms": [
+      42438
+    ],
+    "latency_grader": {
+      "average_call_score": 0.8618,
+      "calls": [
+        {
+          "elapsed_ms": 42438,
+          "elapsed_seconds": 42.438,
+          "score": 0.8618
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 0.8618
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling fast-moves to [1,0] to close.\",\"reasoning_summary\":\"All three Scouts fire at [1,0] to intercept the likely landing cell.\",\"actions\":[{\"unit_id\":67947726541,\"option_index\":12},{\"unit_id\":68132275944,\"option_index\":12},{\"unit_id\":68266493679,\"option_index\":12}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Evaluating attack options**\n\nI\u2019m considering whether to choose the attack_ray option end [1,0] for each scout. But, wait! I should think about whether some predicted landing cells make [1,0] the top choice because the distance from the map edge is 4 and the distance from the origin is just 1 \u2014 which could mean it\u2019s a better choice since it\u2019s closer. I need to weigh these factors before making a final decision!\n**Analyzing landing strategy**\n\nIt looks like I want to close in on our target. Given our current position at [0,0], it seems landing on [1,0] is the most direct route and keeps us adjacent. There's also [1,1] as an option if I consider pathing. Fast_move range to [1,0] might only be one step back toward origin, while [1,1] allows for more maneuvering. [3,0] is another possibility if I decide to retreat, but the enemy seems aggressive. I might need to protect multiple scouts since they can only act once.\n**Considering attack strategy**\n\nIf the enemy fast_moves to [1,0], our ray will attack from [0,0], targeting that cell to deal damage. I wonder if multiple scouts can all focus on the same cell to potentially kill the enemy unit. Yes, that seems possible! However, if the enemy opts for a different landing cell, our attack on [1,0] could end up missing entirely. I need to think about how to maximize our chances of hitting our target effectively.\n**Analyzing attack strategy**\n\nI need to predict the most likely landing cells for the enemy. It seems like [1,0] could be the most probable, with [2,-1] as a second option. But, I'm realizing that fast move options might carry different likelihoods. All scouts are stationed at [0,0], so if they attack option 12 aiming at [1,0], they could engage effectively. I\u2019m considering the attack split, with two units on [1,0] and one on [1,1], to maximize damage.\n**Strategizing attacks on landing cells**\n\nFor ray, line, or AOE attacks, it's important to target the predicted landing cell instead of the enemy's current position. Each unit needs to choose a specific landing target, and they don't have to target the same cell. I need to select legal options since each scout can only hit one cell. If the enemy lands on [1,0], firing three times there could yield a kill, but if they land on [1,1], then all shots miss. It seems splitting attacks between [1,0] and [1,1] might be the best strategy, but I need to confirm if [1,1] is a legal target from [0,0]. It looks like there might be valid attack options that lead there.\n**Exploring attack coverage**\n\nI\u2019m considering if the ray from [0,0] can target [1,1] by passing through [1,0]. That seems a bit odd, but maybe it\u2019s plausible. I think I need to double-check what actual coverage means here; perhaps it involves drawing a line from the origin to the end target. I'm curious if this line of thought will lead to a valid strategy, but I don't want to jump to conclusions too quickly. I should analyze this further!\n**Analyzing ray coverage**\n\nI\u2019m trying to understand ray coverage \u2014 is it from the origin to the end cell, or does it consider intermediate cells too? The visible_enemy_ids_at_end shows only enemies at the end cell, which makes sense if that cell is occupied. But if the path includes intermediate cells, like the enemy at [1,0], they might also be affected. \n\nI think the developer\u2019s instruction suggests that for attacks, we should match the real attack coverage, but we don't have an explicit list of coverage. So, I\u2019m inferring that actual coverage may only include the end cell for target attacks, while the ray could include line cells along the path.\n**Clarifying attack rules**\n\nFor rule 2, there's a guideline stating that for ray, line, or AOE attacks, I should aim at the landing cell itself, not the enemy's current position. This suggests that a ray attack can target the landing cell directly. So, I likely need to select the legal option where the end cell matches that landing cell. It\u2019s important to interpret these rules correctly to ensure I\u2019m executing the attack as intended!\n**Analyzing option choices**\n\nI need to select options for units, possibly choosing option 12 for all three. However, that would mean they're all the same. If the enemy advances to [1,0], they'll likely hit all units. Among available options like 12 and 21, option 12 matches the target cell exactly, which aligns with my rules for coverage. But rule two suggests predicting one or two likely landing cells. It seems all three units should focus on [1,0] since it is the most probable landing spot.\n**Evaluating movement and attack strategies**\n\nI think I need to analyze the distances from enemy landing cells to my units. Since all my units are positioned the same, they\u2019re identical. Is there a better move option for my scouts? If the enemy fast moves to [1,0] and I move my scouts there too, they would occupy the same cell. However, the attack phase follows the enemy's move. Moving to [1,0] might lead to contact but no damage. So, should I prioritize an attack instead? Each unit has one action, and maybe I should select action index 12 for all.\n**Ensuring option validity and predictions**\n\nI need to confirm that each chosen option index exists for the respective unit. For unit 679, it seems the attack ray option 12 ends at [1,0], which is true for all units. I should create a brief and concrete opponent prediction covering potential fast moves like zerglings moving to either [1,0] or maybe [1,1]. If I reference cell [1,0] in my reasoning summary or opponent prediction, it definitely needs to be included in the chosen option metadata, and it is.",
+    "usage": {
+      "input_tokens": 16902,
+      "output_tokens": 2784,
+      "reasoning_tokens": 2694,
+      "total_tokens": 19686
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.0097935
+  },
+  "matched_unit_count": 3,
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "required option exists for all 3 units named Scout",
+  "scenario_id": "eval_prediction_3scouts_vs_zergling_shoot_10",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.0097935
+}

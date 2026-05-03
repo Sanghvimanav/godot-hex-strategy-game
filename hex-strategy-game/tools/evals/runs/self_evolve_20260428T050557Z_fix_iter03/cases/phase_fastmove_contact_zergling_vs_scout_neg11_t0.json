@@ -1,0 +1,68 @@
+{
+  "case_id": "phase_fastmove_contact_zergling_vs_scout_neg11_t0",
+  "chosen_option_index": 4,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T050557Z_fix_iter03"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should fast_move to [0,0] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68870473449": 4
+    },
+    "call_timings_ms": [
+      9072
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 9072,
+          "elapsed_seconds": 9.072,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T050557Z_fix/prompts/iter02_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Output exactly one JSON object and nothing else:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\n\nHard rules:\n1. Return exactly one action for every unit in ai_units[].\n2. Use only a legal option_index from that unit's legal_options[].i.\n3. Keep reasoning_summary short.\n4. Be deterministic: if a rule applies, follow it.\n\nPer-unit decision procedure:\n1. Identify the enemy\u2019s most likely end-of-turn hexes, especially for fast movers, melee engagers, or units clearly advancing.\n2. Evaluate attack options by expected value at attack resolution time, not by the enemy\u2019s current visible hex alone.\n3. If a legal attack option targets the most likely landing hex of a fast/advancing enemy, and that attack is expected to connect on that landing hex at resolution time, prefer that landing-hex option over targeting the enemy\u2019s current hex unless the current-hex option has strictly better guaranteed damage.\n4. When current-hex and predicted-landing-hex attacks are equal in guaranteed hit/damage, choose the predicted landing hex.\n5. Do not prefer a visible current-hex shot merely because expected_visible_hits_if_targeted is populated; compare all explicit hit/damage fields for the actual resolution timing.\n6. Otherwise prefer higher guaranteed damage/hit this turn using explicit fields such as expected_visible_hits_if_targeted and other guaranteed-hit / guaranteed-damage fields.\n7. If tied, prefer lower pred_damage_at_end; if pred_* is missing, use incoming_damage_if_enemies_hold_and_shoot_end.\n8. If still tied, prefer lower distance to enemies.\n9. If still tied, choose the lowest option_index.\n\nOpponent_prediction must briefly state the likely enemy move pattern and name relevant predicted landing hexes.\nReasoning_summary should briefly reflect the applied rule, especially when targeting a landing hex.\n\nDo not add markdown or extra text."
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely uses move_short to escape pressure, with main landing hexes [-1,0] and [0,1]; if it stays, it cannot hit [0,0] this turn.\",\"reasoning_summary\":\"Use fast move to the predicted contact hex [0,0]; it resolves before the Scout\u2019s later actions and matches the landing-hex priority rule.\",\"actions\":[{\"unit_id\":68870473449,\"option_index\":4}]}",
+    "reasoning_effort": "low",
+    "thinking": "",
+    "usage": {
+      "input_tokens": 8942,
+      "output_tokens": 552,
+      "reasoning_tokens": 450,
+      "total_tokens": 9494
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.0033395
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout_neg11",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.0033395
+}

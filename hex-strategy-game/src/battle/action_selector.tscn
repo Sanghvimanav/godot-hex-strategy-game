@@ -27,14 +27,14 @@ theme_override_constants/separation = 6
 
 [node name="unit_label" type="Label" parent="margin/vbox"]
 layout_mode = 2
+theme_type_variation = &"UiFormLabel"
 text = "Unit"
 horizontal_alignment = 1
 
 [node name="effects_label" type="Label" parent="margin/vbox"]
 layout_mode = 2
+theme_type_variation = &"UiHint"
 text = "Effects: None"
-theme_override_colors/font_color = Color(0.7, 0.7, 0.8, 1)
-theme_override_font_sizes/font_size = 11
 
 [node name="move_group" type="VBoxContainer" parent="margin/vbox"]
 layout_mode = 2
@@ -42,6 +42,7 @@ theme_override_constants/separation = 4
 
 [node name="move_label" type="Label" parent="margin/vbox/move_group"]
 layout_mode = 2
+theme_type_variation = &"UiFormLabel"
 text = "Move"
 
 [node name="buttons" type="HFlowContainer" parent="margin/vbox/move_group"]
@@ -54,6 +55,7 @@ theme_override_constants/separation = 4
 
 [node name="ability_label" type="Label" parent="margin/vbox/ability_group"]
 layout_mode = 2
+theme_type_variation = &"UiFormLabel"
 text = "Abilities"
 
 [node name="buttons" type="HFlowContainer" parent="margin/vbox/ability_group"]
@@ -66,6 +68,7 @@ theme_override_constants/separation = 4
 
 [node name="passive_label" type="Label" parent="margin/vbox/passive_group"]
 layout_mode = 2
+theme_type_variation = &"UiFormLabel"
 text = "Passives"
 
 [node name="passive_list" type="VBoxContainer" parent="margin/vbox/passive_group"]
@@ -73,6 +76,7 @@ layout_mode = 2
 theme_override_constants/separation = 2
 
 [node name="show_all_btn" type="Button" parent="margin/vbox"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 visible = false
 text = "Show All"

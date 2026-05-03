@@ -1,0 +1,30 @@
+{
+  "run_meta": {
+    "run_id": "self_evolve_20260428T050557Z_iter03",
+    "created_at": "2026-04-28T05:07:34.064790Z",
+    "mode": "live_llm",
+    "prompt_version": "p_current_settings",
+    "eval_set_version": "eval_v001",
+    "thinking_level": "low",
+    "model_override": "",
+    "notes": "",
+    "planning_prompt_version": "minimal",
+    "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T050557Z/prompts/iter02_prompt.txt",
+    "git_sha": "5632b9b590908f340a90cb1abcc268a83285afe4",
+    "manifest": "",
+    "model_version": "gpt-5.4-mini",
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "planning_max_tokens": 16128,
+    "base_url": "https://api.openai.com/v1"
+  },
+  "total_cases": 5,
+  "pass_cases": 5,
+  "fail_cases": 0,
+  "pass_rate": 1.0,
+  "avg_final_score": 1.0,
+  "avg_speed_on_pass": 1.0,
+  "total_tokens": 56058,
+  "estimated_cost_usd": 0.01581525,
+  "estimated_cost_usd_per_eval_turn": 0.00316305
+}

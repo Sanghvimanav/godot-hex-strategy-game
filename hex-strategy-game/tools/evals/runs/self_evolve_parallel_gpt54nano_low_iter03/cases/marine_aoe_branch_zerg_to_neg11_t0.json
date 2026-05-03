@@ -1,0 +1,72 @@
+{
+  "case_id": "marine_aoe_branch_zerg_to_neg11_t0",
+  "chosen_option_index": 12,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_parallel_gpt54nano_low_iter03"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "With the Zergling forced to [-1,-1], Marine should choose attack_short on [-1,-1] to secure damage.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68199384781": 12
+    },
+    "call_timings_ms": [
+      2286
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 2286,
+          "elapsed_seconds": 2.286,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-nano",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_parallel_gpt54nano_low/prompts/iter02_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_parallel_gpt54nano_low/prompts/iter02_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_parallel_gpt54nano_low/prompts/iter02_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only: {\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit using only ai_units[].unit_id and ai_units[].legal_options[].i.\n\nDecision rules, in order:\n1) Hard intent cell/action. If scenario intent or turn goal names a specific cell or says to hit, kill, pressure, intercept, block, or cover a cell/unit, choose the lowest-index legal option that satisfies it. For move/fast_move, only end_cell counts. For attacks, a cell counts if it equals target_cell or appears in affected_cells, ray_cells, line_cells, intercept_cells, or coverage_cells. IMPORTANT: if attack metadata is sparse and an attack's target_cell equals the named cell, treat that attack as satisfying the cell; do not require extra coverage proof. If intent calls for attacking a named cell, prefer any matching attack over any move.\n2) Fast-mover landing rule. If an enemy is likely to move before your hit resolves, predict 1-2 likely landing cells. If any legal attack can hit a predicted landing cell by target_cell or any coverage field above, choose such an attack. For ray/line/AOE/intercept attacks, target the option whose real coverage includes the landing cell even if aimed cell differs from the enemy's current cell. If metadata is sparse but target_cell equals a predicted landing cell, treat it as a valid hit. Only move onto a predicted landing cell if no legal attack can plausibly hit any predicted landing cell.\n3) Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Otherwise choose the most aggressive legal move/fast_move that reduces distance to key enemies/objectives and improves next-turn contact. Do not retreat unless every forward legal option is strictly worse.\n5) Tiebreakers: lower pred_damage_at_end; else lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation:\n- Every chosen option_index must exist for that unit.\n- If reasoning_summary mentions a required or predicted cell, that cell must be matched by chosen end_cell, target_cell, or attack coverage, or explicitly stated as an enemy predicted landing cell.\n- Keep both strings brief and concrete."
+    },
+    "raw": "{\n  \"opponent_prediction\":\"Zergling at [0,-2] is likely to fast_move into adjacent contact hexes, especially [-1,-1] (its scripted/likely landing).\",\n  \"reasoning_summary\":\"Scenario intent is to hit the AOE cell/unit location [-1,-1]. Choose the lowest-index Marine attack option whose end cell is exactly [-1,-1] to trigger the intended adjacent-area damage.\",\n  \"actions\":[{\"unit_id\":68199384781,\"option_index\":12}]\n}",
+    "reasoning_effort": "low",
+    "thinking": "",
+    "usage": {
+      "input_tokens": 8680,
+      "output_tokens": 230,
+      "reasoning_tokens": 117,
+      "total_tokens": 8910
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00263
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_marine_aoe_branch_zerg_to_neg11",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.00263
+}

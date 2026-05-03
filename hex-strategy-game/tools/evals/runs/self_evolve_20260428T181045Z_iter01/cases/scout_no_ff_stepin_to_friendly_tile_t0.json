@@ -1,0 +1,75 @@
+{
+  "case_id": "scout_no_ff_stepin_to_friendly_tile_t0",
+  "chosen_option_indices": [
+    9
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T181045Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 0.626544444444444,
+    "formula": "correctness * speed_score",
+    "speed_score": 0.626544444444444
+  },
+  "intent": "With 1-HP Zergling moving from [-1,2] to [-1,3], scout should target [-1,3] even though a friendly scout occupies that tile.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "67947726541": 9,
+      "68132275944": 11
+    },
+    "call_timings_ms": [
+      63611
+    ],
+    "latency_grader": {
+      "average_call_score": 0.626544444444444,
+      "calls": [
+        {
+          "elapsed_ms": 63611,
+          "elapsed_seconds": 63.611,
+          "score": 0.626544444444444
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 0.626544444444444
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling likely fast-moves to [-1,3] or [0,2].\",\"reasoning_summary\":\"Two ray shots cover the likely landings: 67947726541->[-1,3], 68132275944->[0,2].\",\"actions\":[{\"unit_id\":67947726541,\"option_index\":9},{\"unit_id\":68132275944,\"option_index\":11}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Considering attack options**\n\nI need to choose an attack option that targets one of the likely landing cells if it's in range from my current position. First, I have to identify those landing cells. The enemy zergling is at [-1,2], and the options I see are: [-2,2], [-2,3], [-1,1], [-1,3], [0,1], and [0,2]. Next, I need to determine which landing cells can be attacked by each scout's ray from my current positions.\n**Analyzing enemy movement**\n\nI need to consider that the enemy can move before our attacks, so I must predict their likely landing cells. If the enemy wants to approach our scouts, they might move to cells like [0,2] or [-1,1]. The rules specify predicting the 1-2 most likely landing cells based on danger. Currently, our scouts are at [-1,4] and [-1,3], while the enemy is at [-1,2], with a distance of 1 to the scout at [-1,3].\n**Analyzing attack strategy**\n\nI need to focus on predicted landing cells for an effective attack. If the scout has an option to strike at [-1,3] from its current position at [-1,4], the attack must cover that landing cell rather than the scout\u2019s current location. Looking at Rule 2, I realize we should target landing positions instead. If the enemy reaches [-1,3], the attack will likely hit. However, I have to ensure the intended attack aligns with our goals and may consider multiple scouts targeting various predicted landing cells.\n**Considering attack choices**\n\nIf one scout targets the cell at [-1,3], the other scout might choose to attack the same or a different likely landing cell. Given that the enemy has only 1 health, a single hit is enough. However, Rule 3 states the attack must be lethal, so we need to consider the likelihood of getting a guaranteed kill after the enemy moves. We can only kill if the target remains or moves to a covered cell, so I should focus on actions that maximize our chances of securing a kill.\n**Evaluating scout movement legality**\n\nIt seems that the enemy moving fast onto our scout's tile is legal and possibly a strong move. The likely landing cell appears to be our scout's current position at [-1,3]. There's also the possibility of considering our other scout at [-1,4], though that's a bit further away. For the first scout at [-1,4], there\u2019s an attack option that targets the enemy location, which doesn\u2019t correspond to the landing cell.\n**Evaluating movement options**\n\nI\u2019m thinking about the current situation \u2014 if the attack can\u2019t cover any predicted landing cell from the current position, it might make sense to move on to the predicted landing cell instead. I want to ensure I\u2019m considering the most strategic option here, so I\u2019m weighing the potential benefits of that move. It\u2019s important to stay flexible and adaptable in this scenario! I wonder if there are other options to consider too.\n**Evaluating path options**\n\nI'm considering the first scout's path options, specifically option 15 leading to the endpoint at [-2,3]. If the actual coverage includes this path, it also covers the landing cell at [-1,3]. I\u2019m wondering if the target cell could be the endpoint at [-2,3]. It seems like this path does indeed include the landing cell, which makes the coverage more relevant. I just need to clarify the target cell's role here.\n**Analyzing scout options**\n\nI'm pondering the potential landing cells for the second scout, specifically whether there's a feasible attack option at [0,2]. It seems there is, which is great! So, the second scout can indeed target that cell. I also consider other landing cells like [-2,3], where the first scout can attack options at i15 or i7, and even [0,1] as a potential target for the second scout at i20. This all feels promising!\n**Analyzing enemy movement**\n\nI'm considering enemy behavior based on their current position at [-1,2]. They can move to [-1,3], getting close to my second scout. However, my first scout at [-1,4] may influence their movement towards [0,2] or [-2,2]. The best option for a melee kill is at [-1,3] if it's allowed. So, that\u2019s the top target for my first scout. The second scout can\u2019t attack there, but could target [0,2] or [-2,3] for potential landings.\n**Predicting enemy actions**\n\nThe rule says only one action per unit, so I need to pick the first matching rule. Considering the enemy's speed and danger, I should predict one to two likely landing cells. The top contenders might be [-1,3] and [0,2] or [-2,3]. The enemy likely wants to engage the closest target to eliminate a scout. Since moving to [-1,3] allows immediate contact, that\u2019s a strong option. However, they could also consider evading to [-1,1]. It seems the most likely targets are near my scouts.\n**Identifying attack options**\n\nI'm trying to figure out which two positions are the most likely for the enemy. It seems that [-1,3] and [0,2] are the top candidates, with [-2,3] being a similar option. Considering my attack capabilities, the first scout can cover the spots at [-1,3], [-2,3], and [0,2]. I guess I should prioritize coordinating my scouts to maximize the effectiveness of those positions. It\u2019s crucial to consider these strategies!\n**Evaluating scout movements**\n\nI\u2019m considering how the first scout can attack the target at [-2,3] but won't cover [-1,3]. It might be better to choose the first scout for [-2,3] and the second scout for [0,2], but then [-1,3] would be left uncovered. Since the enemy is close to the second scout, it seems more likely they'll move to [-1,3]. I need to ensure that my metadata includes these cells in my reasoning summary. I\u2019ll mention expected opponent actions clearly too.\n**Choosing scout options**\n\nI'm looking at the first scout with unit ID 67947726541, considering option index i9. I notice that this attack option targets [-1,3] and has is_move set to false, which is good. For the second scout with unit ID 68132275944, I think I\u2019ll go with option index i11, which ends at [0,2]. It seems like a solid choice since both options align well with my strategy.\n**Analyzing enemy movement**\n\nI see that the enemy is positioned at [-1,2], which means they're below our scouts. It looks like they might choose to move toward [0,2] or [-2,3] to get closer to one of the scouts. I find it tricky to gauge their next move. It seems like I need to be prepared for either option and think ahead about the implications for our strategy. Let\u2019s stay alert!",
+    "usage": {
+      "input_tokens": 13144,
+      "output_tokens": 5583,
+      "reasoning_tokens": 5486,
+      "total_tokens": 18727
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.014452
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "per-unit requirements satisfied (1 units)",
+  "scenario_id": "eval_scout_no_ff_stepin_to_friendly_tile",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.014452
+}

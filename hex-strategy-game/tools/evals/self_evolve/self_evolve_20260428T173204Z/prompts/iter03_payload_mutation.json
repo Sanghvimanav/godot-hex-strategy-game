@@ -1,0 +1,13 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.attack_predicted_landing_cells_first": true,
+    "planner_context.attack_over_stepin_on_predicted_landing": true
+  },
+  "copy_paths": [
+    {
+      "from": "intent",
+      "to": "planner_context.intent"
+    }
+  ]
+}

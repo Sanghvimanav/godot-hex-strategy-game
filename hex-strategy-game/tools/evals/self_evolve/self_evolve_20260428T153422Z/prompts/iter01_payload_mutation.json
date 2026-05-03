@@ -1,0 +1,9 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.attack_targeting_priority": "predicted_post_move_landing_cell",
+    "planner_context.movement_priority": "exact_tile_if_reachable_else_shortest_path_progress",
+    "planner_context.coordinate_focus_fire_on_shared_predicted_cell": true
+  },
+  "copy_paths": []
+}

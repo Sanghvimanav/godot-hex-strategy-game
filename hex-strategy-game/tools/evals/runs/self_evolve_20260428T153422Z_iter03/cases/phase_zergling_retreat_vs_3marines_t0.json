@@ -1,0 +1,72 @@
+{
+  "case_id": "phase_zergling_retreat_vs_3marines_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T153422Z_iter03"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should retreat from [-3,2] to [-4,3], [-4,2], or [-3,3] to stay out of Marine range while Marines target [-3,2].",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69390567163": 0
+    },
+    "call_timings_ms": [
+      10587
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 10587,
+          "elapsed_seconds": 10.587,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter02_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter02_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter02_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from that unit's legal_options[].i only. Never invent unit ids or option indices.\n\nDeterministic rules for each unit:\n1) Immediate completion first. If any legal option ends on the required enemy/objective hex, captures the key tile now, or secures the best available kill now, choose the best such option. Prefer exact end-cell success over merely reducing distance.\n2) Predict enemy end cells for this turn, including fast_move endpoints. If an attack resolves after enemy movement, target the best predicted landing cell, not the enemy's current cell. For attack_ray, line, AoE, intercept, and targeted attacks, choose the legal option whose target_cell/ray_cell/covered cells best hits the highest-priority predicted landing hex. If allies can cover one predicted landing cell, coordinate focus there.\n3) For move/fast_move, evaluate by the option's actual end_cell only. Never describe or optimize for a different hex than the legal option really ends on.\n4) If no immediate completion exists, movement priority is: a) any legal aggressive commit end_cell explicitly closest to the key enemy/objective this turn, b) otherwise minimum remaining hex distance to the key tile/enemy, c) lower pred_damage_at_end, d) lower option_index. Do not move just to \"contest\" a predicted enemy landing cell unless that cell is itself the key tile/enemy tile or also wins this distance test.\n5) Safety/tiebreaks: lower pred_damage_at_end; if missing use incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted, higher target threat, shorter distance to nearest enemy after action, lower option_index.\n\nUse legal option metadata only. Keep opponent_prediction and reasoning_summary brief and concrete; name predicted landing cells/end cells when relevant."
+    },
+    "raw": "{\"opponent_prediction\":\"Marines likely keep pressure from [-2,1] and may try to move_short toward the retreat lane, but they cannot catch a fast_move landing this turn.\",\"reasoning_summary\":\"Fast_move retreat is the immediate goal. Options [-4,2], [-4,3], and [-3,3] are all safe; choose lowest option_index among equal-safe retreats.\",\"actions\":[{\"unit_id\":69390567163,\"option_index\":0}]}",
+    "reasoning_effort": "low",
+    "thinking": "**Analyzing movement strategies**\n\nIf a zergling fast_moves to retreat, it might still attack afterward, since the execution order has the fast move happening first. Marines' attack_short occurs after their movement, and they can target where the zergling will land. I wonder about choosing a retreat that maximizes safety. If zergling moves to [-4,3], marines from [-2,1] would have distance 3, possibly too far to attack. Moving marines to [-3,2] could reduce distance, but they can't attack in the same turn. Given three enemies at one cell, moving away to any retreat hex seems optimal. Which hex minimizes incoming damage? Options 0, 1, and 3 have no incoming damage, while option 2 and 5 put the zergling at risk.\n**Comparing enemy distances**\n\nI need to compare the distance to the nearest enemy after taking action. For option 1 at [-4,3], it seems like that would be the farthest away, possibly at a distance of 3. Meanwhile, option 0 at [-4,2] might have a distance of 2. I should double-check these calculations to ensure I'm making the best decision based on enemy proximity after the move. It\u2019s essential to maximize distance when planning my strategy!",
+    "usage": {
+      "input_tokens": 10567,
+      "output_tokens": 776,
+      "reasoning_tokens": 673,
+      "total_tokens": 11343
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00419375
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_zergling_retreat_vs_3marines",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.00419375
+}

@@ -1,0 +1,73 @@
+{
+  "case_id": "zergling_commit_two_landing_hexes_t0",
+  "chosen_option_index": 1,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T145529Z_iter03"
+  },
+  "grading": {
+    "correctness": 0.0,
+    "final_score": 0.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should commit with fast_move to one of the valid pressure hexes [-1,1] or [0,1], despite potential incoming scout damage.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69474453225": 1
+    },
+    "call_timings_ms": [
+      17712
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 17712,
+          "elapsed_seconds": 17.712,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T145529Z/prompts/iter02_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T145529Z/prompts/iter02_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T145529Z/prompts/iter02_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\n\nRules:\n- Emit exactly 1 action per AI unit.\n- Each emitted {unit_id, action_key, target_cell} must exactly match one legal option for that unit in ai_units[].legal_options[]. Never invent, transform, or approximate a cell.\n- For move/fast_move, target_cell must be that option's true landing/end cell only. Never output path/intermediate cells or cells only mentioned in allowed_end_cells unless that exact option exists.\n- Keep opponent_prediction and reasoning_summary very short. If either mentions a cell, that cell must appear in chosen option metadata.\n\nDecision policy (strict order):\n1) Intent / turn_goal is binding. If it names exact end / target / hit cells, choose a legal option that lands on, targets, or truly covers those cells exactly. Attack coverage means target_cell, affected_cells, ray_cells, line_cells, or intercept_cells. If intent lists allowed_end_cells, choose only among legal move/fast_move options ending on those cells.\n2) Intent verbs override safety heuristics:\n   - retreat / survive / kite / avoid range / stay safe => prefer listed safe end cells over attacks or pressure.\n   - commit / accept damage / maintain tempo / reach / chase => do not avoid the named legal end cell because of predicted damage.\n3) If intent names multiple cells to cover against one enemy, distribute friendly actions across those named cells before duplicating coverage.\n4) If no explicit intent cell resolves the choice and an enemy is a fast mover, predict up to 2 likely landing cells. Prefer a legal ATTACK whose real coverage includes a predicted landing cell. For ray/line/AOE attacks, if legal, set target_cell to the predicted landing cell itself, not the enemy's current cell. Only move/fast_move onto a predicted landing cell if no legal attack covers one and that exact landing cell is legal.\n5) Otherwise: kill attack > highest immediate damage to highest-threat enemy > aggressive move reducing distance / improving next-turn contact.\n6) Tie-breakers: lower pred_damage_at_end; lower incoming_damage_if_enemies_hold_and_shoot_end; higher expected_visible_hits_if_targeted; higher target threat; shorter distance to nearest enemy after action; lowest legal_options[].i."
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely attacks or repositions.\",\"reasoning_summary\":\"No attack available; take safest fast move.\",\"actions\":[{\"unit_id\":69474453225,\"action_key\":\"fast_move\",\"target_cell\":[-2,3]}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Analyzing scout movements**\n\nI\u2019m considering the enemy scout, which likely moves short to an adjacent cell to avoid being attacked. We\u2019re supposed to predict up to two possible landing cells for it. With the scout at (0,0) and potential legal moves, I need to assess whether it will attack or move. We have options like moving fast to nearby positions, but if I move adjacent to the scout, it could potentially counterattack, given its attack range.\n**Considering attack range**\n\nI\u2019m realizing that the enemy's attack ray can only target a hex within range 1-2 after moving, meaning it can\u2019t attack the same cell. If I fast move adjacent to the scout, it could hit me if it's within range. We have three health points, so it's a bit risky! I can\u2019t occupy the same tile as the scout, but I might be better off moving to a hex that puts me in a threatening position for the next turn.\n**Evaluating move options**\n\nI'm considering movement options for a zergling. The farthest and safest position is [-2,3]. However, positions [-1,3] and [0,2] might be closer to the enemy. Since zerglings move quickly, an aggressive move that reduces the distance to the enemy while avoiding incoming damage might be ideal. The safest bets are still [-2,3] and [-1,3], with no damage taken. For optimal damage while being safe, maybe I should choose [0,2] which has a distance of 2 but is still within reach for next turn.\n**Choosing movement strategy**\n\nI'm looking at my options for movement based on policy tie-breakers. I should prioritize shorter distances while considering incoming damage, with safe options being [-2,3] and [-1,3], both at distance 3. I could choose [-2,3] since it has a lower index. However, I need to keep in mind that I might want to pressure the enemy. Moving to [-2,3] feels a bit like retreating, but since we\u2019re a zergling, I might want to take a more aggressive approach to contact without explicit intent to retreat.\n**Evaluating safe options**\n\nI'm considering movement options and thinking that [0,2] could be a choice since it has a distance of 2, despite having an incoming damage of 1. However, this feels unsafe compared to our other options, which have an incoming damage of 0. Since safety is a priority, I should probably stick with the safest moves that avoid any incoming damage entirely. In this case, safe options definitely win out, so I\u2019ll go with those.",
+    "usage": {
+      "input_tokens": 8942,
+      "output_tokens": 1247,
+      "reasoning_tokens": 1190,
+      "total_tokens": 10189
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.0047295
+  },
+  "mode": "live_llm",
+  "pass": false,
+  "perspective_group": "zerg",
+  "reason": "chosen fast_move end not in allowed_end_cells",
+  "scenario_id": "eval_zergling_commit_two_landing_hexes",
+  "runner_exit_code": 2,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n[planning-eval] wrote /Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/runs/self_evolve_20260429T145529Z_iter03/cases/zergling_commit_two_landing_hexes_t0.json\n[planning-eval] pass=false reason=chosen fast_move end not in allowed_end_cells chosen_option_index=1 chosen_option_indices=[]\n",
+  "estimated_cost_usd": 0.0047295
+}

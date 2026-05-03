@@ -1,6 +1,6 @@
 extends RefCounted
 class_name LlmPlanningResponseParser
-## Extracts { unit_id: option_index } from model output (spec §6).
+## Extracts per-unit action requests (action_key + target_cell) from model output.
 
 
 static func parse_json_actions(raw: String) -> Dictionary:
@@ -17,7 +17,8 @@ static func parse_json_actions(raw: String) -> Dictionary:
 	if actions.is_empty():
 		return { "ok": false, "error": "no_actions" }
 
-	var by_unit_id: Dictionary = {}
+	var action_request_by_unit_id: Dictionary = {}
+	var legacy_option_index_by_unit_id: Dictionary = {}
 	for item in actions:
 		if typeof(item) != TYPE_DICTIONARY:
 			continue
@@ -25,19 +26,38 @@ static func parse_json_actions(raw: String) -> Dictionary:
 		var uid := int(d.get("unit_id", -1))
 		if uid <= 0:
 			continue
-		var oi := int(d.get("option_index", -1))
-		if oi < 0:
+		var action_key: String = str(d.get("action_key", "")).strip_edges()
+		var target_raw: Variant = d.get("target_cell", d.get("end_cell", d.get("echo_cell", d.get("echo_end_cell", []))))
+		if typeof(target_raw) != TYPE_ARRAY:
 			continue
-		by_unit_id[uid] = oi
+		var target_arr: Array = target_raw as Array
+		if target_arr.size() < 2:
+			continue
+		var target_cell: Array = [int(target_arr[0]), int(target_arr[1])]
+		if not action_key.is_empty():
+			action_request_by_unit_id[uid] = {
+				"action_key": action_key,
+				"target_cell": target_cell,
+			}
+			continue
+		# Backward-compatible path (legacy option index output).
+		var oi := int(d.get("option_index", -1))
+		if oi >= 0:
+			legacy_option_index_by_unit_id[uid] = oi
 
-	if by_unit_id.is_empty():
+	if action_request_by_unit_id.is_empty() and legacy_option_index_by_unit_id.is_empty():
 		return { "ok": false, "error": "no_valid_action_entries" }
 
 	var rs: Variant = root.get("reasoning_summary", "")
+	var op: Variant = root.get("opponent_prediction", "")
+	if op == null or str(op).is_empty():
+		op = root.get("previous_turn_analysis", "")
 	return {
 		"ok": true,
-		"by_unit_id": by_unit_id,
+		"action_request_by_unit_id": action_request_by_unit_id,
+		"legacy_option_index_by_unit_id": legacy_option_index_by_unit_id,
 		"reasoning_summary": str(rs) if rs != null else "",
+		"opponent_prediction": str(op) if op != null else "",
 	}
 
 

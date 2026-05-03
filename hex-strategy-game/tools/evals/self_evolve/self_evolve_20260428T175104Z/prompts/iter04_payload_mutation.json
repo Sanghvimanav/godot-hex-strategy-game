@@ -1,0 +1,9 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.enemy_pre_resolution_movement_matters": true,
+    "planner_context.attack_selection_rule": "When relevant, prefer legal attacks whose true effect covers forced/likely enemy landing cells, even if the chosen target marker is a different cell.",
+    "planner_context.output_contract": "Return exactly one JSON object with opponent_prediction, reasoning_summary, and actions[{unit_id,option_index}]."
+  },
+  "copy_paths": []
+}

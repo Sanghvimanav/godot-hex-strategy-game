@@ -1,0 +1,15 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.attack_coverage_fields": [
+      "target_cell",
+      "affected_cells",
+      "ray_cells",
+      "line_cells",
+      "intercept_cells"
+    ],
+    "planner_context.prioritize_predicted_landing_cells_when_enemy_can_move_first": true,
+    "planner_context.legal_option_overrides_occupancy_assumptions": true
+  },
+  "copy_paths": []
+}

@@ -1,0 +1,34 @@
+{
+  "status": "target_reached",
+  "reason": "avg_final_score",
+  "history": [
+    {
+      "iter": 1,
+      "run_id": "self_evolve_20260428T150438Z_iter01",
+      "exit_code": 2,
+      "pass_rate": 0.5714285714285714,
+      "avg_final_score": 0.5714285714285714,
+      "fail_count": 3,
+      "custom_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v0_prompt.txt",
+      "payload_mutation_file": ""
+    },
+    {
+      "iter": 2,
+      "run_id": "self_evolve_20260428T150438Z_iter02",
+      "exit_code": 0,
+      "pass_rate": 1.0,
+      "avg_final_score": 1.0,
+      "fail_count": 0,
+      "custom_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T150438Z/prompts/iter01_prompt.txt",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T150438Z/prompts/iter01_payload_mutation.json"
+    }
+  ],
+  "promoted_version": {
+    "version": 1,
+    "name": "auto_v1",
+    "prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v1_prompt.txt",
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v1_payload_mutation.json",
+    "source": "session:self_evolve_20260428T150438Z",
+    "created_at": "2026-04-28T15:07:07.305672Z"
+  }
+}

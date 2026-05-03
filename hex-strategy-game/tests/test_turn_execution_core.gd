@@ -44,10 +44,10 @@ static func _test_find_unit_by_id_found(tests: Node) -> bool:
 	tests._log("test_turn_execution_core: find_unit_by_id found")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 2 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
+			{ "name": "zerg", "ai": false, "units": [
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [-1, 1], "health": 1 }
 			]}
 		]
@@ -59,8 +59,8 @@ static func _test_find_unit_by_id_found(tests: Node) -> bool:
 	if found.unit.get("unit_id", -1) != 2:
 		tests._fail("found unit should have unit_id 2")
 		return false
-	if found.group.get("name", "") != "opponent":
-		tests._fail("found group should be opponent")
+	if found.group.get("name", "") != "zerg":
+		tests._fail("found group should be zerg")
 		return false
 	tests._pass("find_unit_by_id found")
 	return true
@@ -68,7 +68,7 @@ static func _test_find_unit_by_id_found(tests: Node) -> bool:
 static func _test_find_unit_by_id_not_found(tests: Node) -> bool:
 	tests._log("test_turn_execution_core: find_unit_by_id not found")
 	var game_state := {
-		"groups": [{ "name": "player", "ai": false, "units": [{ "unit_id": 1, "cell": [0, 0] }] }]
+		"groups": [{ "name": "terran", "ai": false, "units": [{ "unit_id": 1, "cell": [0, 0] }] }]
 	}
 	var found := TurnExecutionCore.find_unit_by_id(game_state, 999)
 	if not found.is_empty():
@@ -81,10 +81,10 @@ static func _test_get_units_at_cell(tests: Node) -> bool:
 	tests._log("test_turn_execution_core: get_units_at_cell")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "cell": [2, 0], "health": 2 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
+			{ "name": "zerg", "ai": false, "units": [
 				{ "unit_id": 2, "cell": [2, 0], "health": 1 }
 			]}
 		]
@@ -100,7 +100,7 @@ static func _test_get_units_at_cell_excludes_dead(tests: Node) -> bool:
 	tests._log("test_turn_execution_core: get_units_at_cell excludes dead")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "cell": [2, 0], "health": 0 }
 			]}
 		]
@@ -207,19 +207,19 @@ static func _test_execute_turn_move_and_attack(tests: Node) -> bool:
 	tests._log("test_turn_execution_core: execute_turn move and attack")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
+			{ "name": "zerg", "ai": false, "units": [
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [0, 0], "health": 1, "max_health": 1, "energy": 0, "max_energy": 0 }
 			]}
 		]
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "attack_short", "path": [], "end_point": [0, 0] }
 		],
-		"opponent": []
+		"zerg": []
 	}
 	var recording := TurnExecutionCore.execute_turn(game_state, player_actions)
 	if not recording.has("actions"):
@@ -253,10 +253,10 @@ static func _test_execute_turn_move_does_not_deplete_tile_resource(tests: Node) 
 	var target_key := HexGrid.get_cell_key(1, 0)
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [0, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [] }
+			{ "name": "zerg", "ai": false, "units": [] }
 		],
 		"tile_resources": {
 			target_key: { "amount": 2, "max_amount": 2, "resource_type": "ore" }
@@ -266,10 +266,10 @@ static func _test_execute_turn_move_does_not_deplete_tile_resource(tests: Node) 
 	for p in HexGrid.build_path_to(0, 0, 1, 0):
 		move_path.append([int(p.x), int(p.y)])
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "move_short", "path": move_path, "end_point": [1, 0] }
 		],
-		"opponent": []
+		"zerg": []
 	}
 	TurnExecutionCore.execute_turn(game_state, player_actions)
 	var resources: Dictionary = game_state.get("tile_resources", {})
@@ -285,20 +285,20 @@ static func _test_execute_turn_extract_depletes_and_accumulates_group_resource(t
 	var target_key := HexGrid.get_cell_key(0, 0)
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
-				{ "unit_id": 1, "def_path": "res://src/unit/definitions/knight.tres", "cell": [0, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
+			{ "name": "terran", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [0, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [] }
+			{ "name": "zerg", "ai": false, "units": [] }
 		],
 		"tile_resources": {
 			target_key: { "amount": 1, "max_amount": 1, "resource_type": "ore" }
 		}
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "extract_tile", "path": [], "end_point": [0, 0] }
 		],
-		"opponent": []
+		"zerg": []
 	}
 	TurnExecutionCore.execute_turn(game_state, player_actions)
 	var resources: Dictionary = game_state.get("tile_resources", {})
@@ -319,20 +319,20 @@ static func _test_execute_turn_recruit_people_only_extracts_people(tests: Node) 
 	var target_key := HexGrid.get_cell_key(0, 0)
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/scout.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [] }
+			{ "name": "zerg", "ai": false, "units": [] }
 		],
 		"tile_resources": {
 			target_key: { "amount": 2, "max_amount": 2, "resource_type": "ore" }
 		}
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "recruit_people", "path": [], "end_point": [0, 0] }
 		],
-		"opponent": []
+		"zerg": []
 	}
 	TurnExecutionCore.execute_turn(game_state, player_actions)
 	var ore_entry: Dictionary = game_state.get("tile_resources", {}).get(target_key, {})
@@ -360,18 +360,18 @@ static func _test_execute_turn_heal_adjacent_targets_absolute_cell(tests: Node) 
 	tests._log("test_turn_execution_core: heal_adjacent heals ally at absolute end_point cell")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/medic.tres", "cell": [1, 0], "health": 2, "max_health": 2, "energy": 4, "max_energy": 4 },
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [2, 0], "health": 2, "max_health": 4, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [] }
+			{ "name": "zerg", "ai": false, "units": [] }
 		]
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "heal_adjacent", "path": [], "end_point": [2, 0] }
 		],
-		"opponent": []
+		"zerg": []
 	}
 	TurnExecutionCore.execute_turn(game_state, player_actions)
 	var medic_found := TurnExecutionCore.find_unit_by_id(game_state, 1)
@@ -395,20 +395,20 @@ static func _test_execute_turn_heal_and_incoming_damage_same_turn_maintains_heal
 	tests._log("test_turn_execution_core: marine health is maintained when healed and attacked in same turn")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/medic.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 4, "max_energy": 4 },
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 3, "max_health": 4, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": true, "units": [
+			{ "name": "zerg", "ai": true, "units": [
 				{ "unit_id": 3, "def_path": "res://src/unit/definitions/hydralisk.tres", "cell": [-1, 1], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
 			]}
 		]
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "heal_adjacent", "path": [], "end_point": [1, 0] },
 		],
-		"opponent": [
+		"zerg": [
 			{ "unit_id": 3, "action_key": "attack_hydralisk", "path": [], "end_point": [1, 0] },
 		]
 	}
@@ -434,17 +434,17 @@ static func _test_execute_turn_spawn_scout_requires_people(tests: Node) -> bool:
 	tests._log("test_turn_execution_core: spawn_scout requires 3 people")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "resources": { "people": 2 }, "units": [
+			{ "name": "terran", "ai": false, "resources": { "people": 2 }, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/terran_base.tres", "cell": [0, 0], "health": 6, "max_health": 6, "energy": 5, "max_energy": 5 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [] }
+			{ "name": "zerg", "ai": false, "units": [] }
 		]
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "spawn_scout", "path": [], "end_point": [0, 0] }
 		],
-		"opponent": []
+		"zerg": []
 	}
 	var blocked_recording := TurnExecutionCore.execute_turn(game_state, player_actions)
 	if game_state.get("groups", [])[0].get("units", []).size() != 1:
@@ -488,20 +488,20 @@ static func _test_execute_turn_scout_attack_ray_damages_only_target_tile(tests: 
 	tests._log("test_turn_execution_core: scout attack_ray damages only target tile")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/scout.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
+			{ "name": "zerg", "ai": false, "units": [
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 },
 				{ "unit_id": 3, "def_path": "res://src/unit/definitions/marine.tres", "cell": [2, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]}
 		]
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "attack_ray", "path": [], "end_point": [2, 0] }
 		],
-		"opponent": []
+		"zerg": []
 	}
 	TurnExecutionCore.execute_turn(game_state, player_actions)
 	var near_enemy := TurnExecutionCore.find_unit_by_id(game_state, 2)
@@ -531,22 +531,22 @@ static func _test_execute_turn_resupply_after_scout_attack_same_turn(tests: Node
 	# Mage flame (consumes 2 energy), base resupplies mage (+1) in same turn => net -1 vs start (4->3).
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/terran_base.tres", "cell": [2, 1], "health": 6, "max_health": 6, "energy": 5, "max_energy": 5 },
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/mage.tres", "cell": [3, 1], "health": 4, "max_health": 4, "energy": 4, "max_energy": 4 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
+			{ "name": "zerg", "ai": false, "units": [
 				{ "unit_id": 3, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [4, 1], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
 			]}
 		]
 	}
 	# Order: resupply first, attack second - tests that support runs after attacks regardless of submission order
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "resupply_adjacent", "path": [], "end_point": [3, 1] },
 			{ "unit_id": 2, "action_key": "attack_area_adjacent", "path": [], "end_point": [3, 1] }
 		],
-		"opponent": []
+		"zerg": []
 	}
 	TurnExecutionCore.execute_turn(game_state, player_actions)
 	var mage := TurnExecutionCore.find_unit_by_id(game_state, 2)
@@ -566,20 +566,20 @@ static func _test_execute_turn_attack_and_heal_same_phase_use_net_health(tests: 
 	# in the same ability phase. Net delta should be 0, so scout remains at 1 HP.
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/terran_base.tres", "cell": [0, 0], "health": 6, "max_health": 6, "energy": 5, "max_energy": 5 },
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/scout.tres", "cell": [1, 0], "health": 1, "max_health": 2, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
+			{ "name": "zerg", "ai": false, "units": [
 				{ "unit_id": 3, "def_path": "res://src/unit/definitions/marine.tres", "cell": [2, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]}
 		]
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "heal_adjacent", "path": [], "end_point": [1, 0] }
 		],
-		"opponent": [
+		"zerg": [
 			{ "unit_id": 3, "action_key": "attack_short", "path": [], "end_point": [1, 0] }
 		]
 	}
@@ -599,10 +599,10 @@ static func _test_execute_turn_zergling_fast_move_hits_scout_before_scout_move(t
 	tests._log("test_turn_execution_core: zergling fast-move onto scout then scout moves takes one damage")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [0, 0], "health": 1, "max_health": 1, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
+			{ "name": "zerg", "ai": false, "units": [
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/scout.tres", "cell": [1, 0], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
 			]}
 		]
@@ -614,10 +614,10 @@ static func _test_execute_turn_zergling_fast_move_hits_scout_before_scout_move(t
 	for p in HexGrid.build_path_to(1, 0, 2, 0):
 		scout_path.append([int(p.x), int(p.y)])
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "fast_move", "path": zerg_path, "end_point": [1, 0] }
 		],
-		"opponent": [
+		"zerg": [
 			{ "unit_id": 2, "action_key": "move_short", "path": scout_path, "end_point": [2, 0] }
 		]
 	}
@@ -644,10 +644,10 @@ static func _test_execute_turn_zergling_moves_onto_marine_attack_tile_takes_one_
 	# Marine at (1,0) attacks (2,0). Zergling at (0,0) fast-moves to (2,0). Zergling should take 1 damage from marine's attack_short, not 2.
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
+			{ "name": "zerg", "ai": false, "units": [
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [0, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]}
 		]
@@ -656,10 +656,10 @@ static func _test_execute_turn_zergling_moves_onto_marine_attack_tile_takes_one_
 	for p in HexGrid.build_path_to(0, 0, 2, 0):
 		zerg_path.append([int(p.x), int(p.y)])
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "attack_short", "path": [], "end_point": [2, 0] }
 		],
-		"opponent": [
+		"zerg": [
 			{ "unit_id": 2, "action_key": "fast_move", "path": zerg_path, "end_point": [2, 0] }
 		]
 	}
@@ -680,10 +680,10 @@ static func _test_execute_turn_summary_marks_cancelled_when_unit_eliminated_firs
 	tests._log("test_turn_execution_core: summary keeps submitted phase actions and marks cancelled when eliminated first")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 1, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
+			{ "name": "zerg", "ai": false, "units": [
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
 			]}
 		]
@@ -692,10 +692,10 @@ static func _test_execute_turn_summary_marks_cancelled_when_unit_eliminated_firs
 	for p in HexGrid.build_path_to(0, 0, 1, 0):
 		zerg_path.append([int(p.x), int(p.y)])
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "attack_short", "path": [], "end_point": [0, 0] }
 		],
-		"opponent": [
+		"zerg": [
 			{ "unit_id": 2, "action_key": "fast_move", "path": zerg_path, "end_point": [1, 0] }
 		]
 	}
@@ -742,13 +742,13 @@ static func _test_check_win_condition_one_alive(tests: Node) -> bool:
 	tests._log("test_turn_execution_core: check_win_condition one alive")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [{ "unit_id": 1, "health": 2 }] },
-			{ "name": "opponent", "ai": false, "units": [] }
+			{ "name": "terran", "ai": false, "units": [{ "unit_id": 1, "health": 2 }] },
+			{ "name": "zerg", "ai": false, "units": [] }
 		]
 	}
 	var winner := TurnExecutionCore.check_win_condition(game_state)
-	if winner != "player":
-		tests._fail("check_win_condition should return player when only player alive, got %s" % winner)
+	if winner != "terran":
+		tests._fail("check_win_condition should return terran when only terran alive, got %s" % winner)
 		return false
 	tests._pass("check_win_condition one alive")
 	return true
@@ -757,8 +757,8 @@ static func _test_check_win_condition_both_alive(tests: Node) -> bool:
 	tests._log("test_turn_execution_core: check_win_condition both alive")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [{ "unit_id": 1, "health": 2 }] },
-			{ "name": "opponent", "ai": false, "units": [{ "unit_id": 2, "health": 1 }] }
+			{ "name": "terran", "ai": false, "units": [{ "unit_id": 1, "health": 2 }] },
+			{ "name": "zerg", "ai": false, "units": [{ "unit_id": 2, "health": 1 }] }
 		]
 	}
 	var winner := TurnExecutionCore.check_win_condition(game_state)
@@ -772,8 +772,8 @@ static func _test_check_win_condition_both_dead(tests: Node) -> bool:
 	tests._log("test_turn_execution_core: check_win_condition both dead")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [] },
-			{ "name": "opponent", "ai": false, "units": [] }
+			{ "name": "terran", "ai": false, "units": [] },
+			{ "name": "zerg", "ai": false, "units": [] }
 		]
 	}
 	var winner := TurnExecutionCore.check_win_condition(game_state)
@@ -792,18 +792,18 @@ static func _test_stunned_unit_cannot_move(tests: Node) -> bool:
 		move_path.append([int(p.x), int(p.y)])
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [0, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
+			{ "name": "zerg", "ai": false, "units": [
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": target_cell.duplicate(), "health": 3, "max_health": 3, "energy": 0, "max_energy": 0,
 					"effects": [{ "kind": "Stun", "duration": 1, "params": {} }] }
 			]}
 		]
 	}
 	var player_actions := {
-		"player": [],
-		"opponent": [
+		"terran": [],
+		"zerg": [
 			{ "unit_id": 2, "action_key": "move_short", "path": move_path, "end_point": [2, 0] }
 		]
 	}
@@ -839,7 +839,7 @@ static func _test_execute_turn_consume_depletes_2_adds_1_heals_fester(tests: Nod
 	var target_key := HexGrid.get_cell_key(0, 0)
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "resources": {"people": 0}, "units": [
+			{ "name": "terran", "ai": false, "resources": {"people": 0}, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/fester.tres", "cell": [0, 0], "health": 4, "max_health": 6, "energy": 0, "max_energy": 0 }
 			]}
 		],
@@ -848,7 +848,7 @@ static func _test_execute_turn_consume_depletes_2_adds_1_heals_fester(tests: Nod
 		}
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "consume", "path": [], "end_point": [0, 0] }
 		]
 	}
@@ -878,13 +878,13 @@ static func _test_execute_turn_spawn_fester_zergling_costs_people_and_hp(tests: 
 	tests._log("test_turn_execution_core: spawn_fester_zergling costs 3 people and 3 HP")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "resources": {"people": 5}, "units": [
+			{ "name": "terran", "ai": false, "resources": {"people": 5}, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/fester.tres", "cell": [0, 0], "health": 6, "max_health": 6, "energy": 0, "max_energy": 0 }
 			]}
 		]
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "spawn_fester_zergling", "path": [], "end_point": [0, 0] }
 		]
 	}
@@ -917,13 +917,13 @@ static func _test_execute_turn_spawn_shardling_costs_4_hp(tests: Node) -> bool:
 	tests._log("test_turn_execution_core: spawn_shardling costs 3 people + 4 HP, spawns 4-HP Shardling")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "resources": {"people": 5}, "units": [
+			{ "name": "terran", "ai": false, "resources": {"people": 5}, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/fester.tres", "cell": [0, 0], "health": 6, "max_health": 6, "energy": 0, "max_energy": 0 }
 			]}
 		]
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "spawn_shardling", "path": [], "end_point": [0, 0] }
 		]
 	}
@@ -960,13 +960,13 @@ static func _test_execute_turn_evolve_shardling_to_baneling(tests: Node) -> bool
 	tests._log("test_turn_execution_core: evolve_baneling consumes 3 people + 1 crystal, replaces Shardling with Baneling")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "resources": {"people": 5, "crystal": 3}, "units": [
+			{ "name": "terran", "ai": false, "resources": {"people": 5, "crystal": 3}, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/shardling.tres", "cell": [0, 0], "health": 4, "max_health": 4, "energy": 0, "max_energy": 0 }
 			]}
 		]
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "evolve_baneling", "path": [], "end_point": [0, 0] }
 		]
 	}
@@ -1001,13 +1001,13 @@ static func _test_execute_turn_evolve_shardling_to_hydralisk(tests: Node) -> boo
 	tests._log("test_turn_execution_core: evolve_hydralisk consumes 2 people + 2 crystals, replaces Shardling with Hydralisk")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "resources": {"people": 5, "crystal": 5}, "units": [
+			{ "name": "terran", "ai": false, "resources": {"people": 5, "crystal": 5}, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/shardling.tres", "cell": [0, 0], "health": 4, "max_health": 4, "energy": 0, "max_energy": 0 }
 			]}
 		]
 	}
 	var player_actions := {
-		"player": [
+		"terran": [
 			{ "unit_id": 1, "action_key": "evolve_hydralisk", "path": [], "end_point": [0, 0] }
 		]
 	}

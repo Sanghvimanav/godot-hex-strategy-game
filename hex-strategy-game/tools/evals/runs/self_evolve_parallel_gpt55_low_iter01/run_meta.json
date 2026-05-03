@@ -1,0 +1,21 @@
+{
+  "run_id": "self_evolve_parallel_gpt55_low_iter01",
+  "created_at": "2026-04-28T17:14:54.873636Z",
+  "mode": "live_llm",
+  "prompt_version": "p_current_settings",
+  "eval_set_version": "eval_v001",
+  "thinking_level": "low",
+  "model_override": "gpt-5.5",
+  "notes": "",
+  "planning_prompt_version": "minimal",
+  "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v3_prompt.txt",
+  "payload_profile": "baseline",
+  "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v3_payload_mutation.json",
+  "git_sha": "5632b9b590908f340a90cb1abcc268a83285afe4",
+  "manifest": "",
+  "model_version": "gpt-5.5",
+  "use_responses_api": true,
+  "use_two_call_planning": false,
+  "planning_max_tokens": 16128,
+  "base_url": "https://api.openai.com/v1"
+}

@@ -1,5 +1,5 @@
 extends RefCounted
-## Tests for §7.7 Markdown section parsing (no user:// IO in core tests).
+## Tests for Markdown section parsing and canonical file handling (no user:// IO in core tests).
 
 static func run_all(tests: Node) -> bool:
 	var ok := true
@@ -132,21 +132,41 @@ static func _test_split_canonical_sessions(tests: Node) -> bool:
 
 static func _test_parse_canonical_file(tests: Node) -> bool:
 	tests._log("test_llm_learnings_ingest: parse_canonical_file")
-	var with_distill: String = (
-		"## Distilled\n- x\n\n---\n\n## Metadata\n- a: 1\n\n## Learnings\n- one\n"
-		+ "\n---\n\n## Metadata\n- b\n\n## Learnings\n- two"
-	)
-	var pd: Dictionary = LlmLearningsIngest.parse_canonical_file(with_distill)
+	# New format: distilled-only
+	var distilled_only := """## Distilled
+### Universal principles
+- A [games: 1, 1W-0L, last: 2026-04-12]
+
+### Unit tactics
+- Scout: kite [games: 1, 0W-1L, last: 2026-04-12]
+
+### Active contradictions
+- none
+
+### Experiments
+- none"""
+	var pd: Dictionary = LlmLearningsIngest.parse_canonical_file(distilled_only)
 	if not str(pd.get("distilled", "")).begins_with("## Distilled"):
 		tests._fail("expected distilled segment")
 		return false
-	var s1: PackedStringArray = pd.get("sessions", PackedStringArray()) as PackedStringArray
+	var s0: PackedStringArray = pd.get("sessions", PackedStringArray()) as PackedStringArray
+	if s0.size() != 0:
+		tests._fail("distilled-only should have 0 session blocks, got %d" % s0.size())
+		return false
+	# Legacy format: distilled + embedded sessions (backwards compat)
+	var with_sessions: String = (
+		"## Distilled\n- x\n\n---\n\n## Metadata\n- a: 1\n\n## Learnings\n- one\n"
+		+ "\n---\n\n## Metadata\n- b\n\n## Learnings\n- two"
+	)
+	var pd2: Dictionary = LlmLearningsIngest.parse_canonical_file(with_sessions)
+	if not str(pd2.get("distilled", "")).begins_with("## Distilled"):
+		tests._fail("expected distilled segment from legacy format")
+		return false
+	var s1: PackedStringArray = pd2.get("sessions", PackedStringArray()) as PackedStringArray
 	if s1.size() != 2:
-		tests._fail("expected 2 session blocks, got %d" % s1.size())
+		tests._fail("expected 2 session blocks from legacy, got %d" % s1.size())
 		return false
-	if not str(s1[0]).contains("one") or not str(s1[1]).contains("two"):
-		tests._fail("session order or content")
-		return false
+	# No distilled (very old format)
 	var legacy: String = "## Metadata\n- k: v\n\n## Learnings\n- old\n"
 	var pl: Dictionary = LlmLearningsIngest.parse_canonical_file(legacy)
 	if not str(pl.get("distilled", "")).is_empty():

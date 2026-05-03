@@ -1,0 +1,33 @@
+{
+  "remove_paths": [
+    "debug",
+    "analysis_hints",
+    "ui_annotations",
+    "previous_model_response"
+  ],
+  "set_values": {
+    "planner_context.rule_order": [
+      "hard_constraints",
+      "fast_mover_intercept",
+      "kill_secure",
+      "pressure_vs_retreat",
+      "ties"
+    ],
+    "planner_context.low_hp_requires_explicit_retreat_intent": true,
+    "planner_context.prefer_redundant_kill_secure_fire": true
+  },
+  "copy_paths": [
+    {
+      "from": "intent",
+      "to": "planner_directives.intent"
+    },
+    {
+      "from": "goal",
+      "to": "planner_directives.goal"
+    },
+    {
+      "from": "constraints",
+      "to": "planner_directives.constraints"
+    }
+  ]
+}

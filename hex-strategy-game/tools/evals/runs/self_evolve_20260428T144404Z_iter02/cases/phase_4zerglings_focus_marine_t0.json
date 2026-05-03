@@ -1,0 +1,81 @@
+{
+  "case_id": "phase_4zerglings_focus_marine_t0",
+  "chosen_option_indices": [
+    1,
+    1,
+    1,
+    1
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T144404Z_iter02"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "All Zerglings should fast_move to [-1,2] to focus-kill the Marine before the Marine's normal-phase passive can resolve.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69122131693": 1,
+      "69256349448": 1,
+      "69390567183": 1,
+      "69524784918": 1
+    },
+    "call_timings_ms": [
+      6698
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 6698,
+          "elapsed_seconds": 6.698,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T144404Z/prompts/iter01_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T144404Z/prompts/iter01_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T144404Z/prompts/iter01_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Respond with exactly one JSON object and no extra text: {\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\n\nRules:\n1) Choose exactly one action for each AI unit from ai_units[].legal_options[].i. Never invent or rename indices.\n2) Predict enemy movement for this turn in opponent_prediction.\n3) Attack timing rule: if an enemy can move before attack resolution, especially fast movers, evaluate attack options against that enemy\u2019s predicted landing cell/path, not only its current cell. If an option can hit the predicted landing cell/path this turn, treat it as immediate damage value even when the current-cell shot would not be the best timed hit.\n4) Action ranking per unit:\n   a. Prefer attack options that produce the highest guaranteed/expected visible hits on the predicted landing cell/path this turn.\n   b. If multiple attacks are equivalent, prefer concentrated fire on the same predicted target cell/enemy.\n   c. If no attack has positive immediate hit value, prefer safer progress: lower pred_damage_at_end; if pred_damage_at_end is missing, use incoming_damage_if_enemies_hold_and_shoot_end.\n   d. Then prefer lower distance to nearest enemy / useful engagement cell.\n   e. Final tie-breaker: lowest option_index.\n5) Do not choose a current-position attack over a predicted-landing-cell attack when movement timing makes the landing-cell shot the relevant hit.\n6) Keep reasoning_summary very brief and concrete; mention the predicted landing cell when it drives the choice."
+    },
+    "raw": "{\"opponent_prediction\":\"Marine likely uses move_short to [-1,1] to escape the rush.\",\"reasoning_summary\":\"All 4 Zerglings should fast-move onto the Marine\u2019s current cell [-1,2] for immediate same-tile damage before its move.\",\"actions\":[{\"unit_id\":69122131693,\"option_index\":1},{\"unit_id\":69256349448,\"option_index\":1},{\"unit_id\":69390567183,\"option_index\":1},{\"unit_id\":69524784918,\"option_index\":1}]}",
+    "reasoning_effort": "low",
+    "thinking": "",
+    "usage": {
+      "input_tokens": 11177,
+      "output_tokens": 505,
+      "reasoning_tokens": 387,
+      "total_tokens": 11682
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00380425
+  },
+  "matched_unit_count": 4,
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists for all 4 units named Zergling",
+  "scenario_id": "eval_phase_4zerglings_focus_marine",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.00380425
+}

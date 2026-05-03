@@ -1,0 +1,1672 @@
+{
+  "case_id": "phase_fastmove_stepin_zergling_vs_scout_hp2_t0",
+  "intent": "At 2 HP from [2,0], Zergling should fast_move to [1,0] to keep pressure and reach contact next.",
+  "llm_user_payload": {
+    "action_definitions": [
+      {
+        "color": "#FF6600",
+        "damage": 1,
+        "energy_consumption": 2,
+        "key": "attack_area_adjacent",
+        "name": "Flame Burst",
+        "pattern": "area_adjacent",
+        "type": "ability"
+      },
+      {
+        "color": "#9C27B0",
+        "damage": 1,
+        "energy_consumption": 0,
+        "key": "attack_hydralisk",
+        "max_range": 2,
+        "min_range": 2,
+        "name": "Needle Spine",
+        "pattern": "target",
+        "stun_duration": 1,
+        "type": "ability"
+      },
+      {
+        "color": "#FF0000",
+        "damage": 1,
+        "energy_consumption": 2,
+        "key": "attack_long",
+        "max_range": 2,
+        "min_range": 2,
+        "name": "Long Attack",
+        "type": "ability"
+      },
+      {
+        "color": "#FF4444",
+        "damage": 1,
+        "energy_consumption": 0,
+        "key": "attack_passive",
+        "name": "Passive Attack",
+        "pattern": "self",
+        "type": "fast ability"
+      },
+      {
+        "color": "#FF4444",
+        "damage": 1,
+        "energy_consumption": 0,
+        "key": "attack_passive_normal",
+        "name": "Passive Attack (Normal)",
+        "pattern": "self",
+        "type": "ability"
+      },
+      {
+        "color": "#FF0000",
+        "damage": 1,
+        "energy_consumption": 0,
+        "key": "attack_ray",
+        "max_range": 2,
+        "min_range": 1,
+        "name": "Shoot",
+        "pattern": "target",
+        "type": "ability"
+      },
+      {
+        "area_of_effect": {
+          "directions": [
+            2
+          ],
+          "distance": 1
+        },
+        "color": "#FF0000",
+        "damage": 1,
+        "energy_consumption": 0,
+        "key": "attack_short",
+        "max_range": 1,
+        "min_range": 1,
+        "name": "Attack",
+        "type": "ability"
+      },
+      {
+        "color": "#76FF03",
+        "damage": 1,
+        "energy_consumption": 0,
+        "key": "attack_spire",
+        "max_range": 2,
+        "min_range": 1,
+        "name": "Spine Salvo",
+        "pattern": "target",
+        "type": "ability"
+      },
+      {
+        "allowed_resource_types": [
+          "people"
+        ],
+        "color": "#8B4513",
+        "energy_consumption": 0,
+        "group_resource_gain": 1,
+        "heal_amount": 1,
+        "key": "consume",
+        "max_range": 0,
+        "min_range": 0,
+        "name": "Consume",
+        "pattern": "self",
+        "tile_resource_depletion": 2,
+        "type": "ability"
+      },
+      {
+        "color": "#8B4513",
+        "energy_consumption": 0,
+        "key": "create_infantry_camp",
+        "name": "Create Marine Corp",
+        "pattern": "self_or_adjacent",
+        "required_group_resource_amount": 5,
+        "required_group_resource_type": "crystal",
+        "spawn_unit": "res://src/unit/definitions/infantry_camp.tres",
+        "type": "spawn"
+      },
+      {
+        "color": "#FF69B4",
+        "energy_consumption": 0,
+        "key": "evolve_baneling",
+        "name": "Evolve to Baneling",
+        "pattern": "self",
+        "required_group_resources": [
+          {
+            "amount": 3,
+            "type": "people"
+          },
+          {
+            "amount": 1,
+            "type": "crystal"
+          }
+        ],
+        "spawn_self_damage_amount": 4,
+        "spawn_unit": "res://src/unit/definitions/baneling.tres",
+        "type": "spawn"
+      },
+      {
+        "color": "#9C27B0",
+        "energy_consumption": 0,
+        "key": "evolve_hydralisk",
+        "name": "Evolve to Hydralisk",
+        "pattern": "self",
+        "required_group_resources": [
+          {
+            "amount": 2,
+            "type": "people"
+          },
+          {
+            "amount": 2,
+            "type": "crystal"
+          }
+        ],
+        "spawn_self_damage_amount": 4,
+        "spawn_unit": "res://src/unit/definitions/hydralisk.tres",
+        "type": "spawn"
+      },
+      {
+        "color": "#FF69B4",
+        "damage": 2,
+        "energy_consumption": 0,
+        "key": "explode",
+        "name": "Explode",
+        "pattern": "area_adjacent",
+        "self_damage": true,
+        "type": "slow ability"
+      },
+      {
+        "color": "#FBC02D",
+        "energy_consumption": 0,
+        "key": "extract_tile",
+        "max_range": 0,
+        "min_range": 0,
+        "name": "Extract",
+        "pattern": "self",
+        "tile_resource_depletion": 1,
+        "type": "ability"
+      },
+      {
+        "color": "#0000FF",
+        "energy_consumption": 0,
+        "key": "fast_move",
+        "max_range": 1,
+        "min_range": 1,
+        "name": "Fast Move",
+        "type": "fast move"
+      },
+      {
+        "color": "#81C784",
+        "energy_consumption": 1,
+        "heal_amount": 1,
+        "key": "heal_adjacent",
+        "name": "Heal",
+        "pattern": "self_or_adjacent",
+        "recharge": 0,
+        "type": "ability"
+      },
+      {
+        "allowed_resource_types": [
+          "crystal"
+        ],
+        "color": "#64B5F6",
+        "energy_consumption": 0,
+        "key": "mine_crystal",
+        "max_range": 0,
+        "min_range": 0,
+        "name": "Mine",
+        "pattern": "self",
+        "tile_resource_depletion": 1,
+        "type": "ability"
+      },
+      {
+        "color": "#0000FF",
+        "energy_consumption": 2,
+        "key": "move_long",
+        "max_range": 2,
+        "min_range": 2,
+        "name": "Dash",
+        "type": "move"
+      },
+      {
+        "color": "#0000FF",
+        "energy_consumption": 0,
+        "key": "move_short",
+        "max_range": 1,
+        "min_range": 1,
+        "name": "Move",
+        "type": "move"
+      },
+      {
+        "color": "#9C27B0",
+        "energy_consumption": -1,
+        "key": "recharge",
+        "max_range": 0,
+        "min_range": 0,
+        "name": "Recharge",
+        "type": "slow ability"
+      },
+      {
+        "allowed_resource_types": [
+          "people"
+        ],
+        "color": "#FBC02D",
+        "energy_consumption": 0,
+        "key": "recruit_people",
+        "max_range": 0,
+        "min_range": 0,
+        "name": "Recruit",
+        "pattern": "self",
+        "tile_resource_depletion": 1,
+        "type": "ability"
+      },
+      {
+        "color": "#9C27B0",
+        "energy_consumption": -1,
+        "key": "reload",
+        "max_range": 0,
+        "min_range": 0,
+        "name": "Rest",
+        "type": "slow ability"
+      },
+      {
+        "color": "#9C27B0",
+        "energy_consumption": 0,
+        "key": "rest_no_energy",
+        "max_range": 0,
+        "min_range": 0,
+        "name": "Rest",
+        "type": "slow ability"
+      },
+      {
+        "color": "#64B5F6",
+        "energy_consumption": 1,
+        "heal_amount": 0,
+        "key": "resupply_adjacent",
+        "name": "Resupply",
+        "pattern": "self_or_adjacent",
+        "recharge": 1,
+        "type": "ability"
+      },
+      {
+        "color": "#0000FF",
+        "energy_consumption": 0,
+        "key": "slow_move",
+        "max_range": 1,
+        "min_range": 1,
+        "name": "Slow Move",
+        "type": "slow move"
+      },
+      {
+        "color": "#8B4513",
+        "energy_consumption": 0,
+        "key": "spawn_excavator",
+        "name": "Spawn Excavator",
+        "pattern": "self",
+        "required_group_resource_amount": 2,
+        "required_group_resource_type": "crystal",
+        "spawn_unit": "res://src/unit/definitions/excavator.tres",
+        "type": "spawn"
+      },
+      {
+        "color": "#8B4513",
+        "energy_consumption": 0,
+        "key": "spawn_fester_zergling",
+        "name": "Spawn Zergling",
+        "pattern": "self",
+        "required_group_resource_amount": 3,
+        "required_group_resource_type": "people",
+        "spawn_self_damage_amount": 3,
+        "spawn_unit": "res://src/unit/definitions/zergling.tres",
+        "type": "spawn"
+      },
+      {
+        "color": "#8B4513",
+        "energy_consumption": 0,
+        "key": "spawn_marine",
+        "name": "Spawn Marine",
+        "pattern": "self",
+        "required_group_resources": [
+          {
+            "amount": 1,
+            "type": "crystal"
+          },
+          {
+            "amount": 4,
+            "type": "people"
+          }
+        ],
+        "spawn_unit": "res://src/unit/definitions/marine.tres",
+        "type": "spawn"
+      },
+      {
+        "color": "#8B4513",
+        "energy_consumption": 0,
+        "key": "spawn_medic",
+        "name": "Spawn Medic",
+        "pattern": "self",
+        "required_group_resources": [
+          {
+            "amount": 2,
+            "type": "crystal"
+          },
+          {
+            "amount": 3,
+            "type": "people"
+          }
+        ],
+        "spawn_unit": "res://src/unit/definitions/medic.tres",
+        "type": "spawn"
+      },
+      {
+        "color": "#8B4513",
+        "energy_consumption": 0,
+        "key": "spawn_scout",
+        "name": "Spawn Scout",
+        "pattern": "self",
+        "required_group_resource_amount": 3,
+        "required_group_resource_type": "people",
+        "spawn_unit": "res://src/unit/definitions/scout.tres",
+        "type": "spawn"
+      },
+      {
+        "color": "#9C27B0",
+        "energy_consumption": 0,
+        "key": "spawn_shardling",
+        "name": "Spawn Shardling",
+        "pattern": "self",
+        "required_group_resource_amount": 3,
+        "required_group_resource_type": "people",
+        "spawn_self_damage_amount": 4,
+        "spawn_unit": "res://src/unit/definitions/shardling.tres",
+        "type": "spawn"
+      },
+      {
+        "color": "#8B4513",
+        "energy_consumption": 5,
+        "key": "spawn_zergling",
+        "name": "Spawn Zergling",
+        "pattern": "self",
+        "spawn_unit": "res://src/unit/definitions/zergling.tres",
+        "type": "spawn"
+      },
+      {
+        "color": "#4CAF50",
+        "energy_consumption": 0,
+        "heal_amount": 1,
+        "key": "support_adjacent",
+        "name": "Resupply",
+        "pattern": "self",
+        "recharge": 1,
+        "type": "ability"
+      }
+    ],
+    "action_resolution_phase_order": [
+      "fast move",
+      "fast ability",
+      "move",
+      "ability",
+      "slow move",
+      "slow ability",
+      "spawn"
+    ],
+    "ai_units": [
+      {
+        "cell": [
+          2,
+          0
+        ],
+        "def": "res://src/unit/definitions/zergling.tres",
+        "energy": 0,
+        "group": "zerg",
+        "health": 2,
+        "legal_options": [
+          {
+            "action_key": "fast_move",
+            "action_resolution_phase_index": 0,
+            "action_resolution_phase_name": "fast move",
+            "dist_from_map_edge": 4,
+            "dist_from_origin": 1,
+            "distances_to_visible_enemies": [
+              {
+                "hex_dist": 1,
+                "unit_id": 68283270860
+              }
+            ],
+            "end": [
+              1,
+              0
+            ],
+            "end_cell": [
+              1,
+              0
+            ],
+            "end_has_visible_enemy": false,
+            "enemy_count_can_hit_end_if_hold": 1,
+            "expected_visible_hits_if_targeted": 0,
+            "incoming_damage_if_enemies_hold_and_shoot_end": 1,
+            "is_end_cell_threatened_if_hold": true,
+            "is_move": true,
+            "path": [],
+            "visible_enemy_ids_at_end": []
+          },
+          {
+            "action_key": "fast_move",
+            "action_resolution_phase_index": 0,
+            "action_resolution_phase_name": "fast move",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "distances_to_visible_enemies": [
+              {
+                "hex_dist": 2,
+                "unit_id": 68283270860
+              }
+            ],
+            "end": [
+              1,
+              1
+            ],
+            "end_cell": [
+              1,
+              1
+            ],
+            "end_has_visible_enemy": false,
+            "enemy_count_can_hit_end_if_hold": 1,
+            "expected_visible_hits_if_targeted": 0,
+            "incoming_damage_if_enemies_hold_and_shoot_end": 1,
+            "is_end_cell_threatened_if_hold": true,
+            "is_move": true,
+            "path": [],
+            "visible_enemy_ids_at_end": []
+          },
+          {
+            "action_key": "fast_move",
+            "action_resolution_phase_index": 0,
+            "action_resolution_phase_name": "fast move",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "distances_to_visible_enemies": [
+              {
+                "hex_dist": 2,
+                "unit_id": 68283270860
+              }
+            ],
+            "end": [
+              2,
+              -1
+            ],
+            "end_cell": [
+              2,
+              -1
+            ],
+            "end_has_visible_enemy": false,
+            "enemy_count_can_hit_end_if_hold": 1,
+            "expected_visible_hits_if_targeted": 0,
+            "incoming_damage_if_enemies_hold_and_shoot_end": 1,
+            "is_end_cell_threatened_if_hold": true,
+            "is_move": true,
+            "path": [],
+            "visible_enemy_ids_at_end": []
+          },
+          {
+            "action_key": "fast_move",
+            "action_resolution_phase_index": 0,
+            "action_resolution_phase_name": "fast move",
+            "dist_from_map_edge": 2,
+            "dist_from_origin": 3,
+            "distances_to_visible_enemies": [
+              {
+                "hex_dist": 3,
+                "unit_id": 68283270860
+              }
+            ],
+            "end": [
+              2,
+              1
+            ],
+            "end_cell": [
+              2,
+              1
+            ],
+            "end_has_visible_enemy": false,
+            "enemy_count_can_hit_end_if_hold": 0,
+            "expected_visible_hits_if_targeted": 0,
+            "incoming_damage_if_enemies_hold_and_shoot_end": 0,
+            "is_end_cell_threatened_if_hold": false,
+            "is_move": true,
+            "path": [],
+            "visible_enemy_ids_at_end": []
+          },
+          {
+            "action_key": "fast_move",
+            "action_resolution_phase_index": 0,
+            "action_resolution_phase_name": "fast move",
+            "dist_from_map_edge": 2,
+            "dist_from_origin": 3,
+            "distances_to_visible_enemies": [
+              {
+                "hex_dist": 3,
+                "unit_id": 68283270860
+              }
+            ],
+            "end": [
+              3,
+              -1
+            ],
+            "end_cell": [
+              3,
+              -1
+            ],
+            "end_has_visible_enemy": false,
+            "enemy_count_can_hit_end_if_hold": 0,
+            "expected_visible_hits_if_targeted": 0,
+            "incoming_damage_if_enemies_hold_and_shoot_end": 0,
+            "is_end_cell_threatened_if_hold": false,
+            "is_move": true,
+            "path": [],
+            "visible_enemy_ids_at_end": []
+          },
+          {
+            "action_key": "fast_move",
+            "action_resolution_phase_index": 0,
+            "action_resolution_phase_name": "fast move",
+            "dist_from_map_edge": 2,
+            "dist_from_origin": 3,
+            "distances_to_visible_enemies": [
+              {
+                "hex_dist": 3,
+                "unit_id": 68283270860
+              }
+            ],
+            "end": [
+              3,
+              0
+            ],
+            "end_cell": [
+              3,
+              0
+            ],
+            "end_has_visible_enemy": false,
+            "enemy_count_can_hit_end_if_hold": 0,
+            "expected_visible_hits_if_targeted": 0,
+            "incoming_damage_if_enemies_hold_and_shoot_end": 0,
+            "is_end_cell_threatened_if_hold": false,
+            "is_move": true,
+            "path": [],
+            "visible_enemy_ids_at_end": []
+          },
+          {
+            "action_key": "reload",
+            "action_resolution_phase_index": 5,
+            "action_resolution_phase_name": "slow ability",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "distances_to_visible_enemies": [
+              {
+                "hex_dist": 2,
+                "unit_id": 68283270860
+              }
+            ],
+            "end": [
+              2,
+              0
+            ],
+            "end_cell": [
+              2,
+              0
+            ],
+            "end_has_visible_enemy": false,
+            "enemy_count_can_hit_end_if_hold": 1,
+            "expected_visible_hits_if_targeted": 0,
+            "incoming_damage_if_enemies_hold_and_shoot_end": 1,
+            "is_end_cell_threatened_if_hold": true,
+            "is_move": true,
+            "path": [],
+            "visible_enemy_ids_at_end": []
+          }
+        ],
+        "max_energy": 0,
+        "max_health": 3,
+        "name": "Zergling",
+        "unit_id": 69206017768
+      }
+    ],
+    "context": {
+      "eval_focus": [
+        "exact required cell/coverage matching",
+        "disambiguate attack target cells from move destinations",
+        "target predicted landing cells for fast movers before generic pressure"
+      ]
+    },
+    "enemy_intel": {
+      "confirmed_kills": 0,
+      "currently_visible": 1,
+      "initial_count": 1
+    },
+    "enemy_reaction_candidates": [
+      {
+        "candidates": [
+          {
+            "action_key": "attack_ray",
+            "damage": 1,
+            "max_range": 2,
+            "min_range": 1,
+            "pattern": "target",
+            "summary": "Stay on from_cell; use attack_ray — target hex must satisfy min/max range and pattern in action_definitions.",
+            "type": "attack_from_current_cell"
+          },
+          {
+            "action_key": "move_short",
+            "possible_end_cells": [
+              [
+                -1,
+                0
+              ],
+              [
+                -1,
+                1
+              ],
+              [
+                0,
+                -1
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                1,
+                -1
+              ],
+              [
+                1,
+                0
+              ]
+            ],
+            "summary": "Move with move_short; cannot also use a damaging attack this turn (one action per unit).",
+            "type": "move_only_no_same_turn_attack"
+          },
+          {
+            "action_key": "recruit_people",
+            "summary": "Spend the turn on recruit_people (utility / no direct damage from this action key).",
+            "type": "non_damage_ability"
+          }
+        ],
+        "from_cell": [
+          0,
+          0
+        ],
+        "name": "Scout",
+        "one_action_per_turn": "Each enemy unit chooses exactly one action: move OR one ability — never both.",
+        "unit_id": 68283270860
+      }
+    ],
+    "enemy_units_legal_options": [
+      {
+        "cell": [
+          0,
+          0
+        ],
+        "def": "res://src/unit/definitions/scout.tres",
+        "group": "terran",
+        "health": 2,
+        "legal_options": [
+          {
+            "action_key": "move_short",
+            "action_resolution_phase_index": 2,
+            "action_resolution_phase_name": "move",
+            "dist_from_map_edge": 4,
+            "dist_from_origin": 1,
+            "end": [
+              -1,
+              0
+            ],
+            "end_cell": [
+              -1,
+              0
+            ],
+            "is_move": true,
+            "path": []
+          },
+          {
+            "action_key": "move_short",
+            "action_resolution_phase_index": 2,
+            "action_resolution_phase_name": "move",
+            "dist_from_map_edge": 4,
+            "dist_from_origin": 1,
+            "end": [
+              -1,
+              1
+            ],
+            "end_cell": [
+              -1,
+              1
+            ],
+            "is_move": true,
+            "path": []
+          },
+          {
+            "action_key": "move_short",
+            "action_resolution_phase_index": 2,
+            "action_resolution_phase_name": "move",
+            "dist_from_map_edge": 4,
+            "dist_from_origin": 1,
+            "end": [
+              0,
+              -1
+            ],
+            "end_cell": [
+              0,
+              -1
+            ],
+            "is_move": true,
+            "path": []
+          },
+          {
+            "action_key": "move_short",
+            "action_resolution_phase_index": 2,
+            "action_resolution_phase_name": "move",
+            "dist_from_map_edge": 4,
+            "dist_from_origin": 1,
+            "end": [
+              0,
+              1
+            ],
+            "end_cell": [
+              0,
+              1
+            ],
+            "is_move": true,
+            "path": []
+          },
+          {
+            "action_key": "move_short",
+            "action_resolution_phase_index": 2,
+            "action_resolution_phase_name": "move",
+            "dist_from_map_edge": 4,
+            "dist_from_origin": 1,
+            "end": [
+              1,
+              -1
+            ],
+            "end_cell": [
+              1,
+              -1
+            ],
+            "is_move": true,
+            "path": []
+          },
+          {
+            "action_key": "move_short",
+            "action_resolution_phase_index": 2,
+            "action_resolution_phase_name": "move",
+            "dist_from_map_edge": 4,
+            "dist_from_origin": 1,
+            "end": [
+              1,
+              0
+            ],
+            "end_cell": [
+              1,
+              0
+            ],
+            "is_move": true,
+            "path": []
+          },
+          {
+            "action_key": "rest_no_energy",
+            "action_resolution_phase_index": 5,
+            "action_resolution_phase_name": "slow ability",
+            "dist_from_map_edge": 5,
+            "dist_from_origin": 0,
+            "end": [
+              0,
+              0
+            ],
+            "end_cell": [
+              0,
+              0
+            ],
+            "is_move": true,
+            "path": []
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 4,
+            "dist_from_origin": 1,
+            "end": [
+              -1,
+              0
+            ],
+            "end_cell": [
+              -1,
+              0
+            ],
+            "is_move": false,
+            "path": []
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 4,
+            "dist_from_origin": 1,
+            "end": [
+              -1,
+              1
+            ],
+            "end_cell": [
+              -1,
+              1
+            ],
+            "is_move": false,
+            "path": []
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 4,
+            "dist_from_origin": 1,
+            "end": [
+              0,
+              -1
+            ],
+            "end_cell": [
+              0,
+              -1
+            ],
+            "is_move": false,
+            "path": []
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 4,
+            "dist_from_origin": 1,
+            "end": [
+              0,
+              1
+            ],
+            "end_cell": [
+              0,
+              1
+            ],
+            "is_move": false,
+            "path": []
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 4,
+            "dist_from_origin": 1,
+            "end": [
+              1,
+              -1
+            ],
+            "end_cell": [
+              1,
+              -1
+            ],
+            "is_move": false,
+            "path": []
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 4,
+            "dist_from_origin": 1,
+            "end": [
+              1,
+              0
+            ],
+            "end_cell": [
+              1,
+              0
+            ],
+            "is_move": false,
+            "path": []
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "end": [
+              -2,
+              0
+            ],
+            "end_cell": [
+              -2,
+              0
+            ],
+            "is_move": false,
+            "path": [
+              [
+                -1,
+                0
+              ]
+            ]
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "end": [
+              -2,
+              1
+            ],
+            "end_cell": [
+              -2,
+              1
+            ],
+            "is_move": false,
+            "path": [
+              [
+                -1,
+                0
+              ]
+            ]
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "end": [
+              -2,
+              2
+            ],
+            "end_cell": [
+              -2,
+              2
+            ],
+            "is_move": false,
+            "path": [
+              [
+                -1,
+                1
+              ]
+            ]
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "end": [
+              -1,
+              -1
+            ],
+            "end_cell": [
+              -1,
+              -1
+            ],
+            "is_move": false,
+            "path": [
+              [
+                0,
+                -1
+              ]
+            ]
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "end": [
+              -1,
+              2
+            ],
+            "end_cell": [
+              -1,
+              2
+            ],
+            "is_move": false,
+            "path": [
+              [
+                -1,
+                1
+              ]
+            ]
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "end": [
+              0,
+              -2
+            ],
+            "end_cell": [
+              0,
+              -2
+            ],
+            "is_move": false,
+            "path": [
+              [
+                0,
+                -1
+              ]
+            ]
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "end": [
+              0,
+              2
+            ],
+            "end_cell": [
+              0,
+              2
+            ],
+            "is_move": false,
+            "path": [
+              [
+                0,
+                1
+              ]
+            ]
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "end": [
+              1,
+              -2
+            ],
+            "end_cell": [
+              1,
+              -2
+            ],
+            "is_move": false,
+            "path": [
+              [
+                1,
+                -1
+              ]
+            ]
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "end": [
+              1,
+              1
+            ],
+            "end_cell": [
+              1,
+              1
+            ],
+            "is_move": false,
+            "path": [
+              [
+                1,
+                0
+              ]
+            ]
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "end": [
+              2,
+              -2
+            ],
+            "end_cell": [
+              2,
+              -2
+            ],
+            "is_move": false,
+            "path": [
+              [
+                1,
+                -1
+              ]
+            ]
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "end": [
+              2,
+              -1
+            ],
+            "end_cell": [
+              2,
+              -1
+            ],
+            "is_move": false,
+            "path": [
+              [
+                1,
+                0
+              ]
+            ]
+          },
+          {
+            "action_key": "attack_ray",
+            "action_resolution_phase_index": 3,
+            "action_resolution_phase_name": "ability",
+            "dist_from_map_edge": 3,
+            "dist_from_origin": 2,
+            "end": [
+              2,
+              0
+            ],
+            "end_cell": [
+              2,
+              0
+            ],
+            "is_move": false,
+            "path": [
+              [
+                1,
+                0
+              ]
+            ]
+          }
+        ],
+        "max_health": 2,
+        "name": "Scout",
+        "unit_id": 68283270860
+      }
+    ],
+    "map_bounds": {
+      "coordinate_system": "axial_q_r_same_as_snapshot_cell_xy",
+      "hex_radius": 5,
+      "q_range": [
+        -5,
+        5
+      ],
+      "r_range": [
+        -5,
+        5
+      ],
+      "walkability": "legal_options are the only valid choices; each path/end is engine-valid. hex_radius is the board radius from (0,0); q_range and r_range are min/max of existing tiles (not every pair in that box is a tile)."
+    },
+    "recent_turns": [],
+    "rules_digest": "Turn: planning then simultaneous execution. Win by eliminating all enemy units (last side with any unit on the board wins). Each unit performs exactly ONE action per turn (move OR ability/attack — never both). A unit that attacked or used an ability did NOT also move; it remains at its pre-turn position. Execution phase order (all sides resolve each phase before the next): fast move, fast ability, move, ability, slow move, slow ability, spawn. Each action key's \"type\" in action_definitions is its phase (e.g. fast move vs move vs ability). Fast move and fast ability resolve before move, normal ability, slow move, and slow ability—use fast move to guarantee reaching a hex or an enemy before units that only have normal/slow timing can relocate or strike. There is no friendly fire: damaging attacks and AoE never reduce allied units' HP (same side only); heals and ally-targeted supports never damage enemies. Coordinates are axial (q,r) as in each unit cell and legal option path/end. Stun may block actions. Energy/costs per unit definition. action_definitions lists every action key (range, energy, pattern, damage, spawn costs, etc.). unit_type_definitions lists each unit type, a short description, and which action keys it uses; *_resolved includes default Rest when applicable.",
+    "rules_version": "v2_catalog",
+    "turn": 1,
+    "unit_type_definitions": [
+      {
+        "ability_action_keys": [
+          "explode"
+        ],
+        "ability_action_keys_resolved": [
+          "explode"
+        ],
+        "description": "Suicide unit: short move or reload; explodes adjacent hexes for heavy damage and usually dies in the process.",
+        "faction": "Zerg",
+        "id": "baneling",
+        "max_energy": 0,
+        "max_health": 4,
+        "move_action_keys": [
+          "move_short",
+          "reload"
+        ],
+        "move_action_keys_resolved": [
+          "move_short",
+          "reload"
+        ],
+        "name": "Baneling",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/baneling.tres",
+        "sight_range": 2,
+        "start_energy": -1,
+        "type": "Zergling"
+      },
+      {
+        "ability_action_keys": [
+          "mine_crystal",
+          "resupply_adjacent"
+        ],
+        "ability_action_keys_resolved": [
+          "mine_crystal",
+          "resupply_adjacent"
+        ],
+        "description": "Terran worker: short move; mines crystal on its hex and resupplies energy to adjacent friendlies.",
+        "faction": "Terran",
+        "id": "excavator",
+        "max_energy": 3,
+        "max_health": 2,
+        "move_action_keys": [
+          "move_short"
+        ],
+        "move_action_keys_resolved": [
+          "move_short",
+          "reload"
+        ],
+        "name": "Excavator",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/excavator.tres",
+        "sight_range": 2,
+        "start_energy": -1,
+        "type": "InfantryCamp"
+      },
+      {
+        "ability_action_keys": [
+          "consume",
+          "spawn_fester_zergling",
+          "spawn_shardling"
+        ],
+        "ability_action_keys_resolved": [
+          "consume",
+          "spawn_fester_zergling",
+          "spawn_shardling"
+        ],
+        "description": "Zerg support: move or zero-energy rest; consumes village people for heal and group resources; spawns zerglings and shardlings from stockpiles.",
+        "faction": "Zerg",
+        "id": "fester",
+        "max_energy": 0,
+        "max_health": 6,
+        "move_action_keys": [
+          "move_short",
+          "rest_no_energy"
+        ],
+        "move_action_keys_resolved": [
+          "move_short",
+          "rest_no_energy"
+        ],
+        "name": "Fester",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/fester.tres",
+        "sight_range": 2,
+        "start_energy": -1,
+        "type": "Shardling"
+      },
+      {
+        "ability_action_keys": [
+          "attack_ray",
+          "recruit_people"
+        ],
+        "ability_action_keys_resolved": [
+          "attack_ray",
+          "recruit_people"
+        ],
+        "description": "Recon variant: short move or reload to regain energy; same ray attack (hex range 1–2) and village recruit as the other Scout—rest uses reload instead of zero-energy rest.",
+        "faction": "Terran",
+        "id": "ghost",
+        "max_energy": 3,
+        "max_health": 0,
+        "move_action_keys": [
+          "move_short",
+          "reload"
+        ],
+        "move_action_keys_resolved": [
+          "move_short",
+          "reload"
+        ],
+        "name": "Scout",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/ghost.tres",
+        "sight_range": 3,
+        "start_energy": -1,
+        "type": "Scout"
+      },
+      {
+        "ability_action_keys": [
+          "attack_hydralisk"
+        ],
+        "ability_action_keys_resolved": [
+          "attack_hydralisk"
+        ],
+        "description": "Ranged zerg: move or reload; needle spine at medium range with damage and short stun.",
+        "faction": "Zerg",
+        "id": "hydralisk",
+        "max_energy": 0,
+        "max_health": 0,
+        "move_action_keys": [
+          "move_short",
+          "reload"
+        ],
+        "move_action_keys_resolved": [
+          "move_short",
+          "reload"
+        ],
+        "name": "Hydralisk",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/hydralisk.tres",
+        "sight_range": 2,
+        "start_energy": -1,
+        "type": "Hydralisk"
+      },
+      {
+        "ability_action_keys": [
+          "recharge",
+          "spawn_marine",
+          "spawn_medic"
+        ],
+        "ability_action_keys_resolved": [
+          "recharge",
+          "spawn_marine",
+          "spawn_medic"
+        ],
+        "description": "Immobile barracks: recharge energy, train Marines and Medics; no movement.",
+        "faction": "Terran",
+        "id": "infantry_camp",
+        "max_energy": 5,
+        "max_health": 6,
+        "move_action_keys": [],
+        "move_action_keys_resolved": [],
+        "name": "Marine Corp",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/infantry_camp.tres",
+        "sight_range": 2,
+        "start_energy": 0,
+        "type": "Fester"
+      },
+      {
+        "ability_action_keys": [
+          "attack_area_adjacent"
+        ],
+        "ability_action_keys_resolved": [
+          "attack_area_adjacent"
+        ],
+        "description": "Area caster: single-step move; flame burst hits all adjacent hexes around self (self-target AoE ability).",
+        "faction": "None",
+        "id": "mage",
+        "max_energy": 0,
+        "max_health": 0,
+        "move_action_keys": [
+          "move_short"
+        ],
+        "move_action_keys_resolved": [
+          "move_short",
+          "rest_no_energy"
+        ],
+        "name": "Mage",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/mage.tres",
+        "sight_range": -1,
+        "start_energy": -1,
+        "type": "Mage"
+      },
+      {
+        "ability_action_keys": [
+          "attack_short"
+        ],
+        "ability_action_keys_resolved": [
+          "attack_short"
+        ],
+        "description": "Core ranged infantry: short move or rest; single-tile gun attack that damages two adjacent tiles; passive normal-phase strike fires automatically each turn and damages units on the same tile as the marine. Attacks do not use energy.",
+        "faction": "Terran",
+        "id": "marine",
+        "max_energy": 0,
+        "max_health": 4,
+        "move_action_keys": [
+          "move_short"
+        ],
+        "move_action_keys_resolved": [
+          "move_short",
+          "rest_no_energy"
+        ],
+        "name": "Marine",
+        "passive_action_keys": [
+          "attack_passive_normal"
+        ],
+        "resource_path": "res://src/unit/definitions/marine.tres",
+        "sight_range": 2,
+        "start_energy": -1,
+        "type": "Scout"
+      },
+      {
+        "ability_action_keys": [
+          "heal_adjacent"
+        ],
+        "ability_action_keys_resolved": [
+          "heal_adjacent"
+        ],
+        "description": "Support: short move or reload; spends energy to heal adjacent allies (self or one neighboring hex).",
+        "faction": "Terran",
+        "id": "medic",
+        "max_energy": 4,
+        "max_health": 2,
+        "move_action_keys": [
+          "move_short",
+          "reload"
+        ],
+        "move_action_keys_resolved": [
+          "move_short",
+          "reload"
+        ],
+        "name": "Medic",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/medic.tres",
+        "sight_range": 2,
+        "start_energy": -1,
+        "type": "Scout"
+      },
+      {
+        "ability_action_keys": [
+          "rest_no_energy"
+        ],
+        "ability_action_keys_resolved": [
+          "rest_no_energy"
+        ],
+        "description": "Immobile zerg mass: no movement or combat — only Rest each turn for planning. Short sight (1 hex). Objectives often treat it as a structure to destroy or defend.",
+        "faction": "Zerg",
+        "id": "mountain",
+        "max_energy": 0,
+        "max_health": 5,
+        "move_action_keys": [],
+        "move_action_keys_resolved": [],
+        "name": "Mountain",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/mountain.tres",
+        "sight_range": 1,
+        "start_energy": -1,
+        "type": "Mountain"
+      },
+      {
+        "ability_action_keys": [
+          "attack_short"
+        ],
+        "ability_action_keys_resolved": [
+          "attack_short"
+        ],
+        "description": "Cheap worker: one-step move and basic adjacent melee—no passives, minimal combat value.",
+        "faction": "None",
+        "id": "peasant",
+        "max_energy": 0,
+        "max_health": 0,
+        "move_action_keys": [
+          "move_short"
+        ],
+        "move_action_keys_resolved": [
+          "move_short",
+          "rest_no_energy"
+        ],
+        "name": "Peasant",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/peasant.tres",
+        "sight_range": -1,
+        "start_energy": -1,
+        "type": "Peasant"
+      },
+      {
+        "ability_action_keys": [
+          "attack_ray",
+          "recruit_people"
+        ],
+        "ability_action_keys_resolved": [
+          "attack_ray",
+          "recruit_people"
+        ],
+        "description": "Recon specialist: short move or rest; ray shot (hex range 1–2) and recruit people from village tiles. Greater sight range than marines. Shoot does not use energy.",
+        "faction": "Terran",
+        "id": "scout",
+        "max_energy": 0,
+        "max_health": 0,
+        "move_action_keys": [
+          "move_short",
+          "rest_no_energy"
+        ],
+        "move_action_keys_resolved": [
+          "move_short",
+          "rest_no_energy"
+        ],
+        "name": "Scout",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/scout.tres",
+        "sight_range": 3,
+        "start_energy": -1,
+        "type": "Scout"
+      },
+      {
+        "ability_action_keys": [
+          "mine_crystal",
+          "evolve_baneling",
+          "evolve_hydralisk"
+        ],
+        "ability_action_keys_resolved": [
+          "mine_crystal",
+          "evolve_baneling",
+          "evolve_hydralisk"
+        ],
+        "description": "Zerg worker: move or zero-energy rest; mines crystal on its tile; can evolve into a Baneling or Hydralisk when costs are met.",
+        "faction": "Zerg",
+        "id": "shardling",
+        "max_energy": 0,
+        "max_health": 4,
+        "move_action_keys": [
+          "move_short",
+          "rest_no_energy"
+        ],
+        "move_action_keys_resolved": [
+          "move_short",
+          "rest_no_energy"
+        ],
+        "name": "Shardling",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/shardling.tres",
+        "sight_range": 2,
+        "start_energy": -1,
+        "type": "Shardling"
+      },
+      {
+        "ability_action_keys": [
+          "attack_spire"
+        ],
+        "ability_action_keys_resolved": [
+          "attack_spire",
+          "rest_no_energy"
+        ],
+        "description": "Immobile zerg tower: needle volley at range 1–2 for 1 damage each turn; cannot move.",
+        "faction": "Zerg",
+        "id": "spire",
+        "max_energy": 0,
+        "max_health": 5,
+        "move_action_keys": [],
+        "move_action_keys_resolved": [],
+        "name": "Spire",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/spire.tres",
+        "sight_range": 3,
+        "start_energy": -1,
+        "type": "Spire"
+      },
+      {
+        "ability_action_keys": [
+          "heal_adjacent",
+          "resupply_adjacent",
+          "recharge",
+          "spawn_scout",
+          "spawn_excavator",
+          "create_infantry_camp"
+        ],
+        "ability_action_keys_resolved": [
+          "heal_adjacent",
+          "resupply_adjacent",
+          "recharge",
+          "spawn_scout",
+          "spawn_excavator",
+          "create_infantry_camp"
+        ],
+        "description": "Immobile HQ: heals, resupplies, recharges, spawns Scouts and Excavators, and places Infantry Camps",
+        "faction": "Terran",
+        "id": "terran_base",
+        "max_energy": 5,
+        "max_health": 6,
+        "move_action_keys": [],
+        "move_action_keys_resolved": [],
+        "name": "Terran Base",
+        "passive_action_keys": [],
+        "resource_path": "res://src/unit/definitions/terran_base.tres",
+        "sight_range": 2,
+        "start_energy": 0,
+        "type": "TerranBase"
+      },
+      {
+        "ability_action_keys": [],
+        "ability_action_keys_resolved": [],
+        "description": "Fast melee: quick move; passive attack damages units on the same tile as the zergling. Best used in groups just large enough to eliminate an enemy quickly via the fast passive attack.",
+        "faction": "Zerg",
+        "id": "zergling",
+        "max_energy": 0,
+        "max_health": 3,
+        "move_action_keys": [
+          "fast_move",
+          "reload"
+        ],
+        "move_action_keys_resolved": [
+          "fast_move",
+          "reload"
+        ],
+        "name": "Zergling",
+        "passive_action_keys": [
+          "attack_passive"
+        ],
+        "resource_path": "res://src/unit/definitions/zergling.tres",
+        "sight_range": 2,
+        "start_energy": -1,
+        "type": "Zergling"
+      }
+    ],
+    "visible_enemy_units": [
+      {
+        "ability_action_keys": [
+          "attack_ray",
+          "recruit_people"
+        ],
+        "cell": [
+          0,
+          0
+        ],
+        "def": "res://src/unit/definitions/scout.tres",
+        "group": "terran",
+        "health": 2,
+        "max_health": 2,
+        "name": "Scout",
+        "unit_id": 68283270860
+      }
+    ]
+  },
+  "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+  "payload_profile": "baseline",
+  "perspective_group": "zerg",
+  "scenario_id": "eval_phase_fastmove_stepin_zergling_vs_scout_hp2"
+}

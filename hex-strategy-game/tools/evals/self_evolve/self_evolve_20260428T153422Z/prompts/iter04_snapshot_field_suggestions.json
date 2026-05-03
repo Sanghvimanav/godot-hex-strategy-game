@@ -1,0 +1,34 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "required_end_cell",
+      "where": "root.ai_context.required_end_cell",
+      "why": "Makes exact landing objectives machine-readable so the planner can prioritize immediate success over merely reducing distance.",
+      "example_value": [
+        0,
+        0
+      ]
+    },
+    {
+      "field_name": "satisfies_required_end_cell",
+      "where": "root.units[].legal_options[].satisfies_required_end_cell",
+      "why": "Provides a deterministic per-option flag for exact-goal completion this turn.",
+      "example_value": true
+    },
+    {
+      "field_name": "post_enemy_move_hit_cells",
+      "where": "root.units[].legal_options[].post_enemy_move_hit_cells",
+      "why": "Disambiguates ray/line/intercept options by explicit cells actually hit after enemy movement timing.",
+      "example_value": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ]
+      ]
+    }
+  ]
+}

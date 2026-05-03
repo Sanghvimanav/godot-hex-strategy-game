@@ -1,0 +1,72 @@
+{
+  "case_id": "scout_prioritize_zergling_over_mountain_t0",
+  "chosen_option_index": 24,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T181846Z_iter04"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Scout should target [3,-3] with attack_ray to kill/pressure the advancing Zergling threat before focusing Mountain.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68182607565": 24
+    },
+    "call_timings_ms": [
+      10739
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 10739,
+          "elapsed_seconds": 10.739,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter03_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter03_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter03_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one legal option per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nFor each unit, apply rules in this exact order:\n1) Hard constraints are absolute. Obey required_option_index, required_action_type, required_target_cell, required_hit_cell, required_intercept_cell, required_end_cell, allowed_end_cells, and forbidden_end_cells. Any intent/goal text that explicitly says a unit must/should/forced to target/end on a named cell is also a hard constraint.\n   - required_option_index wins.\n   - move/fast_move: end_cell must exactly match required_end_cell. If allowed_end_cells exists, never choose an end outside it when any legal allowed option exists.\n   - required_target_cell/aim: choose an option whose target_cell exactly equals that cell. Do not replace it with a nearby cell or predicted landing cell.\n   - required_hit/intercept: choose an option whose actual coverage includes that cell (target_cell, affected_cells, ray_cells, line_cells, intercept_cells).\n2) If no explicit cell/end constraint decides the unit, predict dangerous enemy 1-turn landing cells, especially for fast movers.\n   - Check ATTACK options by full coverage, not just target_cell.\n   - If a landing/kill cell can be hit only indirectly, choose the target_cell whose coverage hits it.\n   - If any legal attack covers a forced/predicted landing cell or forced/predicted kill cell, attack before moving.\n   - Prefer attacks that cover both current cell and plausible landing cells; otherwise prefer target_cell equal to the most likely landing cell.\n3) If intent says retreat, survive, avoid range, or kite: choose a legal end inside allowed_end_cells that minimizes immediate enemy attack coverage. Do not advance if a safe allowed end exists.\n4) Otherwise prefer: lethal/intercept attack > highest immediate damage to highest-threat enemy > move/fast_move that most reduces distance to contact or reaches next-turn attack range.\n5) Ties: lower pred_damage_at_end, then lower incoming_damage_if_enemies_hold_and_shoot_end, then higher target threat, then shorter distance to nearest enemy after action, then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If reasoning names a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling fast-moves to [3,-3] while Mountain rests.\",\"reasoning_summary\":\"Shoot the predicted zergling landing hex [3,-3] instead of moving.\",\"actions\":[{\"unit_id\":68182607565,\"option_index\":24}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Evaluating scout options**\n\nI need to decide on the best action for the scout. It has to be precisely one JSON object. The scout is currently positioned at [1,-3] and has energy. It can move to adjacent cells or attack target cells at a range of 1-2. There's an enemy mountain at [2,-2], which is forced to rest. A zergling is moving quickly to [3,-3], and I need to predict possible enemy movements there. The scout could potentially attack either the zergling's landing cell or the mountain, but the mountain's health makes it a challenging target.\n**Examining attack options**\n\nI need to see if there\u2019s a legal attack that can target [3,-3] or the current cell [4,-3] indirectly. For the scout, I\u2019m focusing on attack_ray options that seem to specify target cells, but it looks like it only allows single-cell targets. I\u2019m considering whether I can attack [3,-3] since option 24 targets that cell. However, it seems the unit doesn't move but may reflect the target in its metadata. I need to trust this information to assess the best attack strategy.\n**Clarifying attack mechanics**\n\nI'm looking at the scout located at [1,-3] and noticing that it can attack [2,-2], with the end_cell also being [2,-2] and the path leading through [2,-3]. This setup seems a bit off to me. I wonder if \"end\" refers to the target cell rather than an actual movement. It\u2019s important to understand how these mechanics work to formulate a solid strategy moving forward!",
+    "usage": {
+      "input_tokens": 11617,
+      "output_tokens": 1043,
+      "reasoning_tokens": 978,
+      "total_tokens": 12660
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00499025
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_scout_prioritize_zergling_over_mountain",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.00499025
+}

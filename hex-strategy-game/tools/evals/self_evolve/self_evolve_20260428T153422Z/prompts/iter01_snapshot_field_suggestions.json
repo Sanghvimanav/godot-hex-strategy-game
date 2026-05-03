@@ -1,0 +1,48 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "predicted_end_cells_this_turn",
+      "where": "enemy_units[].predicted_end_cells_this_turn",
+      "why": "Lets the planner target post-move landing hexes directly instead of guessing from current position.",
+      "example_value": [
+        {
+          "cell": [
+            1,
+            0
+          ],
+          "prob": 0.72
+        },
+        {
+          "cell": [
+            0,
+            0
+          ],
+          "prob": 0.18
+        }
+      ]
+    },
+    {
+      "field_name": "covers_predicted_enemy_cells",
+      "where": "ai_units[].legal_options[].covers_predicted_enemy_cells",
+      "why": "Makes it explicit which legal options hit/intercept likely enemy landing cells after movement timing.",
+      "example_value": [
+        {
+          "enemy_unit_id": 555,
+          "cells": [
+            [
+              1,
+              0
+            ]
+          ],
+          "timing": "after_enemy_move"
+        }
+      ]
+    },
+    {
+      "field_name": "distance_to_priority_tile_end",
+      "where": "ai_units[].legal_options[].distance_to_priority_tile_end",
+      "why": "Enables deterministic shortest-path selection toward the key enemy/objective tile for chase cases.",
+      "example_value": 0
+    }
+  ]
+}

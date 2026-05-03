@@ -1,0 +1,79 @@
+{
+  "case_id": "prediction_3scouts_vs_zergling_shoot_10_t0",
+  "chosen_option_indices": [
+    12,
+    12,
+    12
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T144404Z_iter03"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "All Scouts should target [1,0] with attack_ray to hit the predicted Zergling approach after movement timing.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "67947726541": 12,
+      "68132275944": 12,
+      "68266493679": 12
+    },
+    "call_timings_ms": [
+      8675
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 8675,
+          "elapsed_seconds": 8.675,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T144404Z/prompts/iter02_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T144404Z/prompts/iter02_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T144404Z/prompts/iter02_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object and no extra text:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\n\nProcedure:\n1) Output exactly one action for every AI unit in ai_units[], using only ai_units[].legal_options[].i.\n2) Predict enemy movement this turn in opponent_prediction.\n3) Timing rule: if an enemy can move before attack resolution, especially fast movers, evaluate attacks against that enemy\u2019s predicted landing cell/path this turn, not its current cell. The predicted landing cell/path is the primary target for attack valuation.\n4) For each unit, rank legal options by this deterministic tuple, highest priority first:\n   A. attack_hits_predicted_landing_or_path_this_turn\n   B. expected visible hits/damage on that predicted landing/path this turn\n   C. helps allied focus on the same predicted cell/enemy\n   D. lower pred_damage_at_end; if missing, lower incoming_damage_if_enemies_hold_and_shoot_end\n   E. lower distance to nearest enemy or useful engagement cell\n   F. lower option_index\n5) If a fast-mover\u2019s predicted landing cell/path is covered by an attack option this turn, choose that attack over movement/repositioning, even if current-cell attack estimates look worse or current-cell shots show zero value.\n6) If attack coverage is ambiguous, prefer an attack that plausibly covers the predicted landing cell/path over a non-attack when facing a move-before-attack enemy.\n7) Never pick a current-position shot over a predicted-landing/path shot when movement timing makes the landing/path shot the relevant hit.\n8) reasoning_summary must be brief and concrete; mention the predicted landing cell/path when it determines the action."
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling fast-moves to [1,0] this turn, with [1,0] as the primary landing cell to target.\",\"reasoning_summary\":\"Enemy fast-moves into [1,0], so each Scout should shoot that predicted landing cell; attack_ray i=12 is the relevant hit.\",\"actions\":[{\"unit_id\":67947726541,\"option_index\":12},{\"unit_id\":68132275944,\"option_index\":12},{\"unit_id\":68266493679,\"option_index\":12}]}",
+    "reasoning_effort": "low",
+    "thinking": "**Planning scout actions**\n\nI need to create a JSON with one action for each scout. The enemy zergling is fast-moving and will attack soon, with the predicted landing at [1,0]. It's crucial to choose an attack that covers this landing path if possible. The scouts have attack_ray options that reach [1,0] from [0,0], particularly option 12. Since the enemy is predicted to land there, I'll choose attack_ray option 12 for all scouts to ensure we\u2019re targeting effectively.",
+    "usage": {
+      "input_tokens": 17103,
+      "output_tokens": 235,
+      "reasoning_tokens": 118,
+      "total_tokens": 17338
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00474575
+  },
+  "matched_unit_count": 3,
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "required option exists for all 3 units named Scout",
+  "scenario_id": "eval_prediction_3scouts_vs_zergling_shoot_10",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.00474575
+}

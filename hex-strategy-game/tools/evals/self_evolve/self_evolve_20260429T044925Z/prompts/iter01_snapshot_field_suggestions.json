@@ -1,0 +1,76 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "intent_constraints",
+      "where": "snapshot.intent_constraints",
+      "why": "Convert free-text intent into exact machine-readable requirements such as required cells, allowed end cells, retreat flag, and preferred action type.",
+      "example_value": {
+        "required_cells": [
+          [
+            1,
+            0
+          ]
+        ],
+        "allowed_end_cells": [
+          [
+            -4,
+            3
+          ],
+          [
+            -4,
+            2
+          ],
+          [
+            -3,
+            3
+          ]
+        ],
+        "preferred_action_type": "attack_ray",
+        "retreat": false
+      }
+    },
+    {
+      "field_name": "predicted_landing_cells",
+      "where": "snapshot.enemy_units[].predicted_landing_cells",
+      "why": "Makes landing-cell targeting explicit for fast movers so attacks can be aimed at post-move hexes instead of current hexes.",
+      "example_value": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "field_name": "covers_cells",
+      "where": "snapshot.ai_units[].legal_options[].covers_cells",
+      "why": "Precompute full resolved attack coverage union so exact-hit checks do not require the model to merge target_cell, ray_cells, line_cells, affected_cells, and intercept_cells itself.",
+      "example_value": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          0
+        ]
+      ]
+    },
+    {
+      "field_name": "primary_cell",
+      "where": "snapshot.ai_units[].legal_options[].primary_cell",
+      "why": "Provides a single engine-defined cell for echo_cell validation across move, attack, and wait options.",
+      "example_value": [
+        1,
+        0
+      ]
+    }
+  ]
+}

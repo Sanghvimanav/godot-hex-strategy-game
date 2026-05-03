@@ -1,0 +1,38 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "predicted_landing_cells_1t",
+      "where": "opponent_units[]",
+      "why": "Precompute likely 1-turn landing hexes for fast movers so the planner can target post-move positions deterministically.",
+      "example_value": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ]
+      ]
+    },
+    {
+      "field_name": "coverage_cells",
+      "where": "ai_units[].legal_options[]",
+      "why": "Provide one engine-computed union of all cells an option exactly reaches or affects to simplify exact required-cell and interception matching.",
+      "example_value": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          0
+        ]
+      ]
+    }
+  ]
+}

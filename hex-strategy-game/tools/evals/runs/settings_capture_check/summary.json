@@ -1,0 +1,33 @@
+{
+  "run_meta": {
+    "run_id": "settings_capture_check",
+    "created_at": "2026-04-28T03:20:05.079385Z",
+    "mode": "live_llm",
+    "prompt_version": "p_current_settings",
+    "eval_set_version": "eval_v001",
+    "thinking_level": "",
+    "model_override": "",
+    "notes": "",
+    "planning_prompt_version": "",
+    "git_sha": "5632b9b590908f340a90cb1abcc268a83285afe4",
+    "manifest": ""
+  },
+  "resolved_llm_settings": {
+    "model": "gpt-5.4-mini",
+    "reasoning_effort": "medium",
+    "planning_prompt_version": "legacy",
+    "use_responses_api": true,
+    "use_two_call_planning": true,
+    "planning_max_tokens": 16128,
+    "base_url": "https://api.openai.com/v1"
+  },
+  "total_cases": 5,
+  "pass_cases": 5,
+  "fail_cases": 0,
+  "pass_rate": 1.0,
+  "avg_final_score": 0.9292344444444444,
+  "avg_speed_on_pass": 0.9292344444444444,
+  "total_tokens": 124077,
+  "estimated_cost_usd": 0.065405,
+  "estimated_cost_usd_per_eval_turn": 0.013081
+}

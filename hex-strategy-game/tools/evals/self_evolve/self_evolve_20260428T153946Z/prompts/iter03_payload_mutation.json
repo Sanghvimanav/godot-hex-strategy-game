@@ -1,0 +1,22 @@
+{
+  "remove_paths": [
+    "failed_cases[].raw_response_excerpt"
+  ],
+  "set_values": {
+    "context.eval_focus": [
+      "exact required cell/coverage matching",
+      "disambiguate attack target cells from move destinations",
+      "target predicted landing cells for fast movers before generic pressure"
+    ]
+  },
+  "copy_paths": [
+    {
+      "from": "failed_cases[].intent",
+      "to": "failed_cases[].goal"
+    },
+    {
+      "from": "failed_cases[].reason",
+      "to": "failed_cases[].failure_reason"
+    }
+  ]
+}

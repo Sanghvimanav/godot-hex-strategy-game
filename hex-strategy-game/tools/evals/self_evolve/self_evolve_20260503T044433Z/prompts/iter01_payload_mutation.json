@@ -1,0 +1,17 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_policy_version": "landing_commit_v3",
+    "planner_mode": "deterministic_single_call"
+  },
+  "copy_paths": [
+    {
+      "from": "scenario.intent",
+      "to": "planner.intent"
+    },
+    {
+      "from": "turn.goal",
+      "to": "planner.goal"
+    }
+  ]
+}

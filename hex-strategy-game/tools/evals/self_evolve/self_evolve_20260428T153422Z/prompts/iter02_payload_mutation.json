@@ -1,0 +1,9 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.attack_timing_rule": "If attack timing occurs after enemy movement, evaluate legal attacks against predicted enemy end cells, including fast_move landing cells.",
+    "planner_context.movement_rule": "Prefer exact end-cell completion of key objective/enemy tile over partial approach; evaluate move/fast_move by actual option end_cell only.",
+    "planner_context.focus_fire_rule": "When multiple allied attacks can cover one predicted enemy landing cell, coordinate on that same cell."
+  },
+  "copy_paths": []
+}

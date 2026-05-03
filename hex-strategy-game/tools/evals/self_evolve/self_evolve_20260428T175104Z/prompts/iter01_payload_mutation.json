@@ -1,0 +1,18 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.enforce_exact_allowed_cells": true,
+    "planner_context.fast_mover_attack_targets_predicted_landing_cells": true,
+    "planner_context.forward_pressure_beats_mere_safety": true
+  },
+  "copy_paths": [
+    {
+      "from": "scenario.intent",
+      "to": "planner_context.intent"
+    },
+    {
+      "from": "scenario.goal",
+      "to": "planner_context.goal"
+    }
+  ]
+}

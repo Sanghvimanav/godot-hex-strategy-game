@@ -8,6 +8,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_sanitize_and_payload(tests) and ok
 	ok = _test_post_game_payload_includes_unit_roster(tests) and ok
 	ok = _test_parse_post_game_llm_markdown(tests) and ok
+	ok = _test_parse_human_feedback_markdown(tests) and ok
 	return ok
 
 
@@ -15,18 +16,18 @@ static func _test_ai_outcome(tests: Node) -> bool:
 	tests._log("test_llm_post_game: ai_outcome")
 	var gs1: Dictionary = {
 		"groups": [
-			{"name": "player", "units": [{"health": 2}]},
-			{"name": "opponent", "units": [{"health": 1}]},
+			{"name": "terran", "units": [{"health": 2}]},
+			{"name": "zerg", "units": [{"health": 1}]},
 		]
 	}
-	var ai1: Array[String] = ["opponent"]
+	var ai1: Array[String] = ["zerg"]
 	if LlmPostGame.ai_outcome_from_game_state(gs1, ai1) != "incomplete":
 		tests._fail("expected incomplete when both alive")
 		return false
 	var gs2: Dictionary = {
 		"groups": [
-			{"name": "player", "units": []},
-			{"name": "opponent", "units": [{"health": 1}]},
+			{"name": "terran", "units": []},
+			{"name": "zerg", "units": [{"health": 1}]},
 		]
 	}
 	if LlmPostGame.ai_outcome_from_game_state(gs2, ai1) != "win":
@@ -34,8 +35,8 @@ static func _test_ai_outcome(tests: Node) -> bool:
 		return false
 	var gs3: Dictionary = {
 		"groups": [
-			{"name": "player", "units": [{"health": 1}]},
-			{"name": "opponent", "units": []},
+			{"name": "terran", "units": [{"health": 1}]},
+			{"name": "zerg", "units": []},
 		]
 	}
 	if LlmPostGame.ai_outcome_from_game_state(gs3, ai1) != "loss":
@@ -51,11 +52,11 @@ static func _test_build_match_summary(tests: Node) -> bool:
 		"match_had_llm_validated_plan": true,
 		"scenario_id": "scout_debug",
 		"turn_number": 4,
-		"ai_group_names": ["opponent"],
+		"ai_group_names": ["zerg"],
 		"game_state": {
 			"groups": [
-				{"name": "player", "units": [{"health": 1}]},
-				{"name": "opponent", "units": [{"health": 0}]},
+				{"name": "terran", "units": [{"health": 1}]},
+				{"name": "zerg", "units": [{"health": 0}]},
 			]
 		},
 	}
@@ -94,7 +95,7 @@ static func _test_sanitize_and_payload(tests: Node) -> bool:
 		"match_had_llm_validated_plan": true,
 		"scenario_id": "x",
 		"turn_number": 2,
-		"ai_group_names": ["opponent"],
+		"ai_group_names": ["zerg"],
 		"game_state": {"groups": []},
 	}
 	var ms: Dictionary = LlmPostGame.build_match_summary(session)
@@ -119,7 +120,7 @@ static func _test_post_game_payload_includes_unit_roster(tests: Node) -> bool:
 		"match_had_llm_validated_plan": true,
 		"scenario_id": "x",
 		"turn_number": 2,
-		"ai_group_names": ["opponent"],
+		"ai_group_names": ["zerg"],
 		"game_state": {"groups": []},
 	}
 	var ms: Dictionary = LlmPostGame.build_match_summary(session)
@@ -157,8 +158,11 @@ static func _test_post_game_payload_includes_unit_roster(tests: Node) -> bool:
 static func _test_parse_post_game_llm_markdown(tests: Node) -> bool:
 	tests._log("test_llm_post_game: parse_post_game_llm_markdown")
 	var sample := """## Distilled
-### Ranked learnings
-- A
+### Universal principles
+- A [games: 1, 1W-0L, last: 2026-04-12]
+
+### Unit tactics
+- Scout: kite [games: 1, 0W-1L, last: 2026-04-12]
 
 ### Active contradictions
 - none
@@ -168,6 +172,7 @@ static func _test_parse_post_game_llm_markdown(tests: Node) -> bool:
 
 ## Metadata
 - scenario: x
+- outcome: loss
 
 ## Learnings
 - B
@@ -176,7 +181,7 @@ static func _test_parse_post_game_llm_markdown(tests: Node) -> bool:
 	if not bool(p.get("ok", false)):
 		tests._fail("expected ok parse")
 		return false
-	if not str(p.get("distilled", "")).contains("Ranked learnings"):
+	if not str(p.get("distilled", "")).contains("Universal principles"):
 		tests._fail("distilled body missing")
 		return false
 	if not str(p.get("session", "")).begins_with("## Metadata"):
@@ -187,4 +192,57 @@ static func _test_parse_post_game_llm_markdown(tests: Node) -> bool:
 		tests._fail("expected fail without Distilled")
 		return false
 	tests._pass("parse_post_game_llm_markdown")
+	return true
+
+
+static func _test_parse_human_feedback_markdown(tests: Node) -> bool:
+	tests._log("test_llm_post_game: parse_human_feedback_markdown")
+	var sample := """## Distilled
+### Universal principles
+- Updated learning [games: 2, 1W-1L, last: 2026-04-12]
+
+### Unit tactics
+- none
+
+### Active contradictions
+- none
+
+### Experiments
+- Test flanking strategy
+
+## Feedback
+- Accepted: 'focus fire on Scouts' — incorporated into Universal principles.
+- Rejected: 'Zerglings can fly' — Zerglings have no aerial capability per unit_action_roster.
+"""
+	var p: Dictionary = LlmPostGame.parse_human_feedback_llm_markdown(sample)
+	if not bool(p.get("ok", false)):
+		tests._fail("expected ok parse")
+		return false
+	if not str(p.get("distilled", "")).contains("Universal principles"):
+		tests._fail("distilled missing")
+		return false
+	if not str(p.get("feedback", "")).contains("Accepted"):
+		tests._fail("feedback section missing")
+		return false
+	var no_fb := """## Distilled
+### Universal principles
+- A [games: 1, 1W-0L, last: 2026-04-12]
+
+### Unit tactics
+- none
+
+### Active contradictions
+- none
+
+### Experiments
+- none
+"""
+	var p2: Dictionary = LlmPostGame.parse_human_feedback_llm_markdown(no_fb)
+	if not bool(p2.get("ok", false)):
+		tests._fail("should parse without Feedback section")
+		return false
+	if not str(p2.get("feedback", "")).is_empty():
+		tests._fail("feedback should be empty when section absent")
+		return false
+	tests._pass("parse_human_feedback_markdown")
 	return true

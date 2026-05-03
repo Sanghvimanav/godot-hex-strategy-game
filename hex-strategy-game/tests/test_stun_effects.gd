@@ -100,9 +100,9 @@ static func _test_stun_debug_scenario_exists(tests: Node) -> bool:
 		var is_ai: bool = bool(g.get("ai", false))
 		for u in g.get("units", []):
 			var def_path: String = str(u.get("def_path", ""))
-			if group_name == "player" and def_path == "res://src/unit/definitions/terran_base.tres":
+			if group_name == "terran" and def_path == "res://src/unit/definitions/terran_base.tres":
 				has_player_base = true
-			if group_name == "opponent" and is_ai and def_path == "res://src/unit/definitions/hydralisk.tres":
+			if group_name == "zerg" and is_ai and def_path == "res://src/unit/definitions/hydralisk.tres":
 				has_ai_hydralisk = true
 	if not has_player_base:
 		tests._fail("stun_replay_debug should include a player Terran Base")
@@ -117,20 +117,20 @@ static func _test_stun_debug_scenario_exists(tests: Node) -> bool:
 static func _test_attack_hydralisk_stun_blocks_next_turn_move(tests: Node) -> bool:
 	tests._log("test_stun_effects: attack_hydralisk stun starts next turn and expires after one blocked turn")
 	# Turn 1: Hydralisk at (0,0), target at (2,0). Hydralisk attacks and stuns.
-	# Target also uses a slow action this turn, which should still execute.
+	# Target uses slow reload this turn (Medic has energy + reload; Marine has no energy so reload would not change energy).
 	var game_state_t1 := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/hydralisk.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
-				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [2, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
+			{ "name": "zerg", "ai": false, "units": [
+				{ "unit_id": 2, "def_path": "res://src/unit/definitions/medic.tres", "cell": [2, 0], "health": 2, "max_health": 2, "energy": 2, "max_energy": 4 }
 			]}
 		]
 	}
 	var actions_t1 := {
-		"player": [{ "unit_id": 1, "action_key": "attack_hydralisk", "path": [], "end_point": [2, 0] }],
-		"opponent": [{ "unit_id": 2, "action_key": "reload", "path": [], "end_point": [0, 0] }]
+		"terran": [{ "unit_id": 1, "action_key": "attack_hydralisk", "path": [], "end_point": [2, 0] }],
+		"zerg": [{ "unit_id": 2, "action_key": "reload", "path": [], "end_point": [0, 0] }]
 	}
 	TurnExecutionCore.execute_turn(game_state_t1, actions_t1)
 	var target_found := TurnExecutionCore.find_unit_by_id(game_state_t1, 2)
@@ -150,8 +150,8 @@ static func _test_attack_hydralisk_stun_blocks_next_turn_move(tests: Node) -> bo
 	for p in HexGrid.build_path_to(2, 0, 3, 0):
 		move_path.append([int(p.x), int(p.y)])
 	var actions_t2 := {
-		"player": [],
-		"opponent": [{ "unit_id": 2, "action_key": "move_short", "path": move_path, "end_point": [3, 0] }]
+		"terran": [],
+		"zerg": [{ "unit_id": 2, "action_key": "move_short", "path": move_path, "end_point": [3, 0] }]
 	}
 	TurnExecutionCore.execute_turn(game_state_t1, actions_t2)
 	var target_after := TurnExecutionCore.find_unit_by_id(game_state_t1, 2)

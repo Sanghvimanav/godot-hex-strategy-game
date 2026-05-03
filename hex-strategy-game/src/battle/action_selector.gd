@@ -66,8 +66,7 @@ func _rebuild_buttons() -> void:
 		var name_str: String = config.get("name", key)
 		var info := Label.new()
 		info.text = "  • %s" % name_str
-		info.add_theme_font_size_override("font_size", 12)
-		info.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
+		info.theme_type_variation = "UiHint"
 		passive_list.add_child(info)
 
 func _clear_buttons(container: Control) -> void:
@@ -80,24 +79,18 @@ func _add_action_button(parent: Control, action_key: String, _is_move: bool, is_
 	var color_hex: String = config.get("color", "#888888")
 	var btn := Button.new()
 	btn.text = name_str
-	btn.custom_minimum_size = Vector2(90, 36)
+	btn.custom_minimum_size = Vector2(90, 38)
 	btn.pressed.connect(_on_action_pressed.bind(action_key))
 	btn.disabled = not is_available
 	if btn.disabled:
 		btn.tooltip_text = unavailable_reason if not unavailable_reason.is_empty() else "Unavailable right now"
 	var bg := StyleBoxFlat.new()
 	bg.bg_color = Color(color_hex)
-	bg.corner_radius_top_left = 4
-	bg.corner_radius_top_right = 4
-	bg.corner_radius_bottom_right = 4
-	bg.corner_radius_bottom_left = 4
+	bg.set_corner_radius_all(8)
 	btn.add_theme_stylebox_override("normal", bg)
 	var disabled_bg := StyleBoxFlat.new()
 	disabled_bg.bg_color = Color(color_hex).darkened(0.45)
-	disabled_bg.corner_radius_top_left = 4
-	disabled_bg.corner_radius_top_right = 4
-	disabled_bg.corner_radius_bottom_right = 4
-	disabled_bg.corner_radius_bottom_left = 4
+	disabled_bg.set_corner_radius_all(8)
 	btn.add_theme_stylebox_override("disabled", disabled_bg)
 	btn.add_theme_color_override("font_color", Color.WHITE)
 	btn.add_theme_color_override("font_disabled_color", Color(0.8, 0.8, 0.8))
@@ -113,10 +106,7 @@ func _add_action_button(parent: Control, action_key: String, _is_move: bool, is_
 	if border_color != Color.TRANSPARENT:
 		var sel := StyleBoxFlat.new()
 		sel.bg_color = Color(color_hex).lightened(0.1) if action_key == _selected_action_key and is_available else Color(color_hex)
-		sel.corner_radius_top_left = 4
-		sel.corner_radius_top_right = 4
-		sel.corner_radius_bottom_right = 4
-		sel.corner_radius_bottom_left = 4
+		sel.set_corner_radius_all(8)
 		sel.border_width_left = 2
 		sel.border_width_right = 2
 		sel.border_width_top = 2
@@ -126,10 +116,7 @@ func _add_action_button(parent: Control, action_key: String, _is_move: bool, is_
 	if is_planned_action:
 		var planned_disabled := StyleBoxFlat.new()
 		planned_disabled.bg_color = Color(color_hex).darkened(0.45)
-		planned_disabled.corner_radius_top_left = 4
-		planned_disabled.corner_radius_top_right = 4
-		planned_disabled.corner_radius_bottom_right = 4
-		planned_disabled.corner_radius_bottom_left = 4
+		planned_disabled.set_corner_radius_all(8)
 		planned_disabled.border_width_left = 2
 		planned_disabled.border_width_right = 2
 		planned_disabled.border_width_top = 2

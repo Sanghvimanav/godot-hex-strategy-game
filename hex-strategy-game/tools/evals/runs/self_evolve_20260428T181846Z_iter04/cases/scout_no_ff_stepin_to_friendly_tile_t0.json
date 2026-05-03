@@ -1,0 +1,75 @@
+{
+  "case_id": "scout_no_ff_stepin_to_friendly_tile_t0",
+  "chosen_option_indices": [
+    9
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T181846Z_iter04"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "With 1-HP Zergling moving from [-1,2] to [-1,3], scout should target [-1,3] even though a friendly scout occupies that tile.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68182607565": 9,
+      "68367156968": 0
+    },
+    "call_timings_ms": [
+      27717
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 27717,
+          "elapsed_seconds": 27.717,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter03_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter03_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T181846Z/prompts/iter03_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one legal option per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nFor each unit, apply rules in this exact order:\n1) Hard constraints are absolute. Obey required_option_index, required_action_type, required_target_cell, required_hit_cell, required_intercept_cell, required_end_cell, allowed_end_cells, and forbidden_end_cells. Any intent/goal text that explicitly says a unit must/should/forced to target/end on a named cell is also a hard constraint.\n   - required_option_index wins.\n   - move/fast_move: end_cell must exactly match required_end_cell. If allowed_end_cells exists, never choose an end outside it when any legal allowed option exists.\n   - required_target_cell/aim: choose an option whose target_cell exactly equals that cell. Do not replace it with a nearby cell or predicted landing cell.\n   - required_hit/intercept: choose an option whose actual coverage includes that cell (target_cell, affected_cells, ray_cells, line_cells, intercept_cells).\n2) If no explicit cell/end constraint decides the unit, predict dangerous enemy 1-turn landing cells, especially for fast movers.\n   - Check ATTACK options by full coverage, not just target_cell.\n   - If a landing/kill cell can be hit only indirectly, choose the target_cell whose coverage hits it.\n   - If any legal attack covers a forced/predicted landing cell or forced/predicted kill cell, attack before moving.\n   - Prefer attacks that cover both current cell and plausible landing cells; otherwise prefer target_cell equal to the most likely landing cell.\n3) If intent says retreat, survive, avoid range, or kite: choose a legal end inside allowed_end_cells that minimizes immediate enemy attack coverage. Do not advance if a safe allowed end exists.\n4) Otherwise prefer: lethal/intercept attack > highest immediate damage to highest-threat enemy > move/fast_move that most reduces distance to contact or reaches next-turn attack range.\n5) Ties: lower pred_damage_at_end, then lower incoming_damage_if_enemies_hold_and_shoot_end, then higher target threat, then shorter distance to nearest enemy after action, then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If reasoning names a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling fast-moves to [-1,3].\",\"reasoning_summary\":\"Shoot the landing hex for a likely kill; second Scout repositions left to keep spacing.\",\"actions\":[{\"unit_id\":68182607565,\"option_index\":9},{\"unit_id\":68367156968,\"option_index\":0}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Assessing scout movement**\n\nI'm considering where the second scout should move, either to [0,2] or [-2,3] to maintain lane. Both options have the same distance, but moving to [0,2] puts it on the enemy's exit side. However, if the enemy quickly moves to [-1,3], my scout there could be in a risky position. Since scouts don't have passive abilities, I think it\u2019s better to move to [0,2] to prepare for an attack next turn, as that aligns with rules for reaching attack range.\n**Evaluating scout action**\n\nI'm considering our current position regarding the enemy; we're already in immediate contact range. Staying put might not be legal unless I opt for resting, which is allowed. If the enemy moves onto our tile, my scout at [-1,3] might not be able to attack this turn due to order of actions. But if we hold the position, the following turn could offer an opportunity. However, I need to remember that the enemy zergling's passive attack only triggers on the same tile.\n**Assessing scout strategy**\n\nI\u2019m examining the legal options for our scouts. If an enemy fast moves to the same tile, they\u2019ll have a visible enemy condition. However, if they hold their position, our scouts could still be vulnerable to incoming damage. The first scout\u2019s attack option could potentially kill the enemy before they can retaliate, but it all depends on the order of actions. If the enemy moves onto the second scout's tile, we need to evaluate the risks involved there too.\n**Analyzing enemy movement options**\n\nI\u2019m analyzing the options based on enemy actions. If they hold their position and shoot, there\u2019s no threat since incoming damage is zero at the end. But I'm considering whether being on the same tile has some hidden passive advantages that aren't represented. If an enemy fast moves to the same tile as my scout, they become visible. If my scout stays put at [-1,3], it could be in danger after the enemy moves.\n**Evaluating tactical moves**\n\nI\u2019m analyzing a situation where I need to keep the position at [-1,3], which might lead to some risks if the enemy attacks and damages me. I wonder if moving away to either [0,2] or [-2,3] would be a better strategic option to prevent collision and maintain my attack angle. Both move options allow me to avoid incoming attacks. I need to decide whether to take one of those moves while also considering my first scout's attack option on the enemy at [-1,3].\n**Deciding attack and movement**\n\nI\u2019m realizing that both attacks resolve in the same phase after the enemy moves, which might lead to overkill if both are executed. I wonder if I should redirect the second attack after the first one potentially eliminates the enemy. It could be more strategic to reposition instead. Moving to [0,2] reduces distance to the enemy's next likely position, while maintaining different approach lines. I think choosing the better move can ultimately provide better tactical advantage, even if there's a tie in distance.\n**Assessing movement options**\n\nI need to think about whether moving to [-2,3] might create a pathless situation on one side. If the enemy is eliminated, that concern goes away, but I should consider tie-breaks. Moving a unit from [-1,3] to [-2,3] might create a more distinct approach line, which isn't something I've clearly encoded yet. I have to ensure the JSON structure is exact. I'll also summarize reasoning and predict that the enemy Zergling will make a swift move to [-1,3] and face elimination.",
+    "usage": {
+      "input_tokens": 14644,
+      "output_tokens": 2782,
+      "reasoning_tokens": 2706,
+      "total_tokens": 17426
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.009225
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "per-unit requirements satisfied (1 units)",
+  "scenario_id": "eval_scout_no_ff_stepin_to_friendly_tile",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.009225
+}

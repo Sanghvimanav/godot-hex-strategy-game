@@ -1,0 +1,75 @@
+{
+  "case_id": "prediction_3scouts_vs_zergling_shoot_10_t0",
+  "chosen_option_indices": [
+    12,
+    12,
+    12
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T050557Z_fix_iter03"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "All Scouts should target [1,0] with attack_ray to hit the predicted Zergling approach after movement timing.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "67947726541": 12,
+      "68132275944": 12,
+      "68266493679": 12
+    },
+    "call_timings_ms": [
+      8729
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 8729,
+          "elapsed_seconds": 8.729,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T050557Z_fix/prompts/iter02_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Output exactly one JSON object and nothing else:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\n\nHard rules:\n1. Return exactly one action for every unit in ai_units[].\n2. Use only a legal option_index from that unit's legal_options[].i.\n3. Keep reasoning_summary short.\n4. Be deterministic: if a rule applies, follow it.\n\nPer-unit decision procedure:\n1. Identify the enemy\u2019s most likely end-of-turn hexes, especially for fast movers, melee engagers, or units clearly advancing.\n2. Evaluate attack options by expected value at attack resolution time, not by the enemy\u2019s current visible hex alone.\n3. If a legal attack option targets the most likely landing hex of a fast/advancing enemy, and that attack is expected to connect on that landing hex at resolution time, prefer that landing-hex option over targeting the enemy\u2019s current hex unless the current-hex option has strictly better guaranteed damage.\n4. When current-hex and predicted-landing-hex attacks are equal in guaranteed hit/damage, choose the predicted landing hex.\n5. Do not prefer a visible current-hex shot merely because expected_visible_hits_if_targeted is populated; compare all explicit hit/damage fields for the actual resolution timing.\n6. Otherwise prefer higher guaranteed damage/hit this turn using explicit fields such as expected_visible_hits_if_targeted and other guaranteed-hit / guaranteed-damage fields.\n7. If tied, prefer lower pred_damage_at_end; if pred_* is missing, use incoming_damage_if_enemies_hold_and_shoot_end.\n8. If still tied, prefer lower distance to enemies.\n9. If still tied, choose the lowest option_index.\n\nOpponent_prediction must briefly state the likely enemy move pattern and name relevant predicted landing hexes.\nReasoning_summary should briefly reflect the applied rule, especially when targeting a landing hex.\n\nDo not add markdown or extra text."
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling most likely fast_moves to [1,0] to engage; [1,1] is the main alternate landing hex.\",\"reasoning_summary\":\"Target the predicted landing hex over the current hex, since the fast move likely lands on [1,0] at resolution.\",\"actions\":[{\"unit_id\":67947726541,\"option_index\":12},{\"unit_id\":68132275944,\"option_index\":12},{\"unit_id\":68266493679,\"option_index\":12}]}",
+    "reasoning_effort": "low",
+    "thinking": "**Evaluating attack options**\n\nI'm wondering if landing on the hex is actually effective. The enemy's move to [1,0] makes it seem likely that it would hit. I need to choose this attack over the current hex attack since they're equally matched, but the current attack has an expected visible hit of 1 if targeted. I guess weighing these options will help make the best choice!",
+    "usage": {
+      "input_tokens": 17045,
+      "output_tokens": 729,
+      "reasoning_tokens": 618,
+      "total_tokens": 17774
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.00571925
+  },
+  "matched_unit_count": 3,
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "required option exists for all 3 units named Scout",
+  "scenario_id": "eval_prediction_3scouts_vs_zergling_shoot_10",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.00571925
+}

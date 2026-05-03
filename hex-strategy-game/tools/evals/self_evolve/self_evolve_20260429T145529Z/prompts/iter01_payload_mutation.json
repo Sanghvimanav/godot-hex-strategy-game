@@ -1,0 +1,10 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.require_exact_legal_option_match": true,
+    "planner_context.explicit_intent_overrides_pressure": true,
+    "planner_context.cover_hold_and_move_when_named": true,
+    "planner_context.fast_mover_aim_at_predicted_landing_cell": true
+  },
+  "copy_paths": []
+}

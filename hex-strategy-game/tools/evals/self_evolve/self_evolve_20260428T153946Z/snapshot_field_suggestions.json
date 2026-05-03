@@ -1,0 +1,134 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "reachable_end_cells_this_turn",
+      "where": "enemy_units[]",
+      "why": "Makes mover/fast-mover landing hexes explicit so the planner can deterministically target likely end cells.",
+      "example_value": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "iter": 1,
+      "run_id": "self_evolve_20260428T153946Z_iter01"
+    },
+    {
+      "field_name": "covers_enemy_reachable_end_cells",
+      "where": "ai_units[].legal_options[]",
+      "why": "Precomputes whether an option\u2019s end/target/ray/AoE/intercept cells cover enemy reachable landing cells, reducing guesswork and helping exact landing-cell commits.",
+      "example_value": {
+        "enemy_id": 17,
+        "cells": [
+          [
+            0,
+            0
+          ],
+          [
+            1,
+            0
+          ]
+        ],
+        "count": 2
+      },
+      "iter": 1,
+      "run_id": "self_evolve_20260428T153946Z_iter01"
+    },
+    {
+      "field_name": "ends_on_enemy_current_cell_ids",
+      "where": "ai_units[].legal_options[]",
+      "why": "Lets the planner immediately detect exact reach/contact options instead of choosing adjacent pressure cells.",
+      "example_value": [
+        17
+      ],
+      "iter": 1,
+      "run_id": "self_evolve_20260428T153946Z_iter01"
+    },
+    {
+      "field_name": "coverage_cells",
+      "where": "ai_units[].legal_options[].coverage_cells",
+      "why": "Union of all cells an option can actually occupy, target, ray through, intercept, or affect, so exact-goal and predicted-landing matching uses one deterministic field.",
+      "example_value": [
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          -2
+        ]
+      ],
+      "iter": 2,
+      "run_id": "self_evolve_20260428T153946Z_iter02"
+    },
+    {
+      "field_name": "resolution_timing",
+      "where": "ai_units[].legal_options[].resolution_timing",
+      "why": "Shows whether an option resolves before or after enemy movement, preventing attacks from aiming at current hex when landing hex matters.",
+      "example_value": "after_enemy_move",
+      "iter": 2,
+      "run_id": "self_evolve_20260428T153946Z_iter02"
+    },
+    {
+      "field_name": "required_exact_cells_by_unit_id",
+      "where": "turn_objectives.required_exact_cells_by_unit_id",
+      "why": "Makes scenario-specific must-reach cells explicit so exact commits outrank generic pressure.",
+      "example_value": {
+        "68870473449": [
+          [
+            0,
+            0
+          ]
+        ]
+      },
+      "iter": 2,
+      "run_id": "self_evolve_20260428T153946Z_iter02"
+    },
+    {
+      "field_name": "predicted_landing_cells_1t",
+      "where": "opponent_units[]",
+      "why": "Precompute likely 1-turn landing hexes for fast movers so the planner can target post-move positions deterministically.",
+      "example_value": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ]
+      ],
+      "iter": 3,
+      "run_id": "self_evolve_20260428T153946Z_iter03"
+    },
+    {
+      "field_name": "coverage_cells",
+      "where": "ai_units[].legal_options[]",
+      "why": "Provide one engine-computed union of all cells an option exactly reaches or affects to simplify exact required-cell and interception matching.",
+      "example_value": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          0
+        ]
+      ],
+      "iter": 3,
+      "run_id": "self_evolve_20260428T153946Z_iter03"
+    }
+  ]
+}

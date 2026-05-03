@@ -1,0 +1,34 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "resolved_echo_cell",
+      "where": "ai_units[].legal_options[].resolved_echo_cell",
+      "why": "Precomputes the exact cell the model must emit, eliminating echo_cell inference errors.",
+      "example_value": [
+        -1,
+        -1
+      ]
+    },
+    {
+      "field_name": "coverage_cells_union",
+      "where": "ai_units[].legal_options[].coverage_cells_union",
+      "why": "Gives one normalized list of all cells an option can affect, making AOE/ray/line landing-cell checks deterministic.",
+      "example_value": [
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          -2
+        ]
+      ]
+    },
+    {
+      "field_name": "creates_fast_phase_contact",
+      "where": "ai_units[].legal_options[].creates_fast_phase_contact",
+      "why": "Marks fast_move options that cause same-tile contact/passive timing interactions, which several failed cases depended on.",
+      "example_value": true
+    }
+  ]
+}

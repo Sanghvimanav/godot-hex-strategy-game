@@ -1,0 +1,73 @@
+{
+  "case_id": "marine_aoe_branch_zerg_to_neg11_t0",
+  "chosen_option_index": 12,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T145529Z_iter02"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "With the Zergling forced to [-1,-1], Marine should choose attack_short on [-1,-1] to secure damage.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68803364557": 12
+    },
+    "call_timings_ms": [
+      9757
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 9757,
+          "elapsed_seconds": 9.757,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T145529Z/prompts/iter01_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T145529Z/prompts/iter01_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260429T145529Z/prompts/iter01_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\n\nHard rules:\n- Output exactly one action per AI unit.\n- Choose only from that unit's ai_units[].legal_options[].\n- Each emitted {unit_id, action_key, target_cell} must exactly match one listed legal option for that unit.\n- Never infer a reachable cell. For move/fast_move, emit only the option's actual end cell / target_cell as encoded by that legal option. Do not emit path cells, nearby pressure cells, or cells only mentioned in allowed_end_cells unless that exact {action_key,target_cell} is itself legal.\n- Keep opponent_prediction and reasoning_summary brief. If either string mentions a cell, that cell must appear in chosen option metadata.\n\nDecision order:\n1) Explicit scenario intent / turn goal overrides generic aggression.\n   - If intent says retreat, stay safe, avoid range, survive, kite, or lists allowed end cells, choose a legal move/fast_move ending on one of those named safe cells. Do not choose pressure/contact instead. Use rule 5 tiebreakers among qualifying safe options.\n   - If intent names exact end / target / hit cells, commit to those cells exactly. For move/fast_move, match actual end cell only. For attacks, the named cell must be in real coverage: target_cell, affected_cells, ray_cells, line_cells, or intercept_cells.\n   - If intent implies covering hold vs move, or names multiple cells for the same enemy, split friendly actions to cover those different named cells before duplicating coverage.\n2) Otherwise vs fast movers, predict 1-2 likely landing cells. Prefer a legal ATTACK whose real coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the predicted landing cell itself when legal, not the enemy's current hex. Only move/fast_move onto a predicted landing cell if no legal attack covers any predicted landing cell and occupying that exact cell is legal.\n3) Otherwise choose a legal attack that kills; else highest immediate damage to the highest-threat enemy.\n4) Otherwise choose the most aggressive legal move/fast_move that reduces distance to key enemies/objectives and creates next-turn contact.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lowest legal_options[].i."
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling likely fast-moves to [-1,-1] or [-1,-2].\",\"reasoning_summary\":\"Use the attack that covers the likeliest landing cells and avoid chasing with move.\",\"actions\":[{\"unit_id\":68803364557,\"action_key\":\"attack_short\",\"target_cell\":[-1,-1]}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Considering legal attack options**\n\nI need to choose a legal attack where the coverage includes the predicted landing cell. Ideally, it should be right at the predicted landing cell itself, as that's when it's permissible. It seems like the target cell will be the end cell corresponding to the attack. I\u2019m making sure to keep legality in mind while pinpointing the most effective location for this action.",
+    "usage": {
+      "input_tokens": 8890,
+      "output_tokens": 1241,
+      "reasoning_tokens": 1163,
+      "total_tokens": 10131
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.0047045
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_marine_aoe_branch_zerg_to_neg11",
+  "runner_exit_code": 0,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n[planning-eval] wrote /Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/runs/self_evolve_20260429T145529Z_iter02/cases/marine_aoe_branch_zerg_to_neg11_t0.json\n[planning-eval] pass=true reason=required option exists and passes checks chosen_option_index=12 chosen_option_indices=[]\n",
+  "estimated_cost_usd": 0.0047045
+}

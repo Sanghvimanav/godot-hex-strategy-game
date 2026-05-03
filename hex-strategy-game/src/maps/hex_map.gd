@@ -317,7 +317,7 @@ func _refresh_fog() -> void:
 	refresh_fog()
 
 ## Returns Dictionary "q,r" -> true for all hexes visible to any observer unit.
-## Observers = current player's group (multiplayer_my_group in multiplayer, else first group).
+## Observers = local human faction (`UnitsContainer.multiplayer_my_group` when set, else first group).
 ## Uses each observer unit's def.sight_range and current position; call after placement or movement.
 func _compute_visible_cell_keys() -> Dictionary:
 	var result: Dictionary = {}
@@ -327,7 +327,7 @@ func _compute_visible_cell_keys() -> Dictionary:
 	var groups: Array = units_node.groups if "groups" in units_node else []
 	if groups.is_empty():
 		return result
-	# Observer group: in multiplayer use multiplayer_my_group; else first group (player).
+	# Observer group: human seat from multiplayer_my_group (MP + single-player); else first group.
 	var observer_group: Node = null
 	var v = units_node.get("multiplayer_my_group")
 	var my_group_name: String = "" if v == null else str(v)
@@ -440,7 +440,7 @@ func get_map_bounds_for_llm() -> Dictionary:
 
 
 ## Hides enemy units (non-observer groups) when their cell is not in visible_cell_keys.
-## Observer group = multiplayer_my_group in multiplayer, else first group. Dead units always hidden.
+## Observer group = multiplayer_my_group when set (MP + single-player), else first group. Dead units always hidden.
 func _update_enemy_visibility(visible_cell_keys: Dictionary) -> void:
 	var units_node = get_parent().get_node_or_null("units")
 	if not units_node or "groups" not in units_node:

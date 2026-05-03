@@ -1,0 +1,306 @@
+{
+  "raw": "{\"new_system_prompt\":\"You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\\n{\\\"opponent_prediction\\\":\\\"string\\\",\\\"reasoning_summary\\\":\\\"string\\\",\\\"actions\\\":[{\\\"unit_id\\\":NUMBER,\\\"option_index\\\":NUMBER}]}\\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Never invent unit ids or option indices.\\n\\nDeterministic policy per unit:\\n1) Check legal attacks that can secure a kill or highest immediate damage on the highest-threat enemy.\\n2) Predict enemy movement this turn. If a dangerous enemy fast mover or mover is likely to land on a specific hex, prefer the legal option whose target cell / ray cell / AoE cell / intercept line / end cell best covers that predicted landing hex. This rule can override a different visible guaranteed hit on a lower-priority target. For rays and line attacks, explicitly aim at the predicted landing cell when relevant.\\n3) If no good attack exists, choose forward pressure: prefer move/fast_move options that end on aggressive pressure hexes which reduce distance to key enemies/objectives and threaten next-turn attacks. Do not default to the safest retreat when the unit should engage.\\n4) Safety tiebreakers: lower pred_damage_at_end; if missing use incoming_damage_if_enemies_hold_and_shoot_end.\\n5) Final tiebreakers, in order: higher expected_visible_hits_if_targeted, higher target threat, shorter distance to nearest enemy after action, lower option_index.\\n\\nUse legal option metadata such as end cell, target cell, expected hits, damage, and distances if present. Keep opponent_prediction and reasoning_summary brief and concrete, naming predicted landing cells when important.\",\"payload_mutation_spec\":{\"remove_paths\":[],\"set_values\":{\"planner_context.fast_mover_intercept_priority\":true,\"planner_context.engage_over_passive_safety_when_no_attack\":true,\"planner_context.tie_break_order\":[\"kill_or_max_damage\",\"cover_predicted_landing_cell\",\"forward_pressure\",\"lower_end_damage\",\"higher_expected_visible_hits\",\"higher_target_threat\",\"shorter_enemy_distance\",\"lower_option_index\"]},\"copy_paths\":[]},\"suggested_snapshot_fields_to_add\":[{\"field_name\":\"reachable_end_cells_this_turn\",\"where\":\"enemy_units[].reachable_end_cells_this_turn\",\"why\":\"Makes fast-mover landing hexes explicit so the planner can target likely landing cells instead of current positions.\",\"example_value\":[[1,0],[0,1],[-1,1]]},{\"field_name\":\"intercepts_enemy_reachable_cells\",\"where\":\"ai_units[].legal_options[].intercepts_enemy_reachable_cells\",\"why\":\"Directly marks which enemy reachable cells are hit, covered, or zoned by each legal option, enabling reliable intercept choices for rays and AoE.\",\"example_value\":{\"enemy_id\":123,\"cells\":[[1,0],[0,1]]}},{\"field_name\":\"post_action_pressure_cells_next_turn\",\"where\":\"ai_units[].legal_options[].post_action_pressure_cells_next_turn\",\"why\":\"Shows which cells the unit can threaten after taking the option, helping choose forward pressure moves over passive safety when no immediate attack exists.\",\"example_value\":[[-1,1],[0,1],[1,1]]}],\"rationale\":\"The failures share one root cause: the current prompt overweights current visible guaranteed hits and generic safety, but under-specifies interception of predicted movement and forward pressure. That makes Scouts fire at current/less-relevant cells instead of the Zergling landing hex, and makes Zerglings choose low-risk repositioning instead of valid pressure commits. The revised prompt adds a deterministic rule ordering: first immediate lethal/damage, then predicted landing-cell coverage for movers/fast movers, then forward pressure, then safety/tiebreakers.\",\"expected_fix\":\"Scouts should more consistently select attack_ray options aimed at predicted Zergling landing cells like [1,0] or [3,-3], even when another visible hit exists. Fast movers with no strong attack should choose aggressive legal pressure hexes such as [-1,1] or [0,1] instead of the safest non-committal move.\"}",
+  "parsed": {
+    "new_system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Never invent unit ids or option indices.\n\nDeterministic policy per unit:\n1) Check legal attacks that can secure a kill or highest immediate damage on the highest-threat enemy.\n2) Predict enemy movement this turn. If a dangerous enemy fast mover or mover is likely to land on a specific hex, prefer the legal option whose target cell / ray cell / AoE cell / intercept line / end cell best covers that predicted landing hex. This rule can override a different visible guaranteed hit on a lower-priority target. For rays and line attacks, explicitly aim at the predicted landing cell when relevant.\n3) If no good attack exists, choose forward pressure: prefer move/fast_move options that end on aggressive pressure hexes which reduce distance to key enemies/objectives and threaten next-turn attacks. Do not default to the safest retreat when the unit should engage.\n4) Safety tiebreakers: lower pred_damage_at_end; if missing use incoming_damage_if_enemies_hold_and_shoot_end.\n5) Final tiebreakers, in order: higher expected_visible_hits_if_targeted, higher target threat, shorter distance to nearest enemy after action, lower option_index.\n\nUse legal option metadata such as end cell, target cell, expected hits, damage, and distances if present. Keep opponent_prediction and reasoning_summary brief and concrete, naming predicted landing cells when important.",
+    "payload_mutation_spec": {
+      "remove_paths": [],
+      "set_values": {
+        "planner_context.fast_mover_intercept_priority": true,
+        "planner_context.engage_over_passive_safety_when_no_attack": true,
+        "planner_context.tie_break_order": [
+          "kill_or_max_damage",
+          "cover_predicted_landing_cell",
+          "forward_pressure",
+          "lower_end_damage",
+          "higher_expected_visible_hits",
+          "higher_target_threat",
+          "shorter_enemy_distance",
+          "lower_option_index"
+        ]
+      },
+      "copy_paths": []
+    },
+    "suggested_snapshot_fields_to_add": [
+      {
+        "field_name": "reachable_end_cells_this_turn",
+        "where": "enemy_units[].reachable_end_cells_this_turn",
+        "why": "Makes fast-mover landing hexes explicit so the planner can target likely landing cells instead of current positions.",
+        "example_value": [
+          [
+            1,
+            0
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            -1,
+            1
+          ]
+        ]
+      },
+      {
+        "field_name": "intercepts_enemy_reachable_cells",
+        "where": "ai_units[].legal_options[].intercepts_enemy_reachable_cells",
+        "why": "Directly marks which enemy reachable cells are hit, covered, or zoned by each legal option, enabling reliable intercept choices for rays and AoE.",
+        "example_value": {
+          "enemy_id": 123,
+          "cells": [
+            [
+              1,
+              0
+            ],
+            [
+              0,
+              1
+            ]
+          ]
+        }
+      },
+      {
+        "field_name": "post_action_pressure_cells_next_turn",
+        "where": "ai_units[].legal_options[].post_action_pressure_cells_next_turn",
+        "why": "Shows which cells the unit can threaten after taking the option, helping choose forward pressure moves over passive safety when no immediate attack exists.",
+        "example_value": [
+          [
+            -1,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      }
+    ],
+    "rationale": "The failures share one root cause: the current prompt overweights current visible guaranteed hits and generic safety, but under-specifies interception of predicted movement and forward pressure. That makes Scouts fire at current/less-relevant cells instead of the Zergling landing hex, and makes Zerglings choose low-risk repositioning instead of valid pressure commits. The revised prompt adds a deterministic rule ordering: first immediate lethal/damage, then predicted landing-cell coverage for movers/fast movers, then forward pressure, then safety/tiebreakers.",
+    "expected_fix": "Scouts should more consistently select attack_ray options aimed at predicted Zergling landing cells like [1,0] or [3,-3], even when another visible hit exists. Fast movers with no strong attack should choose aggressive legal pressure hexes such as [-1,1] or [0,1] instead of the safest non-committal move."
+  },
+  "failed_cases": [
+    {
+      "case_id": "prediction_3scouts_vs_zergling_shoot_10_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260428T150438Z_iter01"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "All Scouts should target [1,0] with attack_ray to hit the predicted Zergling approach after movement timing.",
+      "llm": {
+        "base_url": "https://api.openai.com/v1",
+        "by_unit_id": {
+          "67947726541": 24,
+          "68132275944": 24,
+          "68266493679": 24
+        },
+        "call_timings_ms": [
+          4247
+        ],
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 4247,
+              "elapsed_seconds": 4.247,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "model": "gpt-5.4-mini",
+        "ok": true,
+        "payload_mutation_file": "",
+        "payload_profile": "baseline",
+        "planning_max_tokens": 16128,
+        "planning_prompt_version": "minimal",
+        "prompt_debug": {
+          "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v0_prompt.txt",
+          "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+          "payload_mutation_file": "",
+          "payload_profile": "baseline",
+          "system_prompt": "You are the tactical planner for a hex turn-based game. Respond with one JSON object only: {\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}. Choose exactly one action per AI unit from ai_units[].legal_options[].i. Never invent option indices. Use immediate value first: prefer options that deal guaranteed damage now (expected_visible_hits_if_targeted > 0). Otherwise prefer safe progress: lower pred_damage_at_end (or incoming_damage_if_enemies_hold_and_shoot_end when pred_* missing), then lower distance to enemies. Keep reasoning_summary brief."
+        },
+        "raw": "{\"opponent_prediction\":\"Zergling holds or advances minimally; likely stays at [2,0] or steps to [1,0].\",\"reasoning_summary\":\"All three Scouts have guaranteed damage now, so prioritize the visible ray kill attempt.\",\"actions\":[{\"unit_id\":67947726541,\"option_index\":24},{\"unit_id\":68132275944,\"option_index\":24},{\"unit_id\":68266493679,\"option_index\":24}]}",
+        "reasoning_effort": "low",
+        "thinking": "",
+        "usage": {
+          "input_tokens": 16763,
+          "output_tokens": 142,
+          "reasoning_tokens": 43,
+          "total_tokens": 16905
+        },
+        "use_responses_api": true,
+        "use_two_call_planning": false,
+        "estimated_cost_usd": 0.00447475
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "terran",
+      "reason": "unit id=67947726541 chose end [2, 0], expected [1,0]",
+      "scenario_id": "eval_prediction_3scouts_vs_zergling_shoot_10",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.00447475,
+      "_file": "prediction_3scouts_vs_zergling_shoot_10_t0.json"
+    },
+    {
+      "case_id": "scout_prioritize_zergling_over_mountain_t0",
+      "chosen_option_index": 21,
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260428T150438Z_iter01"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "Scout should target [3,-3] with attack_ray to kill/pressure the advancing Zergling threat before focusing Mountain.",
+      "llm": {
+        "base_url": "https://api.openai.com/v1",
+        "by_unit_id": {
+          "67947726541": 21
+        },
+        "call_timings_ms": [
+          7424
+        ],
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 7424,
+              "elapsed_seconds": 7.424,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "model": "gpt-5.4-mini",
+        "ok": true,
+        "payload_mutation_file": "",
+        "payload_profile": "baseline",
+        "planning_max_tokens": 16128,
+        "planning_prompt_version": "minimal",
+        "prompt_debug": {
+          "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v0_prompt.txt",
+          "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+          "payload_mutation_file": "",
+          "payload_profile": "baseline",
+          "system_prompt": "You are the tactical planner for a hex turn-based game. Respond with one JSON object only: {\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}. Choose exactly one action per AI unit from ai_units[].legal_options[].i. Never invent option indices. Use immediate value first: prefer options that deal guaranteed damage now (expected_visible_hits_if_targeted > 0). Otherwise prefer safe progress: lower pred_damage_at_end (or incoming_damage_if_enemies_hold_and_shoot_end when pred_* missing), then lower distance to enemies. Keep reasoning_summary brief."
+        },
+        "raw": "{\"opponent_prediction\":\"Zergling advances to [3,-3]; Mountain rests.\",\"reasoning_summary\":\"Take the only guaranteed hit now; no safer option offers damage.\",\"actions\":[{\"unit_id\":67947726541,\"option_index\":21}]}",
+        "reasoning_effort": "low",
+        "thinking": "**Choosing scout action**\n\nI need to choose an action for my scout. There's an immediate damage option, attack_ray i=21, which targets a zergling at [3,-3]. But there's a mountain at the end [2,-2], which impacts visibility. According to the rules, the scout should attack [3,-3]. Since the only legal option i=21 has one expected visible hit, I prefer guaranteed damage now over safe progress. So, I'll go with i=21 for the attack.",
+        "usage": {
+          "input_tokens": 10573,
+          "output_tokens": 184,
+          "reasoning_tokens": 126,
+          "total_tokens": 10757
+        },
+        "use_responses_api": true,
+        "use_two_call_planning": false,
+        "estimated_cost_usd": 0.00301125
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "terran",
+      "reason": "chosen end [2, -2] != required [3,-3]",
+      "scenario_id": "eval_scout_prioritize_zergling_over_mountain",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.00301125,
+      "_file": "scout_prioritize_zergling_over_mountain_t0.json"
+    },
+    {
+      "case_id": "zergling_commit_two_landing_hexes_t0",
+      "chosen_option_index": 1,
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260428T150438Z_iter01"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "Zergling should commit with fast_move to one of the valid pressure hexes [-1,1] or [0,1], despite potential incoming scout damage.",
+      "llm": {
+        "base_url": "https://api.openai.com/v1",
+        "by_unit_id": {
+          "68870473449": 1
+        },
+        "call_timings_ms": [
+          6203
+        ],
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 6203,
+              "elapsed_seconds": 6.203,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "model": "gpt-5.4-mini",
+        "ok": true,
+        "payload_mutation_file": "",
+        "payload_profile": "baseline",
+        "planning_max_tokens": 16128,
+        "planning_prompt_version": "minimal",
+        "prompt_debug": {
+          "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v0_prompt.txt",
+          "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+          "payload_mutation_file": "",
+          "payload_profile": "baseline",
+          "system_prompt": "You are the tactical planner for a hex turn-based game. Respond with one JSON object only: {\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}. Choose exactly one action per AI unit from ai_units[].legal_options[].i. Never invent option indices. Use immediate value first: prefer options that deal guaranteed damage now (expected_visible_hits_if_targeted > 0). Otherwise prefer safe progress: lower pred_damage_at_end (or incoming_damage_if_enemies_hold_and_shoot_end when pred_* missing), then lower distance to enemies. Keep reasoning_summary brief."
+        },
+        "raw": "{\"opponent_prediction\":\"Scout likely moves short or rests, avoiding immediate contact.\",\"reasoning_summary\":\"No guaranteed damage this turn, so take the safest reposition with best spacing.\",\"actions\":[{\"unit_id\":68870473449,\"option_index\":1}]}",
+        "reasoning_effort": "low",
+        "thinking": "",
+        "usage": {
+          "input_tokens": 8661,
+          "output_tokens": 208,
+          "reasoning_tokens": 150,
+          "total_tokens": 8869
+        },
+        "use_responses_api": true,
+        "use_two_call_planning": false,
+        "estimated_cost_usd": 0.00258125
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "zerg",
+      "reason": "chosen fast_move end not in allowed_end_cells",
+      "scenario_id": "eval_zergling_commit_two_landing_hexes",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.00258125,
+      "_file": "zergling_commit_two_landing_hexes_t0.json"
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "case_id": "phase_fastmove_contact_zergling_vs_scout_hp1_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T181846Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Even at 1 HP, Zergling should fast_move to [0,0] to force contact and damage the Scout.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69105354473": 0
+    },
+    "call_timings_ms": [
+      14295
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 14295,
+          "elapsed_seconds": 14.295,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely stays at [0,0] or retreats; I contest [0,0] first.\",\"reasoning_summary\":\"Fast move to [0,0] for immediate same-tile contact and lane denial.\",\"actions\":[{\"unit_id\":69105354473,\"option_index\":0}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Evaluating zergling strategy**\n\nI need to output one JSON object for a single zergling unit with ID 69105354473. There's an enemy scout at [0,0] and our zergling is at [1,0] with one health. I can either fast move to an adjacent cell or reload. I must consider if this movement allows for interception before the enemy moves. The enemy might attack, and I need to predict their likely landing spots since they are currently adjacent to our zergling.\n**Analyzing attack strategies**\n\nI'm considering a dangerous enemy that could move before our hit resolves. In this case, my fast_move actually resolves before the enemy's move. I can move onto the enemy's current cell at [0,0], but I need to evaluate the rules. Rule 1 says there's no exact required cell as a goal. I'm left with no attacks, only movement options. So, I should choose a fast_move to [0,0] since there's a visible enemy and that could lead to contact or a passive attack. But I'm realizing the passive attack might cause damage to my own unit too.\n**Choosing the best move**\n\nThe rules indicate that if I'm attacked or use an ability without moving, my fast_move counts as an action. Passive actions probably resolve automatically during the normal phase. My legal options include a fast_move to [0,0], where there's a visible enemy at the end and incoming damage is zero. This seems like the best aggressive choice since it could lead to same-tile contact. I should select the lowest-index aggressive move among the forward options, which would be the [0,0] index.\n**Evaluating cell interactions**\n\nIf two entities occupy the same cell, the enemy\u2019s attack ray might not work anymore due to the simultaneous execution of actions. Moving onto cell [0,0] could prevent the enemy from attacking, since they can only perform one action per turn. It seems that I should ensure my reasoning includes cell [0,0] since it appears in the chosen option metadata. It\u2019s also possible to note that the enemy might stay at [0,0] or move to [0,1].\n**Creating action JSON**\n\nI want to include the \"opponent_prediction\" string and possibly mention cell [0,0] to keep things clear and concise. I need to generate a JSON object with an actions array that contains just one item: unit_id and option_index set to 0. I'll focus on ensuring it\u2019s purely in JSON format without any markdown. This should help streamline my output. Let's make sure I triple-check the structure when I compile it!",
+    "usage": {
+      "input_tokens": 9008,
+      "output_tokens": 853,
+      "reasoning_tokens": 782,
+      "total_tokens": 9861
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.003958
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout_hp1",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.003958
+}

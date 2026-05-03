@@ -7,6 +7,8 @@ const BattlePhase = preload("res://src/battle/battle_phase.gd")
 @onready var replay_turn_picker: OptionButton = $turn_panel/vbox/replay_turn_picker
 @onready var turn_label: Label = $turn_panel/vbox/turn_label
 @onready var llm_status_label: Label = $turn_panel/vbox/llm_status_label
+@onready var llm_retry_button: Button = $turn_panel/vbox/llm_retry_button
+@onready var llm_thinking_button: Button = $turn_panel/vbox/llm_thinking_button
 @onready var scenarios_button: Button = $turn_panel/vbox/scenarios_button
 @onready var end_game_button: Button = $turn_panel/vbox/end_game_button
 @onready var resources_panel: PanelContainer = $resources_panel
@@ -24,6 +26,7 @@ var _updating_replay_picker: bool = false
 var _resources_panel_base_height := 0.0
 ## Pixels between viewport bottom and turn panel bottom (kept fixed; panel grows upward).
 var _turn_panel_bottom_margin := 12.0
+var _llm_thinking_panel: PanelContainer
 
 func _ready() -> void:
 	execute_button.pressed.connect(_on_execute_pressed)
@@ -37,6 +40,12 @@ func _ready() -> void:
 	if end_game_button:
 		end_game_button.pressed.connect(_on_end_game_pressed)
 		end_game_button.visible = not MultiplayerState.is_multiplayer
+	if llm_retry_button:
+		llm_retry_button.pressed.connect(_on_llm_retry_pressed)
+		llm_retry_button.visible = false
+	_llm_thinking_panel = get_node_or_null("llm_thinking_panel")
+	if llm_thinking_button:
+		llm_thinking_button.pressed.connect(_on_llm_thinking_pressed)
 	if replay_button:
 		replay_button.pressed.connect(_on_replay_pressed)
 	if replay_turn_picker:
@@ -81,6 +90,9 @@ func _on_turn_changed(turn_number: int) -> void:
 func _on_llm_planning_status(status: String, detail: String) -> void:
 	if llm_status_label == null:
 		return
+	var show_retry := status == "failed"
+	if llm_retry_button:
+		llm_retry_button.visible = show_retry
 	if status.is_empty() or status == "idle":
 		llm_status_label.text = ""
 		call_deferred("_fit_turn_panel_to_content")
@@ -104,6 +116,8 @@ func _on_planning_started() -> void:
 	execute_button.disabled = true
 	if llm_status_label:
 		llm_status_label.text = ""
+	if llm_retry_button:
+		llm_retry_button.visible = false
 	call_deferred("_fit_turn_panel_to_content")
 	if MultiplayerState.is_multiplayer:
 		execute_button.text = "Submit"
@@ -119,6 +133,15 @@ func _on_execute_pressed() -> void:
 	_update_replay_controls()
 	if MultiplayerState.is_multiplayer:
 		execute_button.text = "Waiting for other players..."
+
+func _on_llm_retry_pressed() -> void:
+	if llm_retry_button:
+		llm_retry_button.visible = false
+	EventBus.llm_retry_requested.emit()
+
+func _on_llm_thinking_pressed() -> void:
+	if _llm_thinking_panel and _llm_thinking_panel.has_method("toggle"):
+		_llm_thinking_panel.toggle()
 
 func _on_replay_pressed() -> void:
 	var turn_to_replay: int = _selected_replay_turn

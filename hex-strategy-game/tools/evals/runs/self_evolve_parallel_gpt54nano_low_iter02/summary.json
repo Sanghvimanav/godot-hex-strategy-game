@@ -1,0 +1,41 @@
+{
+  "run_meta": {
+    "run_id": "self_evolve_parallel_gpt54nano_low_iter02",
+    "created_at": "2026-04-28T17:21:40.448386Z",
+    "mode": "live_llm",
+    "prompt_version": "p_current_settings",
+    "eval_set_version": "eval_v001",
+    "thinking_level": "low",
+    "model_override": "gpt-5.4-nano",
+    "notes": "",
+    "planning_prompt_version": "minimal",
+    "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_parallel_gpt54nano_low/prompts/iter01_prompt.txt",
+    "payload_profile": "baseline",
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_parallel_gpt54nano_low/prompts/iter01_payload_mutation.json",
+    "git_sha": "5632b9b590908f340a90cb1abcc268a83285afe4",
+    "manifest": "",
+    "model_version": "gpt-5.4-nano",
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "planning_max_tokens": 16128,
+    "base_url": "https://api.openai.com/v1"
+  },
+  "total_cases": 15,
+  "pass_cases": 13,
+  "fail_cases": 2,
+  "failed_case_ids": [
+    "scout_prioritize_zergling_over_mountain_t0",
+    "marine_aoe_branch_zerg_to_neg11_t0"
+  ],
+  "failed_case_reasons": {
+    "scout_prioritize_zergling_over_mountain_t0": "chosen action key move_short != required attack_ray",
+    "marine_aoe_branch_zerg_to_neg11_t0": "chosen action key move_short != required attack_short"
+  },
+  "pass_rate": 0.8666666666666667,
+  "avg_final_score": 0.8666666666666667,
+  "avg_speed_on_pass": 1.0,
+  "total_tokens": 158419,
+  "total_eval_turns": 15,
+  "estimated_cost_usd": 0.049186,
+  "estimated_cost_usd_per_eval_turn": 0.00327907
+}

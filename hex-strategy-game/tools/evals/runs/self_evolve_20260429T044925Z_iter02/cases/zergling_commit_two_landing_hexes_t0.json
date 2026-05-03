@@ -1,0 +1,60 @@
+{
+  "case_id": "zergling_commit_two_landing_hexes_t0",
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T044925Z_iter02"
+  },
+  "grading": {
+    "correctness": 0.0,
+    "final_score": 0.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should commit with fast_move to one of the valid pressure hexes [-1,1] or [0,1], despite potential incoming scout damage.",
+  "llm": {
+    "call_timings_ms": [
+      5145
+    ],
+    "detail": {
+      "chosen_end_cell": [
+        -2,
+        2
+      ],
+      "echo_cell": [
+        -1,
+        1
+      ],
+      "error": "echo_cell_not_matching_chosen_end_cell",
+      "ok": false,
+      "option_index": 0,
+      "unit_id": 69071800041
+    },
+    "error": "echo_cell_mismatch",
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 5145,
+          "elapsed_seconds": 5.145,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "ok": false,
+    "raw": "{\"opponent_prediction\":\"Scout likely holds at [0,0] or steps to a neighboring hex.\",\"reasoning_summary\":\"Fast move to [-1,1] to close on [0,0] while staying safe.\",\"actions\":[{\"unit_id\":69071800041,\"option_index\":0,\"echo_cell\":[-1,1]}]}",
+    "estimated_cost_usd": 0.0
+  },
+  "mode": "live_llm",
+  "pass": false,
+  "perspective_group": "zerg",
+  "reason": "live_llm_failed: echo_cell_mismatch",
+  "scenario_id": "eval_zergling_commit_two_landing_hexes",
+  "runner_exit_code": 2,
+  "estimated_cost_usd": 0.0
+}

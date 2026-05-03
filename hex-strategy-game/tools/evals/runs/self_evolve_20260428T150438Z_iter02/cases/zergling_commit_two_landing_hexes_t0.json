@@ -1,0 +1,72 @@
+{
+  "case_id": "zergling_commit_two_landing_hexes_t0",
+  "chosen_option_index": 2,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T150438Z_iter02"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should commit with fast_move to one of the valid pressure hexes [-1,1] or [0,1], despite potential incoming scout damage.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68870473449": 2
+    },
+    "call_timings_ms": [
+      13037
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 13037,
+          "elapsed_seconds": 13.037,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T150438Z/prompts/iter01_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T150438Z/prompts/iter01_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T150438Z/prompts/iter01_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Never invent unit ids or option indices.\n\nDeterministic policy per unit:\n1) Check legal attacks that can secure a kill or highest immediate damage on the highest-threat enemy.\n2) Predict enemy movement this turn. If a dangerous enemy fast mover or mover is likely to land on a specific hex, prefer the legal option whose target cell / ray cell / AoE cell / intercept line / end cell best covers that predicted landing hex. This rule can override a different visible guaranteed hit on a lower-priority target. For rays and line attacks, explicitly aim at the predicted landing cell when relevant.\n3) If no good attack exists, choose forward pressure: prefer move/fast_move options that end on aggressive pressure hexes which reduce distance to key enemies/objectives and threaten next-turn attacks. Do not default to the safest retreat when the unit should engage.\n4) Safety tiebreakers: lower pred_damage_at_end; if missing use incoming_damage_if_enemies_hold_and_shoot_end.\n5) Final tiebreakers, in order: higher expected_visible_hits_if_targeted, higher target threat, shorter distance to nearest enemy after action, lower option_index.\n\nUse legal option metadata such as end cell, target cell, expected hits, damage, and distances if present. Keep opponent_prediction and reasoning_summary brief and concrete, naming predicted landing cells when important."
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely holds or steps to [0,1] to keep attack_ray online.\",\"reasoning_summary\":\"Fast move to [-1,1] to keep aggressive pressure on the scout while minimizing exposure; among the two committed landing hexes, this is the lower-index pressure move and still threatens next turn.\",\"actions\":[{\"unit_id\":68870473449,\"option_index\":2}]}",
+    "reasoning_effort": "low",
+    "thinking": "**Considering enemy actions**\n\nI think since we're limited to one action, the best choice for the enemy could be to use an attack ray at one of the ends. But I need to pause and think, are there specific legal options for the attack ray from the current cell? It's important to evaluate all possibilities before deciding. I want to ensure that I consider all angles and implications properly. Let's figure this out thoroughly!",
+    "usage": {
+      "input_tokens": 8936,
+      "output_tokens": 980,
+      "reasoning_tokens": 891,
+      "total_tokens": 9916
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.004194
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_zergling_commit_two_landing_hexes",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.004194
+}

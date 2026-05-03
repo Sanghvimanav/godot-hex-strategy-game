@@ -1,0 +1,71 @@
+{
+  "case_id": "marine_aoe_branch_zerg_to_neg11_t0",
+  "chosen_option_index": 12,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260430T152605Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "With the Zergling forced to [-1,-1], Marine should choose attack_short on [-1,-1] to secure damage.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "68803364557": 12
+    },
+    "call_timings_ms": [
+      25048
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 25048,
+          "elapsed_seconds": 25.048,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[] using action_key + target_cell. Use only listed unit_id values and legal action/target combinations.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Survival override: if enemy top1 predictions converge on your current/near cells and at least one legal move/fast_move materially lowers incoming threat this turn, choose the safer endpoint instead of contact. Prefer options with lower pred_damage_at_end (or incoming_damage_if_enemies_hold_and_shoot_end when pred_* absent), then lower enemy_count_can_hit_end_if_hold. If you are outnumbered locally (for example 1 unit vs 2+ enemies in contact range), prioritize retreat/survival over aggressive contact.\n5) No-friendly-fire targeting rule: friendly occupancy on a target cell does NOT block your attack choice. If a legal attack on a friendly-occupied cell secures a kill on a predicted enemy landing cell (especially 1-HP targets), prefer that attack over repositioning.\n6) Multi-unit kill coordination: when multiple allied units each have legal attacks that can kill the same predicted 1-HP enemy (or guaranteed kill tile), choose ATTACK actions for all such units this turn unless an attacker is strictly unable to attack that tile legally.\n7) Min-range intercept rule: if a predicted enemy landing cell equals your current cell and your attack has min_range > 0 (cannot target same-cell), do NOT default to move. Prefer a legal attack on an adjacent/intercept cell that still secures the kill (often enemy current/start cell or paired crossfire cell) over repositioning.\n8) Anti-overcommit rule: when a lone unit faces a clustered 3+ enemy stack, do not move onto the enemy-occupied stack unless it produces an immediate decisive kill advantage this turn; otherwise choose a retreat/safe fast_move endpoint.\n9) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. For pressure-only move choices, prefer endpoints that are on-axis toward immediate contact (avoid sideways drift when a direct contact lane exists).\n10) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then deterministically prefer the lowest legal_options[].i that matches action_key + target_cell.\n\nValidation: every chosen action_key + target_cell pair must resolve to a legal option for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.\n"
+    },
+    "raw": "{\"opponent_prediction\":\"Zergling likely fast_moves to [-1,-1] or [-1,-2].\",\"reasoning_summary\":\"Intercept with a legal attack that covers both likely landing cells; attacking is better than stepping into contact.\",\"actions\":[{\"unit_id\":68803364557,\"action_key\":\"attack_short\",\"target_cell\":[-1,-1]}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Analyzing targeting options**\n\nI\u2019m looking at targeting coordinates and their coverage. It seems targeting [-2,-2] covers a couple of spots well. The landing likelihood seems to be around [-1,-2] or [-1,-1], possibly even [0,-1]. The enemy might move toward the marine current at [-2,-1]. Among the options, [-1,-2] and [-1,-1] are closest. I think I should calculate distances to determine the best attack strategy, considering the marine attack range which operates one step away.\n**Predicting enemy movements**\n\nI'm considering predicting enemy landing cells based on their threats. Since my unit is positioned at [-2,-1], the enemy can swiftly move to adjacent cells like [-1,-2] or [-1,-1], which I can then attack. I need to identify the 1-2 most likely landing cells. It's essential to prefer attacks that will actually cover those predicted cells. If I'm targeting [-1,-1], I need to verify that my options effectively reach that position. If both landing cells are equally likely, I need more insight on which path a zergling would take.\n**Analyzing distances to marine**\n\nI'm looking at the distances from potential enemy landing cells to my marine. The distance from [-1,-1] to [-2,-1] is 1, while the distance from [-1,-2] to [-2,-1] should also be calculated \u2014 I thought it might be 2, but actually, it's 1 using hex distance. So both cells are equally close to my marine. Now, which cell is more likely to be used depends on geometry and possibly the path the enemy takes.\n**Analyzing attack strategy**\n\nI'm considering the lowest index for predicted landing, like maybe the top option could be [-1, -1] since that\u2019s \"east\" or \"northwest.\" I need to choose an attack based on the highest threat or best coverage. While marine attacks deal 1 damage, no attack results in a kill since enemies have health of 3. All attacks do 1 damage, so I need to focus on targeting the likely landing and plan a strategy based on potential enemy movement.\n**Inferring enemy movement**\n\nI\u2019m thinking the enemy is likely to move adjacent to us, possibly to [-1, -1], as it's directly aligned with the marine's position. Looking at the axial line from the enemy's current position [0, -2], the deltas could lead to steps like [-1, -1] then [-2, -1], or [-1, -2] leading to [-2, -1]. I see three possible vectors: [-1, -2], [0, -1], or [1, -2]. I need to analyze the paths to determine the best option while considering prioritization along the same axes. It\u2019s complicating matters a bit!\n**Deciding on attack options**\n\nI\u2019m considering targeting [-1, -1] with the attack_short option because it also covers [-1, -2] and seems to be a more central predicted tile. Now, I need to figure out which attack has the lowest index from my options. The attacks listed after my move options are: [-3, -1], [-3, 0], [-2, -2], [-2, 0], [-1, -2], and finally [-1, -1]. Determining the lowest index will help clarify my next move in this situation!\n**Considering action strategy**\n\nI'm analyzing a situation where rule 2 states that intercepting an attack is better than moving. So, I should choose an attack strategy. I think I need to include a prediction string about the opponent's likely fast moves, indicating their possible coordinates. Additionally, I want a concise reasoning summary. My action will be straightforward: I\u2019ll ensure the action_key and target_cell match a legal option. I\u2019ll choose to attack the target at coordinates [-1,-1] and need to present this in JSON format.",
+    "usage": {
+      "input_tokens": 9179,
+      "output_tokens": 2137,
+      "reasoning_tokens": 2057,
+      "total_tokens": 11316
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "terran",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_marine_aoe_branch_zerg_to_neg11",
+  "runner_exit_code": 0,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n[planning-eval] wrote /Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/runs/self_evolve_20260430T152605Z_iter01/cases/marine_aoe_branch_zerg_to_neg11_t0.json\n[planning-eval] pass=true reason=required option exists and passes checks chosen_option_index=12 chosen_option_indices=[]\n"
+}

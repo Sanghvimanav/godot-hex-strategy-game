@@ -1,0 +1,69 @@
+{
+  "case_id": "phase_zergling_retreat_vs_3marines_t0",
+  "chosen_option_index": 4,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T145034Z_iter01"
+  },
+  "grading": {
+    "correctness": 0.0,
+    "final_score": 0.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should retreat from [-3,2] to [-4,3], [-4,2], or [-3,3] to stay out of Marine range while Marines target [-3,2].",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69994546939": 4
+    },
+    "call_timings_ms": [
+      21396
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 21396,
+          "elapsed_seconds": 21.396,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[] using action_key + target_cell. Use only listed unit_id values and legal action/target combinations.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn’s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy’s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then deterministically prefer the lowest legal_options[].i that matches action_key + target_cell.\n\nValidation: every chosen action_key + target_cell pair must resolve to a legal option for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.\n"
+    },
+    "raw": "{\"opponent_prediction\":\"Marines hold [-2,1] and we collide there.\",\"reasoning_summary\":\"Fast_move to [-2,1] is the best contact play: exact enemy tile, 3 visible enemies at end, and no better attack option exists.\",\"actions\":[{\"unit_id\":69994546939,\"action_key\":\"fast_move\",\"target_cell\":[-2,1]}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Deciding zergling action**\n\nI need to choose an action for the zergling unit and create one exact JSON. I have to infer the best action based on specific rules. The unit is positioned at [-3,2], with options like fast_move or reload. The enemy marines are at [-2,1]. \n\nI've got to apply the first matching rule without a specific targeted cell in mind. I wonder if the passive attack happens after the fast move. Let me think about that.\n**Choosing zergling action steps**\n\nSince the fast move phase happens before enemy moves, I need to consider the execution phase order. My rules say: fast move, fast ability, then other actions. The passive attack for the zergling could be resolved as a fast ability. If so, moving onto the same tile as the enemy during the fast move could hit before their move. \n\nHowever, my legal options show that I can only move to adjacent cells, with one cell [-2,1] being enemy-occupied. Targeting that seems best since it indicates a visible enemy.\n**Assessing zergling actions**\n\nFor the zergling, moving onto the enemy-occupied cell might trigger the passive attack. I need to consider the combat rules regarding same-tile contact. The legal option is the fast move to [-2,1], which is where the enemy is. According to the rules, I should choose a legal attack that covers the predicted landing cell, but since there are no attack options, moving onto the enemy cell is still legal. This could work out well!\n**Considering attack mechanics**\n\nI’m analyzing the mechanics of a zergling’s fast melee attack. It seems that when the zergling moves onto the same tile as an enemy, it triggers its passive attack, dealing 1 damage. Since there are 3 marines on that tile, each might take that damage. So, if a zergling moves onto their tile, it likely hits all three marines with that passive attack. I think that makes sense!\n**Crafting concise JSON output**\n\nI’m considering how the opponent's prediction might say “Marines hold [-2,1].” The reasoning summary should be brief and concrete, mentioning the relevant cell. If I mention [-2,1] in the opponent's prediction, the chosen action must reflect that in its metadata. The reasoning summary can clarify that I’d fast move to [-2,1] to force contact, which ties back to the metadata. My goal is to ensure there’s only one action and keep the JSON precise. Let’s get this right!",
+    "usage": {
+      "input_tokens": 10513,
+      "output_tokens": 1636,
+      "reasoning_tokens": 1550,
+      "total_tokens": 12149
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false
+  },
+  "mode": "live_llm",
+  "pass": false,
+  "perspective_group": "zerg",
+  "reason": "chosen fast_move end not in allowed_end_cells",
+  "scenario_id": "eval_phase_zergling_retreat_vs_3marines"
+}

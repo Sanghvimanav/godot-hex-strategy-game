@@ -1,0 +1,16 @@
+{
+  "run_id": "self_evolve_20260429T145034Z_iter01",
+  "created_at": "2026-04-29T14:50:34.649735Z",
+  "mode": "live_llm",
+  "prompt_version": "p_current_settings",
+  "eval_set_version": "eval_v001",
+  "thinking_level": "medium",
+  "model_override": "gpt-5.4-mini",
+  "notes": "",
+  "planning_prompt_version": "minimal",
+  "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+  "payload_profile": "baseline",
+  "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+  "git_sha": "5632b9b590908f340a90cb1abcc268a83285afe4",
+  "manifest": ""
+}

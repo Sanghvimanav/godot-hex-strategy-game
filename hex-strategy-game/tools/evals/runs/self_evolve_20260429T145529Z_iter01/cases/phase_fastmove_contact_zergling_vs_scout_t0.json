@@ -1,0 +1,73 @@
+{
+  "case_id": "phase_fastmove_contact_zergling_vs_scout_t0",
+  "chosen_option_index": 0,
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260429T145529Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "Zergling should fast_move to [0,0] to damage the Scout and protect itself by staying inside the Scout's minimum attack range.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69474453225": 0
+    },
+    "call_timings_ms": [
+      25462
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 25462,
+          "elapsed_seconds": 25.462,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"action_key\":\"string\",\"target_cell\":[q,r]}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[] using action_key + target_cell. Use only listed unit_id values and legal action/target combinations.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then deterministically prefer the lowest legal_options[].i that matches action_key + target_cell.\n\nValidation: every chosen action_key + target_cell pair must resolve to a legal option for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete.\n"
+    },
+    "raw": "{\"opponent_prediction\":\"Scout likely attacks or shifts off [0,0].\",\"reasoning_summary\":\"Fast move to [0,0] for same-tile contact; this is the most aggressive option and denies the Scout a clean ranged hold.\",\"actions\":[{\"unit_id\":69474453225,\"action_key\":\"fast_move\",\"target_cell\":[0,0]}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Considering movement choices**\n\nI should only choose to move or fast move onto a predicted landing cell if there\u2019s no legal attack that could cover any of the predicted landing cells and if occupying that exact cell is legal. Since we have no attack options, I\u2019ll go ahead and select a fast move onto the predicted landing cell if it's legal. I also need to infer the likely landing cells for the best decision.\n**Analyzing attack options**\n\nI\u2019m considering the attack ray's range of 1-2, which lets it attack or move, so it\u2019s a bit dangerous since it can potentially move before I hit. The enemy could engage quickly, likely targeting landing cells like [1,0] or [0,1]. If the enemy moves to [1,0], they could use a passive ability. However, the scout has no melee options but can strike from [0,0]. Moving to a safer position to attack doesn't seem possible since the attack ray requires a target within range.\n**Calculating movement and attack**\n\nI\u2019m figuring out the distance from [0,1] to [1,0], which might be 1. If I compute the differences, it seems I could attack from various neighboring cells. Using fast move, I could close in on [0,0] or [1,0] to set up a contact. However, the zergling can only damage units on the same tile. I need to think about whether the passive attack can happen immediately after moving onto the enemy cell during phase 3. It looks like the zergling's passive attack might trigger automatically if I make contact after using a fast move.\n**Evaluating zergling actions**\n\nI'm looking at the legal options for the zergling, which only include fast_move and reload\u2014attack_passive isn't listed. But I wonder if the passive attack could still activate automatically after a fast move. It seems that the passive attack might trigger in phase 1 under certain conditions rather than being a selectable action. I\u2019ll need to confirm that the conditions are indeed met for it to work automatically when moving.\n**Evaluating fast_move strategy**\n\nMy fast move resolves before the enemy's, allowing me to intercept landing cells. However, since the fast move itself counts as my action and I can\u2019t attack, I need to focus on legal options. If no attack can cover predicted landing cells, I should occupy the exact cell. The enemy scout might move to various cells; I need to consider their potential for an attack and look for the best aggressive move to maximize threats.\n**Analyzing movement options**\n\nI could consider moving to [1, -1] or [0, 1] to minimize distance and possibly avoid incoming shots. I need to evaluate the potential damage if enemies hold and shoot\u2014what does incoming damage look like? For each legal option, it seems like there\u2019s no incoming damage indicated for [0, 0]. From my fast move, it looks like incoming damage might be zero since it has a visible enemy. However, because there is a visible enemy at that end, I need to tread carefully.",
+    "usage": {
+      "input_tokens": 8914,
+      "output_tokens": 2308,
+      "reasoning_tokens": 2227,
+      "total_tokens": 11222
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.0068445
+  },
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists and passes checks",
+  "scenario_id": "eval_phase_fastmove_contact_zergling_vs_scout",
+  "runner_exit_code": 0,
+  "runner_stdout_tail": "Godot Engine v4.6.stable.official.89cea1439 - https://godotengine.org\n\n[planning-eval] wrote /Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/runs/self_evolve_20260429T145529Z_iter01/cases/phase_fastmove_contact_zergling_vs_scout_t0.json\n[planning-eval] pass=true reason=required option exists and passes checks chosen_option_index=0 chosen_option_indices=[]\n",
+  "estimated_cost_usd": 0.0068445
+}

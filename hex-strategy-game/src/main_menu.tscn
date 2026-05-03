@@ -14,7 +14,7 @@ layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-color = Color(0.0941176, 0.121569, 0.160784, 1)
+color = Color(0.04, 0.045, 0.065, 1)
 
 [node name="VBox" type="VBoxContainer" parent="."]
 layout_mode = 1
@@ -31,18 +31,22 @@ theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="VBox"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 24
+theme_type_variation = &"UiTitle"
 text = "Hex Strategy"
 horizontal_alignment = 1
 
 [node name="HostButton" type="Button" parent="VBox"]
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 text = "Host server"
 
 [node name="JoinButton" type="Button" parent="VBox"]
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 text = "Join game"
 
 [node name="SinglePlayerButton" type="Button" parent="VBox"]
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
+theme_type_variation = &"PrimaryButton"
 text = "Single player"

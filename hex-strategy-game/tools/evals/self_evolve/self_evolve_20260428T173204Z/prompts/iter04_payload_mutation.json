@@ -1,0 +1,28 @@
+{
+  "remove_paths": [
+    "failed_cases",
+    "failed_cases[].raw_response_excerpt",
+    "combat_log",
+    "ui_state",
+    "render_annotations"
+  ],
+  "set_values": {
+    "planner_context.rules_version": "landing_cell_attack_v2",
+    "planner_context.require_attack_on_predicted_landing": true,
+    "planner_context.action_order": "ai_units"
+  },
+  "copy_paths": [
+    {
+      "from": "intent",
+      "to": "planner_context.intent"
+    },
+    {
+      "from": "goal",
+      "to": "planner_context.goal"
+    },
+    {
+      "from": "assignments",
+      "to": "planner_context.assignments"
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "case_id": "phase_4zerglings_collapse_3marines_t0",
+  "chosen_option_indices": [
+    4,
+    4,
+    4,
+    4
+  ],
+  "experiment": {
+    "eval_set_version": "eval_v001",
+    "notes": "",
+    "prompt_version": "p_current_settings",
+    "run_id": "self_evolve_20260428T181846Z_iter01"
+  },
+  "grading": {
+    "correctness": 1.0,
+    "final_score": 1.0,
+    "formula": "correctness * speed_score",
+    "speed_score": 1.0
+  },
+  "intent": "All four Zerglings should fast_move onto [-2,1] to kill stacked Marines via fast-phase passive ordering before Marine normal-phase passive resolves.",
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "by_unit_id": {
+      "69625448187": 4,
+      "69759665942": 4,
+      "69893883677": 4,
+      "70028101412": 4
+    },
+    "call_timings_ms": [
+      26850
+    ],
+    "latency_grader": {
+      "average_call_score": 1.0,
+      "calls": [
+        {
+          "elapsed_ms": 26850,
+          "elapsed_seconds": 26.85,
+          "score": 1.0
+        }
+      ],
+      "definition": "<=30s => 1.0, linear to 0 at 120s",
+      "name": "latency_under_30s_to_120s",
+      "turn_multiplier": 1,
+      "turn_scaled_score": 1.0
+    },
+    "model": "gpt-5.4-mini",
+    "ok": true,
+    "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+    "payload_profile": "baseline",
+    "planning_max_tokens": 16128,
+    "planning_prompt_version": "minimal",
+    "prompt_debug": {
+      "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_prompt.txt",
+      "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+      "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/prompt_versions/v4_payload_mutation.json",
+      "payload_profile": "baseline",
+      "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from ai_units[].legal_options[].i. Use only listed unit_id values and legal option indices.\n\nPer unit, apply the first matching rule:\n1) Exact required-cell / required-effect commit: If the scenario intent or this turn\u2019s goal names a specific finish, end, target, or hit cell, choose the lowest-index legal option whose actual resolution exactly reaches or covers that cell. For move/fast_move, match end_cell only. For attacks, match real attack coverage only: target_cell, affected_cells, ray_cells, line_cells, intercept_cells. A required attack target cell is NOT a move destination. Never replace an exact required cell with a nearby pressure cell when an exact match exists.\n2) Predicted landing interception vs fast movers: Otherwise, for each dangerous enemy that can move before your hit resolves, predict its 1-2 most likely landing cells. Prefer a legal ATTACK whose actual coverage includes a predicted landing cell. For ray/line/AOE attacks, aim at the landing cell itself, not the enemy\u2019s current hex. Only choose move/fast_move onto a predicted landing cell if no legal attack can cover any predicted landing cell and occupying that exact cell is legal.\n3) Lethal / damage: Otherwise choose a legal attack that kills; else highest immediate damage against the highest-threat enemy.\n4) Pressure/contact: Otherwise choose the most aggressive legal move/fast_move that most reduces distance to key enemies/objectives and creates next-turn contact. Do not retreat unless every forward option is strictly worse by rule 5.\n5) Tiebreakers: lower pred_damage_at_end; if absent, lower incoming_damage_if_enemies_hold_and_shoot_end; then higher expected_visible_hits_if_targeted; then higher target threat; then shorter distance to nearest enemy after action; then lower option_index.\n\nValidation: every chosen option_index must exist for that unit. If opponent_prediction or reasoning_summary mentions a cell, that cell must appear in the chosen option metadata. Keep both strings brief and concrete."
+    },
+    "raw": "{\"opponent_prediction\":\"Marines likely shift off [-2,1] or hold the stack there.\",\"reasoning_summary\":\"No attack option exists; all four zerglings take the most aggressive safe contact move to [-2,1].\",\"actions\":[{\"unit_id\":69625448187,\"option_index\":4},{\"unit_id\":69759665942,\"option_index\":4},{\"unit_id\":69893883677,\"option_index\":4},{\"unit_id\":70028101412,\"option_index\":4}]}",
+    "reasoning_effort": "medium",
+    "thinking": "**Analyzing game strategy**\n\nI'm considering the likely landing cells at [-2,1]. It seems I need to choose a fast move for attack or collision. I wonder if zerglings can damage units on the same tile, while enemy marines can attack adjacent units. If I apply a fast move to [-2,1], which is occupied by an enemy, it might cause a passive attack. Since the enemy unit is there during our move and can choose to move, it\u2019s essential to think through this strategy carefully.\n**Evaluating movement strategies**\n\nI need to consider rule 2 regarding interception versus fast movers. The enemy can move before our hit resolves, but a fast move resolves first, which could allow for interception on predicted landing cells. However, rule 2 specifies that I should choose an attack covering those cells first. Since there aren\u2019t any attacks available right now, it seems I can opt for a fast move onto the exact predicted landing cell if it's legal.\n**Analyzing movement options**\n\nI\u2019m considering the movements for options 2, 4, and 5. For option 2, it ends at [-3, 1], and 5 ends at [-2, 2]. Option 4, however, ends at [-2, 1] and aligns with the enemy's current cell. This might block their movement, but I\u2019m noting that they can't remain there regardless. I wonder if this positioning really creates an effective block or not. Let's keep exploring these moves together!\n**Considering tactical options**\n\nI'm deciding between options 2 or 5 and need to pinpoint the most likely landing cells. The three enemy marines are located at [-2,1] and might prefer attack_short if they can hit us. I need to check which of our positions are within range. From their cell, attack_short probably targets adjacent cells one hex away. My current position at [-3,2] is just one distance away, so I need to evaluate the effects of moving onto their tile.\n**Evaluating movement options**\n\nMy units are fast movers, so if I fast_move onto the enemy's current cell at phase 0, they likely won't be able to attack from there because of occupancy. I don\u2019t need detailed mechanics right now, but my options do allow for immediate engagement at [-2,1] with three expected visible hits. Option 4 shows incoming damage of 0 and seems to provide the best pressure. If all four zerglings can stack on the enemy tile, I\u2019d need to validate that option for each unit.\n**Considering movement legality**\n\nI\u2019m thinking that if we all fast_move simultaneously, it's possible that all units can end on the same occupied cell as long as the engine allows it. It does seem to retain \"end_has_visible_enemy true.\" But do the units collide with each other? I guess it depends on legal options being considered for each unit independently. It\u2019s likely they can. Since occupying the enemy tile might lead to passive damage from the marines, it\u2019s good to note that option 4 has incoming damage of 0, which keeps it safe.\n**Analyzing movement options**\n\nI'm contemplating the movement options available. If one of our units moves to [-2,1], it might restrict their movement and force them to change strategy. However, the rules specify predicted landing cells. I need to evaluate which option, either 2 or 5, is more probable based on the enemy\u2019s reactions, especially considering that marines from [-2,1] can move to adjacent cells. Our zerglings at [-3,2] could influence which cells become more viable for them.\n**Clarifying unit movement legality**\n\nI\u2019m considering if all units should be able to stack on one tile, unless that violates stacking rules. Each unit\u2019s legal options appear consistent, suggesting stacking may be fine. For instance, if moving four zerglings onto a single cell is allowed, then their options should include that. I should provide a clear opponent prediction and a succinct reasoning summary, ensuring the JSON is precise and without extra text.\n**Creating unit IDs**\n\nI\u2019m thinking about crafting numeric unit IDs and using option index 4 for each one. I'm not entirely sure if exact ordering is necessary, but I\u2019ll lean towards simplicity. My goal is to keep the strings concise. It feels like a good approach to keep things straightforward while ensuring everything remains organized. I want to make sure it\u2019s efficient and clean. Let\u2019s get started on producing those strings!",
+    "usage": {
+      "input_tokens": 14380,
+      "output_tokens": 2658,
+      "reasoning_tokens": 2547,
+      "total_tokens": 17038
+    },
+    "use_responses_api": true,
+    "use_two_call_planning": false,
+    "estimated_cost_usd": 0.008911
+  },
+  "matched_unit_count": 4,
+  "mode": "live_llm",
+  "pass": true,
+  "perspective_group": "zerg",
+  "reason": "required option exists for all 4 units named Zergling",
+  "scenario_id": "eval_phase_4zerglings_collapse_3marines",
+  "runner_exit_code": 0,
+  "estimated_cost_usd": 0.008911
+}

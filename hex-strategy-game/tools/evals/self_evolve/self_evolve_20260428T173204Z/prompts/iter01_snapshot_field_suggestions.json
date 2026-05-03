@@ -1,0 +1,40 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "coverage_cells",
+      "where": "ai_units[].legal_options[].coverage_cells",
+      "why": "Normalized union of all cells actually affected by the option, so exact-cell and predicted-landing checks do not need to inspect target/ray/line/AOE fields separately.",
+      "example_value": [
+        [
+          -1,
+          4
+        ],
+        [
+          -1,
+          5
+        ]
+      ]
+    },
+    {
+      "field_name": "predicted_landing_cells",
+      "where": "enemy_units[].predicted_landing_cells",
+      "why": "Provides engine-ranked likely landing cells for fast movers, reducing misses where current hex is targeted instead of the destination.",
+      "example_value": [
+        [
+          -1,
+          4
+        ],
+        [
+          -1,
+          3
+        ]
+      ]
+    },
+    {
+      "field_name": "option_kind",
+      "where": "ai_units[].legal_options[].option_kind",
+      "why": "Gives a normalized action class such as move, fast_move, attack_ray, attack_aoe for deterministic rule application and attack-vs-move preference.",
+      "example_value": "attack_ray"
+    }
+  ]
+}

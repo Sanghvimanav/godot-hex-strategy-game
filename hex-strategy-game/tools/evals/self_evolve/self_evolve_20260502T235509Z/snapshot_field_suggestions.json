@@ -1,0 +1,50 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "covers_cells_sorted",
+      "where": "ai_units[].legal_options[]",
+      "why": "Single union of all cells actually hit/controlled by the option; avoids reconstructing coverage from multiple fields and makes exact-cell matching deterministic.",
+      "example_value": [
+        [
+          -1,
+          -1
+        ],
+        [
+          -1,
+          0
+        ],
+        [
+          0,
+          -1
+        ]
+      ],
+      "iter": 1,
+      "run_id": "self_evolve_20260502T235509Z_iter01"
+    },
+    {
+      "field_name": "predicted_landing_cells",
+      "where": "enemy_units[]",
+      "why": "Engine-supplied top 1-2 landing cells removes guesswork for fast-mover interception and crossfire cases.",
+      "example_value": [
+        [
+          -1,
+          4
+        ],
+        [
+          0,
+          3
+        ]
+      ],
+      "iter": 1,
+      "run_id": "self_evolve_20260502T235509Z_iter01"
+    },
+    {
+      "field_name": "distance_to_nearest_enemy_after_action",
+      "where": "ai_units[].legal_options[]",
+      "why": "Deterministic pressure/contact tiebreak for allowed-set and tempo cases.",
+      "example_value": 1,
+      "iter": 1,
+      "run_id": "self_evolve_20260502T235509Z_iter01"
+    }
+  ]
+}

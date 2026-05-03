@@ -20,10 +20,10 @@ static func run_all(tests: Node) -> bool:
 static func _make_game_state() -> Dictionary:
 	return {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [1, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
+			{ "name": "zerg", "ai": false, "units": [
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/zergling.tres", "cell": [-1, 1], "health": 1, "max_health": 1, "energy": 0, "max_energy": 0 }
 			]}
 		]
@@ -32,10 +32,10 @@ static func _make_game_state() -> Dictionary:
 static func _make_scout_game_state() -> Dictionary:
 	return {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
+			{ "name": "terran", "ai": false, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/scout.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [
+			{ "name": "zerg", "ai": false, "units": [
 				{ "unit_id": 2, "def_path": "res://src/unit/definitions/marine.tres", "cell": [3, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]}
 		]
@@ -54,7 +54,7 @@ static func _test_validate_action_valid_move(tests: Node) -> bool:
 		"path": path_arr,
 		"end_point": [2, 0]
 	}
-	var result := ServerTurnExecutor.validate_action(game_state, action, "player")
+	var result := ServerTurnExecutor.validate_action(game_state, action, "terran")
 	if not result.get("valid", false):
 		tests._fail("valid move should pass validation: %s" % result.get("error", ""))
 		return false
@@ -70,7 +70,7 @@ static func _test_validate_action_invalid_path(tests: Node) -> bool:
 		"path": [[99, 99]],
 		"end_point": [2, 0]
 	}
-	var result := ServerTurnExecutor.validate_action(game_state, action, "player")
+	var result := ServerTurnExecutor.validate_action(game_state, action, "terran")
 	if result.get("valid", false):
 		tests._fail("invalid path should fail validation")
 		return false
@@ -89,7 +89,7 @@ static func _test_validate_action_unit_not_found(tests: Node) -> bool:
 		"path": [],
 		"end_point": [2, 0]
 	}
-	var result := ServerTurnExecutor.validate_action(game_state, action, "player")
+	var result := ServerTurnExecutor.validate_action(game_state, action, "terran")
 	if result.get("valid", false):
 		tests._fail("unit not found should fail validation")
 		return false
@@ -109,7 +109,7 @@ static func _test_validate_action_dead_unit(tests: Node) -> bool:
 		"path": [],
 		"end_point": [2, 0]
 	}
-	var result := ServerTurnExecutor.validate_action(game_state, action, "player")
+	var result := ServerTurnExecutor.validate_action(game_state, action, "terran")
 	if result.get("valid", false):
 		tests._fail("dead unit should fail validation")
 		return false
@@ -128,7 +128,7 @@ static func _test_validate_action_target_out_of_range(tests: Node) -> bool:
 		"path": [],
 		"end_point": [10, 10]
 	}
-	var result := ServerTurnExecutor.validate_action(game_state, action, "player")
+	var result := ServerTurnExecutor.validate_action(game_state, action, "terran")
 	if result.get("valid", false):
 		tests._fail("target out of range should fail validation")
 		return false
@@ -139,52 +139,63 @@ static func _test_validate_action_target_out_of_range(tests: Node) -> bool:
 	return true
 
 static func _test_validate_action_scout_attack_ray_range_window(tests: Node) -> bool:
-	tests._log("test_server_turn_executor: validate_action scout attack_ray range window (2-3)")
+	tests._log("test_server_turn_executor: validate_action scout attack_ray range window (1-2)")
 	var game_state := _make_scout_game_state()
 
-	var too_close := {
+	var at_dist_1 := {
 		"unit_id": 1,
 		"action_key": "attack_ray",
 		"path": [],
 		"end_point": [1, 0]
 	}
-	var too_close_result := ServerTurnExecutor.validate_action(game_state, too_close, "player")
-	if too_close_result.get("valid", false):
-		tests._fail("scout attack_ray at distance 1 should fail validation")
+	var d1_result := ServerTurnExecutor.validate_action(game_state, at_dist_1, "terran")
+	if not d1_result.get("valid", false):
+		tests._fail("scout attack_ray at distance 1 should pass validation: %s" % d1_result.get("error", ""))
 		return false
 
-	var valid := {
+	var at_dist_2 := {
+		"unit_id": 1,
+		"action_key": "attack_ray",
+		"path": [],
+		"end_point": [2, 0]
+	}
+	var d2_result := ServerTurnExecutor.validate_action(game_state, at_dist_2, "terran")
+	if not d2_result.get("valid", false):
+		tests._fail("scout attack_ray at distance 2 should pass validation: %s" % d2_result.get("error", ""))
+		return false
+
+	var too_far_3 := {
 		"unit_id": 1,
 		"action_key": "attack_ray",
 		"path": [],
 		"end_point": [3, 0]
 	}
-	var valid_result := ServerTurnExecutor.validate_action(game_state, valid, "player")
-	if not valid_result.get("valid", false):
-		tests._fail("scout attack_ray at distance 3 should pass validation: %s" % valid_result.get("error", ""))
+	var d3_result := ServerTurnExecutor.validate_action(game_state, too_far_3, "terran")
+	if d3_result.get("valid", false):
+		tests._fail("scout attack_ray at distance 3 should fail validation")
 		return false
 
-	var too_far := {
+	var too_far_4 := {
 		"unit_id": 1,
 		"action_key": "attack_ray",
 		"path": [],
 		"end_point": [4, 0]
 	}
-	var too_far_result := ServerTurnExecutor.validate_action(game_state, too_far, "player")
-	if too_far_result.get("valid", false):
+	var d4_result := ServerTurnExecutor.validate_action(game_state, too_far_4, "terran")
+	if d4_result.get("valid", false):
 		tests._fail("scout attack_ray at distance 4 should fail validation")
 		return false
-	tests._pass("validate_action scout attack_ray range window (2-3)")
+	tests._pass("validate_action scout attack_ray range window (1-2)")
 	return true
 
 static func _test_validate_action_extract_requires_resource(tests: Node) -> bool:
 	tests._log("test_server_turn_executor: validate_action extract requires resource on unit tile")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "units": [
-				{ "unit_id": 1, "def_path": "res://src/unit/definitions/knight.tres", "cell": [0, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
+			{ "name": "terran", "ai": false, "units": [
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [0, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [] }
+			{ "name": "zerg", "ai": false, "units": [] }
 		],
 		"tile_resources": {}
 	}
@@ -194,14 +205,14 @@ static func _test_validate_action_extract_requires_resource(tests: Node) -> bool
 		"path": [],
 		"end_point": [0, 0]
 	}
-	var fail_result := ServerTurnExecutor.validate_action(game_state, extract_action, "player")
+	var fail_result := ServerTurnExecutor.validate_action(game_state, extract_action, "terran")
 	if fail_result.get("valid", false):
 		tests._fail("extract should fail when tile has no resource")
 		return false
 	game_state["tile_resources"] = {
 		HexGrid.get_cell_key(0, 0): { "amount": 1, "max_amount": 1, "resource_type": "ore" }
 	}
-	var ok_result := ServerTurnExecutor.validate_action(game_state, extract_action, "player")
+	var ok_result := ServerTurnExecutor.validate_action(game_state, extract_action, "terran")
 	if not ok_result.get("valid", false):
 		tests._fail("extract should pass when tile has resource: %s" % ok_result.get("error", ""))
 		return false
@@ -212,10 +223,10 @@ static func _test_validate_action_spawn_scout_requires_people(tests: Node) -> bo
 	tests._log("test_server_turn_executor: validate_action spawn_scout requires 3 people")
 	var game_state := {
 		"groups": [
-			{ "name": "player", "ai": false, "resources": { "people": 2 }, "units": [
+			{ "name": "terran", "ai": false, "resources": { "people": 2 }, "units": [
 				{ "unit_id": 1, "def_path": "res://src/unit/definitions/terran_base.tres", "cell": [0, 0], "health": 6, "max_health": 6, "energy": 5, "max_energy": 5 }
 			]},
-			{ "name": "opponent", "ai": false, "units": [] }
+			{ "name": "zerg", "ai": false, "units": [] }
 		]
 	}
 	var spawn_action := {
@@ -224,7 +235,7 @@ static func _test_validate_action_spawn_scout_requires_people(tests: Node) -> bo
 		"path": [],
 		"end_point": [0, 0]
 	}
-	var fail_result := ServerTurnExecutor.validate_action(game_state, spawn_action, "player")
+	var fail_result := ServerTurnExecutor.validate_action(game_state, spawn_action, "terran")
 	if fail_result.get("valid", false):
 		tests._fail("spawn_scout should fail when people < 3")
 		return false
@@ -235,7 +246,7 @@ static func _test_validate_action_spawn_scout_requires_people(tests: Node) -> bo
 	player_group_after_fail["resources"] = resources_after_fail
 	groups_after_fail[0] = player_group_after_fail
 	game_state["groups"] = groups_after_fail
-	var ok_result := ServerTurnExecutor.validate_action(game_state, spawn_action, "player")
+	var ok_result := ServerTurnExecutor.validate_action(game_state, spawn_action, "terran")
 	if not ok_result.get("valid", false):
 		tests._fail("spawn_scout should pass when people >= 3: %s" % ok_result.get("error", ""))
 		return false
@@ -246,8 +257,8 @@ static func _test_execute_turn_delegates_to_core(tests: Node) -> bool:
 	tests._log("test_server_turn_executor: execute_turn delegates to core")
 	var game_state := _make_game_state()
 	var player_actions := {
-		"player": [{ "unit_id": 1, "action_key": "attack_short", "path": [], "end_point": [0, 0] }],
-		"opponent": []
+		"terran": [{ "unit_id": 1, "action_key": "attack_short", "path": [], "end_point": [0, 0] }],
+		"zerg": []
 	}
 	var core_result := TurnExecutionCore.execute_turn(game_state.duplicate(true), player_actions.duplicate(true))
 	var server_result := ServerTurnExecutor.execute_turn(game_state.duplicate(true), player_actions.duplicate(true))

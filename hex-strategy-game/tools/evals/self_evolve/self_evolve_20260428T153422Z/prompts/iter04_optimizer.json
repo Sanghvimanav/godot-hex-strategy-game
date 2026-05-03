@@ -1,0 +1,198 @@
+{
+  "raw": "{\"new_system_prompt\":\"You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\\n{\\\"opponent_prediction\\\":\\\"string\\\",\\\"reasoning_summary\\\":\\\"string\\\",\\\"actions\\\":[{\\\"unit_id\\\":NUMBER,\\\"option_index\\\":NUMBER}]}\\nChoose exactly one action per AI unit using only that unit's legal_options[].i. Never invent unit ids or option indices.\\n\\nDeterministic policy:\\n1) Read the objective literally. If this turn has a required goal/end hex, key tile capture, or required enemy/objective hex, any legal option whose real end_cell/landing hex satisfies it outranks all other options. Never choose \\\"closer\\\" if exact success exists.\\n2) Respect timing. If our attack resolves after enemy movement, ignore the enemy's current cell and predict this turn's enemy end_cell(s)/landing cell(s). Evaluate attacks only against those predicted landing cells.\\n3) Versus fast movers, explicitly predict likely fast_move endpoints and target those landing cells. Prefer options whose actual affected cells explicitly include the best predicted landing cell.\\n4) For attack_ray, line, intercept, and other targeted attacks, use metadata only (covered_cells, ray_cells, hit_cells, affected_cells, etc.). Do not assume a farther target_cell is better just because the path seems useful. If multiple options hit the same predicted landing cell, prefer: a) target_cell equal to that landing cell, b) fewer irrelevant extra cells / more focused coverage, c) lower option_index.\\n5) For AoE, an adjacent target_cell is correct only if the splash/affected cells include the predicted landing cell.\\n6) For move/fast_move, score only the option's true end_cell. If no exact objective completion exists, choose by: a) minimum remaining distance to the required goal/highest-priority enemy, b) lower pred_damage_at_end, c) higher expected_visible_hits_if_targeted, d) shorter distance to nearest enemy after action, e) lower option_index.\\n7) When multiple allies can attack after movement, coordinate them onto the same highest-priority predicted landing cell when legal.\\n\\nKeep opponent_prediction and reasoning_summary brief and concrete; mention required goal hex and predicted landing cells when relevant.\",\"payload_mutation_spec\":{\"remove_paths\":[],\"set_values\":{\"planner_context.deterministic_mode\":true,\"planner_context.attack_timing_rule\":\"If attack resolves after enemy movement, evaluate only predicted enemy landing cells/end cells.\",\"planner_context.fast_mover_rule\":\"Explicitly predict fast_move endpoints and prefer options whose actual affected cells include that landing cell; for ray/line ties prefer target_cell==predicted landing cell.\"},\"copy_paths\":[]},\"suggested_snapshot_fields_to_add\":[{\"field_name\":\"required_end_cell\",\"where\":\"root.ai_context.required_end_cell\",\"why\":\"Makes exact landing objectives machine-readable so the planner can prioritize immediate success over merely reducing distance.\",\"example_value\":[0,0]},{\"field_name\":\"satisfies_required_end_cell\",\"where\":\"root.units[].legal_options[].satisfies_required_end_cell\",\"why\":\"Provides a deterministic per-option flag for exact-goal completion this turn.\",\"example_value\":true},{\"field_name\":\"post_enemy_move_hit_cells\",\"where\":\"root.units[].legal_options[].post_enemy_move_hit_cells\",\"why\":\"Disambiguates ray/line/intercept options by explicit cells actually hit after enemy movement timing.\",\"example_value\":[[1,0],[2,0]]}],\"rationale\":\"The failures show two gaps: the prompt allowed shortest-distance movement to beat an available exact objective landing, and it allowed a ray aimed past the predicted landing cell instead of preferring the exact predicted landing cell when multiple options could seem relevant. The revised prompt makes exact end-hex satisfaction an absolute priority, forces post-move attack evaluation against predicted landing cells only, and adds a deterministic tie-break that prefers target_cell equal to the predicted landing cell when explicit hit metadata supports multiple options.\",\"expected_fix\":\"In reach drills, the agent should choose any legal move/fast_move that lands exactly on the required hex (e.g. [0,0]) instead of a merely closer hex (e.g. [2,0]). In post-move interception/ray cases, allies should coordinate on the same predicted landing cell and prefer the option aimed at that exact landing cell (e.g. [1,0]) unless metadata shows only another option explicitly hits it.\"}",
+  "parsed": {
+    "new_system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit using only that unit's legal_options[].i. Never invent unit ids or option indices.\n\nDeterministic policy:\n1) Read the objective literally. If this turn has a required goal/end hex, key tile capture, or required enemy/objective hex, any legal option whose real end_cell/landing hex satisfies it outranks all other options. Never choose \"closer\" if exact success exists.\n2) Respect timing. If our attack resolves after enemy movement, ignore the enemy's current cell and predict this turn's enemy end_cell(s)/landing cell(s). Evaluate attacks only against those predicted landing cells.\n3) Versus fast movers, explicitly predict likely fast_move endpoints and target those landing cells. Prefer options whose actual affected cells explicitly include the best predicted landing cell.\n4) For attack_ray, line, intercept, and other targeted attacks, use metadata only (covered_cells, ray_cells, hit_cells, affected_cells, etc.). Do not assume a farther target_cell is better just because the path seems useful. If multiple options hit the same predicted landing cell, prefer: a) target_cell equal to that landing cell, b) fewer irrelevant extra cells / more focused coverage, c) lower option_index.\n5) For AoE, an adjacent target_cell is correct only if the splash/affected cells include the predicted landing cell.\n6) For move/fast_move, score only the option's true end_cell. If no exact objective completion exists, choose by: a) minimum remaining distance to the required goal/highest-priority enemy, b) lower pred_damage_at_end, c) higher expected_visible_hits_if_targeted, d) shorter distance to nearest enemy after action, e) lower option_index.\n7) When multiple allies can attack after movement, coordinate them onto the same highest-priority predicted landing cell when legal.\n\nKeep opponent_prediction and reasoning_summary brief and concrete; mention required goal hex and predicted landing cells when relevant.",
+    "payload_mutation_spec": {
+      "remove_paths": [],
+      "set_values": {
+        "planner_context.deterministic_mode": true,
+        "planner_context.attack_timing_rule": "If attack resolves after enemy movement, evaluate only predicted enemy landing cells/end cells.",
+        "planner_context.fast_mover_rule": "Explicitly predict fast_move endpoints and prefer options whose actual affected cells include that landing cell; for ray/line ties prefer target_cell==predicted landing cell."
+      },
+      "copy_paths": []
+    },
+    "suggested_snapshot_fields_to_add": [
+      {
+        "field_name": "required_end_cell",
+        "where": "root.ai_context.required_end_cell",
+        "why": "Makes exact landing objectives machine-readable so the planner can prioritize immediate success over merely reducing distance.",
+        "example_value": [
+          0,
+          0
+        ]
+      },
+      {
+        "field_name": "satisfies_required_end_cell",
+        "where": "root.units[].legal_options[].satisfies_required_end_cell",
+        "why": "Provides a deterministic per-option flag for exact-goal completion this turn.",
+        "example_value": true
+      },
+      {
+        "field_name": "post_enemy_move_hit_cells",
+        "where": "root.units[].legal_options[].post_enemy_move_hit_cells",
+        "why": "Disambiguates ray/line/intercept options by explicit cells actually hit after enemy movement timing.",
+        "example_value": [
+          [
+            1,
+            0
+          ],
+          [
+            2,
+            0
+          ]
+        ]
+      }
+    ],
+    "rationale": "The failures show two gaps: the prompt allowed shortest-distance movement to beat an available exact objective landing, and it allowed a ray aimed past the predicted landing cell instead of preferring the exact predicted landing cell when multiple options could seem relevant. The revised prompt makes exact end-hex satisfaction an absolute priority, forces post-move attack evaluation against predicted landing cells only, and adds a deterministic tie-break that prefers target_cell equal to the predicted landing cell when explicit hit metadata supports multiple options.",
+    "expected_fix": "In reach drills, the agent should choose any legal move/fast_move that lands exactly on the required hex (e.g. [0,0]) instead of a merely closer hex (e.g. [2,0]). In post-move interception/ray cases, allies should coordinate on the same predicted landing cell and prefer the option aimed at that exact landing cell (e.g. [1,0]) unless metadata shows only another option explicitly hits it."
+  },
+  "failed_cases": [
+    {
+      "case_id": "drill_zergling_vs_scout_three_turn_reach_00_t3",
+      "chosen_option_index": 0,
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260428T153422Z_iter04"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 3.0
+      },
+      "intent": "By the end of turn 3 in Drill 1, the Zergling should reach the Scout tile at [0,0].",
+      "llm": {
+        "base_url": "https://api.openai.com/v1",
+        "by_unit_id": {
+          "68870473449": 0
+        },
+        "call_timings_ms": [
+          6090
+        ],
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 6090,
+              "elapsed_seconds": 6.09,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 3,
+          "turn_scaled_score": 3.0
+        },
+        "model": "gpt-5.4-mini",
+        "ok": true,
+        "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter03_payload_mutation.json",
+        "payload_profile": "baseline",
+        "planning_max_tokens": 16128,
+        "planning_prompt_version": "minimal",
+        "prompt_debug": {
+          "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter03_prompt.txt",
+          "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+          "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter03_payload_mutation.json",
+          "payload_profile": "baseline",
+          "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from that unit's legal_options[].i only. Never invent unit ids or option indices.\n\nDeterministic selection rules per unit:\n1) Exact objective first. If any legal option immediately reaches the required objective/goal hex, captures the key tile now, or lands on the required enemy/objective hex, choose the best such option. Prefer exact success over pressure, safety, or partial distance gain.\n2) Respect timing. Only call something a \"kill now\" or \"hit now\" if the option resolves before enemy movement. If an attack resolves after enemy movement, ignore the enemy's current cell and evaluate only predicted enemy end cells/landing cells for this turn.\n3) Target actual hit cells, not just target cells. For attack_ray, line, AoE, intercept, and targeted attacks, choose the legal option whose actual affected cells (covered_cells / ray path / hit cells) best include the highest-priority predicted enemy landing cell. For AoE, the correct target_cell may be adjacent to the predicted landing cell if the splash covers it.\n4) Versus fast movers, explicitly predict likely fast_move endpoints and prioritize options that hit those landing cells. If multiple allies can attack after movement, coordinate all relevant attacks onto the same best predicted landing cell.\n5) For move/fast_move, evaluate by the option's real end_cell only. Never optimize for a hex different from the legal option's true end_cell.\n6) If no exact objective completion exists, movement priority is: a) legal end_cell with minimum remaining distance to the key objective/enemy, b) lower pred_damage_at_end, c) higher expected_visible_hits_if_targeted, d) higher target threat, e) shorter distance to nearest enemy after action, f) lower option_index.\n\nUse legal option metadata only. Keep opponent_prediction and reasoning_summary brief and concrete; mention predicted landing cells when relevant."
+        },
+        "raw": "{\"opponent_prediction\":\"Scout likely holds or moves to a nearby hex; if it attacks, it will do so from [0,0] before our normal actions, but it cannot escape our fast move pressure this turn.\",\"reasoning_summary\":\"Fast move to [2,0] gives the shortest remaining distance to the Scout and best sets up same-tile contact next turn. No exact kill is available this turn.\",\"actions\":[{\"unit_id\":68870473449,\"option_index\":0}]}",
+        "reasoning_effort": "low",
+        "thinking": "**Evaluating movement options**\n\nI need to quickly occupy a landing cell, looking at my available fast moves like [2,0] and [2,1]. The distance to the enemy varies, but the best bet for minimum distance is [2,0]. However, I have to consider if the enemy might dodge. Since the scout can move adjacent, the best straight approach seems to be to move to [2,0]. I should stick to the rules and pick the option that gives me the minimum remaining distance.",
+        "usage": {
+          "input_tokens": 9017,
+          "output_tokens": 454,
+          "reasoning_tokens": 347,
+          "total_tokens": 9471
+        },
+        "use_responses_api": true,
+        "use_two_call_planning": false,
+        "estimated_cost_usd": 0.00316225
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "zerg",
+      "reason": "chosen end [2, 0] != required [0,0]",
+      "scenario_id": "drill_zergling_vs_scout",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.00316225,
+      "_file": "drill_zergling_vs_scout_three_turn_reach_00_t3.json"
+    },
+    {
+      "case_id": "prediction_3scouts_vs_zergling_shoot_10_t0",
+      "experiment": {
+        "eval_set_version": "eval_v001",
+        "notes": "",
+        "prompt_version": "p_current_settings",
+        "run_id": "self_evolve_20260428T153422Z_iter04"
+      },
+      "grading": {
+        "correctness": 0.0,
+        "final_score": 0.0,
+        "formula": "correctness * speed_score",
+        "speed_score": 1.0
+      },
+      "intent": "All Scouts should target [1,0] with attack_ray to hit the predicted Zergling approach after movement timing.",
+      "llm": {
+        "base_url": "https://api.openai.com/v1",
+        "by_unit_id": {
+          "67947726541": 24,
+          "68132275944": 24,
+          "68266493679": 24
+        },
+        "call_timings_ms": [
+          11035
+        ],
+        "latency_grader": {
+          "average_call_score": 1.0,
+          "calls": [
+            {
+              "elapsed_ms": 11035,
+              "elapsed_seconds": 11.035,
+              "score": 1.0
+            }
+          ],
+          "definition": "<=30s => 1.0, linear to 0 at 120s",
+          "name": "latency_under_30s_to_120s",
+          "turn_multiplier": 1,
+          "turn_scaled_score": 1.0
+        },
+        "model": "gpt-5.4-mini",
+        "ok": true,
+        "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter03_payload_mutation.json",
+        "payload_profile": "baseline",
+        "planning_max_tokens": 16128,
+        "planning_prompt_version": "minimal",
+        "prompt_debug": {
+          "custom_system_prompt_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter03_prompt.txt",
+          "input_preview": "{\"action_definitions\":[{\"color\":\"#FF6600\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_area_adjacent\",\"name\":\"Flame Burst\",\"pattern\":\"area_adjacent\",\"type\":\"ability\"},{\"color\":\"#9C27B0\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_hydralisk\",\"max_range\":2,\"min_range\":2,\"name\":\"Needle Spine\",\"pattern\":\"target\",\"stun_duration\":1,\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":2,\"key\":\"attack_long\",\"max_range\":2,\"min_range\":2,\"name\":\"Long Attack\",\"type\":\"ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive\",\"name\":\"Passive Attack\",\"pattern\":\"self\",\"type\":\"fast ability\"},{\"color\":\"#FF4444\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_passive_normal\",\"name\":\"Passive Attack (Normal)\",\"pattern\":\"self\",\"type\":\"ability\"},{\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_ray\",\"max_range\":2,\"min_range\":1,\"name\":\"Shoot\",\"pattern\":\"target\",\"type\":\"ability\"},{\"area_of_effect\":{\"directions\":[2],\"distance\":1},\"color\":\"#FF0000\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_short\",\"max_range\":1,\"min_range\":1,\"name\":\"Attack\",\"type\":\"ability\"},{\"color\":\"#76FF03\",\"damage\":1,\"energy_consumption\":0,\"key\":\"attack_spire\",\"max_",
+          "payload_mutation_file": "/Users/manavsanghvi/Documents/Game/strategy-game/hex-strategy-game/tools/evals/self_evolve/self_evolve_20260428T153422Z/prompts/iter03_payload_mutation.json",
+          "payload_profile": "baseline",
+          "system_prompt": "You are the tactical planner for a hex turn-based game. Return exactly one JSON object only:\n{\"opponent_prediction\":\"string\",\"reasoning_summary\":\"string\",\"actions\":[{\"unit_id\":NUMBER,\"option_index\":NUMBER}]}\nChoose exactly one action per AI unit from that unit's legal_options[].i only. Never invent unit ids or option indices.\n\nDeterministic selection rules per unit:\n1) Exact objective first. If any legal option immediately reaches the required objective/goal hex, captures the key tile now, or lands on the required enemy/objective hex, choose the best such option. Prefer exact success over pressure, safety, or partial distance gain.\n2) Respect timing. Only call something a \"kill now\" or \"hit now\" if the option resolves before enemy movement. If an attack resolves after enemy movement, ignore the enemy's current cell and evaluate only predicted enemy end cells/landing cells for this turn.\n3) Target actual hit cells, not just target cells. For attack_ray, line, AoE, intercept, and targeted attacks, choose the legal option whose actual affected cells (covered_cells / ray path / hit cells) best include the highest-priority predicted enemy landing cell. For AoE, the correct target_cell may be adjacent to the predicted landing cell if the splash covers it.\n4) Versus fast movers, explicitly predict likely fast_move endpoints and prioritize options that hit those landing cells. If multiple allies can attack after movement, coordinate all relevant attacks onto the same best predicted landing cell.\n5) For move/fast_move, evaluate by the option's real end_cell only. Never optimize for a hex different from the legal option's true end_cell.\n6) If no exact objective completion exists, movement priority is: a) legal end_cell with minimum remaining distance to the key objective/enemy, b) lower pred_damage_at_end, c) higher expected_visible_hits_if_targeted, d) higher target threat, e) shorter distance to nearest enemy after action, f) lower option_index.\n\nUse legal option metadata only. Keep opponent_prediction and reasoning_summary brief and concrete; mention predicted landing cells when relevant."
+        },
+        "raw": "{\"opponent_prediction\":\"Zergling likely fast_moves to [1,0] to avoid the three-ray focus.\",\"reasoning_summary\":\"All three Scouts should fire ray shots at the corridor ending [2,0]; that line includes the predicted landing cell [1,0] on the path and is the best available hit option before the enemy can act.\",\"actions\":[{\"unit_id\":67947726541,\"option_index\":24},{\"unit_id\":68132275944,\"option_index\":24},{\"unit_id\":68266493679,\"option_index\":24}]}",
+        "reasoning_effort": "low",
+        "thinking": "**Figuring out scout actions**\n\nI\u2019m considering the action index 24 for all scouts. It sounds like I need to coordinate them to attack the same landing cell. The idea is to ensure that they're all synchronized in their efforts. This could increase efficiency and effectiveness in the task at hand. I want to make sure I\u2019m setting this up correctly to maximize our chances of success! Let's see how we can best implement this.",
+        "usage": {
+          "input_tokens": 17101,
+          "output_tokens": 892,
+          "reasoning_tokens": 771,
+          "total_tokens": 17993
+        },
+        "use_responses_api": true,
+        "use_two_call_planning": false,
+        "estimated_cost_usd": 0.00605925
+      },
+      "mode": "live_llm",
+      "pass": false,
+      "perspective_group": "terran",
+      "reason": "unit id=67947726541 chose end [2, 0], expected [1,0]",
+      "scenario_id": "eval_prediction_3scouts_vs_zergling_shoot_10",
+      "runner_exit_code": 2,
+      "estimated_cost_usd": 0.00605925,
+      "_file": "prediction_3scouts_vs_zergling_shoot_10_t0.json"
+    }
+  ]
+}

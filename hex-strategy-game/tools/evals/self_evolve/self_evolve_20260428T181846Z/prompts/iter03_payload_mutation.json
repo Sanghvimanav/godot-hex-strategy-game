@@ -1,0 +1,16 @@
+{
+  "remove_paths": [
+    "failed_cases[].raw_response_excerpt"
+  ],
+  "set_values": {
+    "planner_context.rule_priority": "hard_constraints > landing_coverage_attack > safe_retreat > pressure > tie_breaks",
+    "planner_context.attack_coverage_fields": [
+      "target_cell",
+      "affected_cells",
+      "ray_cells",
+      "line_cells",
+      "intercept_cells"
+    ]
+  },
+  "copy_paths": []
+}

@@ -8,13 +8,14 @@
 [ext_resource type="Resource" path="res://src/unit/definitions/scout.tres" id="6_bcf76"]
 [ext_resource type="Resource" uid="uid://di37b3hbh35g7" path="res://src/unit/definitions/mage.tres" id="6_hpbej"]
 [ext_resource type="Resource" uid="uid://cgkxdpau8vmsu" path="res://src/unit/definitions/peasant.tres" id="6_r3dr5"]
-[ext_resource type="Resource" uid="uid://da4gxe2vdp43a" path="res://src/unit/definitions/knight.tres" id="7_u5ntj"]
+[ext_resource type="Resource" path="res://src/unit/definitions/marine.tres" id="7_u5ntj"]
 [ext_resource type="Resource" path="res://src/unit/definitions/zergling.tres" id="10_zergling"]
 [ext_resource type="Script" path="res://src/battle/turn_ui.gd" id="8_turn_ui"]
 [ext_resource type="Script" path="res://src/battle/action_order_panel.gd" id="12_action_order"]
 [ext_resource type="PackedScene" path="res://src/battle/action_selector.tscn" id="9_action_sel"]
 [ext_resource type="PackedScene" path="res://src/battle/units_panel.tscn" id="10_units_panel"]
 [ext_resource type="PackedScene" path="res://src/battle/replay_summary_panel.tscn" id="11_replay_summary"]
+[ext_resource type="PackedScene" path="res://src/battle/llm_thinking_panel.tscn" id="12_llm_thinking"]
 [node name="battle" type="Node2D" unique_id=1832505682]
 script = ExtResource("1_g48xb")
 
@@ -33,33 +34,31 @@ unique_name_in_owner = true
 y_sort_enabled = true
 z_index = 1
 
-[node name="player" type="Node2D" parent="units" unique_id=886526951]
+[node name="terran" type="Node2D" parent="units" unique_id=886526951]
 y_sort_enabled = true
 
-[node name="unit3" parent="units/player" unique_id=326951243 instance=ExtResource("3_qxq8g")]
+[node name="unit3" parent="units/terran" unique_id=326951243 instance=ExtResource("3_qxq8g")]
 position = Vector2(120, 140)
 starting_cell = Vector2i(1, 0)
 def = ExtResource("7_u5ntj")
 
-[node name="unit4" parent="units/player" unique_id=889983063 instance=ExtResource("3_qxq8g")]
+[node name="unit4" parent="units/terran" unique_id=889983063 instance=ExtResource("3_qxq8g")]
 position = Vector2(90, 170)
 starting_cell = Vector2i(0, 1)
 def = ExtResource("6_bcf76")
 
-[node name="unit2" parent="units/player" unique_id=542164254 instance=ExtResource("3_qxq8g")]
+[node name="unit2" parent="units/terran" unique_id=542164254 instance=ExtResource("3_qxq8g")]
 position = Vector2(90, 110)
 starting_cell = Vector2i(0, 0)
 def = ExtResource("6_hpbej")
 
-[node name="opponent" type="Node2D" parent="units" unique_id=1456144295]
+[node name="zerg" type="Node2D" parent="units" unique_id=1456144295]
 y_sort_enabled = true
 
-[node name="unit3" parent="units/opponent" unique_id=750133373 instance=ExtResource("3_qxq8g")]
+[node name="unit3" parent="units/zerg" unique_id=750133373 instance=ExtResource("3_qxq8g")]
 position = Vector2(220, 170)
 starting_cell = Vector2i(-1, 1)
 def = ExtResource("10_zergling")
-
-[node name="nonplayer" type="Node2D" parent="units" unique_id=1663815428]
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1248478273]
 position = Vector2(170, 150)
@@ -90,6 +89,9 @@ visible = false
 [node name="replay_summary_panel" parent="turn_ui" instance=ExtResource("11_replay_summary")]
 visible = false
 
+[node name="llm_thinking_panel" parent="turn_ui" instance=ExtResource("12_llm_thinking")]
+visible = false
+
 [node name="turn_panel" type="PanelContainer" parent="turn_ui"]
 anchors_preset = 7
 anchor_left = 1.0
@@ -106,35 +108,50 @@ layout_mode = 2
 
 [node name="turn_label" type="Label" parent="turn_ui/turn_panel/vbox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(1, 1, 1, 1)
 text = "Turn 1"
 horizontal_alignment = 1
 
 [node name="llm_status_label" type="Label" parent="turn_ui/turn_panel/vbox"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.75, 0.8, 0.95, 1)
-theme_override_font_sizes/font_size = 11
+theme_type_variation = &"UiLlmHud"
 text = ""
 autowrap_mode = 3
 horizontal_alignment = 1
 
-[node name="execute_button" type="Button" parent="turn_ui/turn_panel/vbox"]
+[node name="llm_retry_button" type="Button" parent="turn_ui/turn_panel/vbox"]
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
+visible = false
+text = "Retry LLM"
+
+[node name="llm_thinking_button" type="Button" parent="turn_ui/turn_panel/vbox"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "LLM Thinking"
+
+[node name="execute_button" type="Button" parent="turn_ui/turn_panel/vbox"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+theme_type_variation = &"PrimaryButton"
 text = "Execute Turn"
 
 [node name="replay_button" type="Button" parent="turn_ui/turn_panel/vbox"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "Replay Turn"
 
 [node name="replay_turn_picker" type="OptionButton" parent="turn_ui/turn_panel/vbox"]
+custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
 disabled = true
 
 [node name="scenarios_button" type="Button" parent="turn_ui/turn_panel/vbox"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "Scenarios"
 
 [node name="end_game_button" type="Button" parent="turn_ui/turn_panel/vbox"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 text = "End game"
 
@@ -161,14 +178,17 @@ theme_override_constants/separation = 6
 
 [node name="title" type="Label" parent="turn_ui/resources_panel/margin/vbox"]
 layout_mode = 2
+theme_type_variation = &"UiFormLabel"
 text = "Resources"
 
 [node name="resources_label" type="Label" parent="turn_ui/resources_panel/margin/vbox"]
 layout_mode = 2
+theme_type_variation = &"UiHint"
 text = "None"
 
 [node name="hovered_tile_label" type="Label" parent="turn_ui/resources_panel/margin/vbox"]
 layout_mode = 2
+theme_type_variation = &"UiHint"
 text = "Hover: n/a"
 
 [node name="scenario_objective_label" type="Label" parent="turn_ui"]
@@ -181,8 +201,7 @@ offset_top = 8.0
 offset_right = -20.0
 offset_bottom = 72.0
 grow_horizontal = 2
-theme_override_colors/font_color = Color(0.92, 0.93, 0.98, 1)
-theme_override_font_sizes/font_size = 12
+theme_type_variation = &"UiBanner"
 text = ""
 autowrap_mode = 3
 horizontal_alignment = 1

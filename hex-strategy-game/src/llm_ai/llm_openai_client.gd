@@ -1,7 +1,7 @@
 class_name LlmOpenAiClient
 extends RefCounted
 ## OpenAI-compatible POST {base}/chat/completions. Uses one HTTPRequest node in the tree; supports cancel (spec Phase 1).
-## Spec §2.3 uses 15s connect + 60s read; Godot 4 HTTPRequest exposes a single timeout (seconds) for the whole request, so we set that to 60 (planning) / 45 (post-game).
+## Spec §2.3 uses 15s connect + 60s read; Godot 4 HTTPRequest exposes a single timeout (seconds) for the whole request, so we set that to 240 (planning) / 45 (post-game). Responses API uses 240s.
 
 enum Profile {
 	PLANNING,
@@ -14,13 +14,13 @@ static func timeout_seconds(profile: Profile) -> float:
 		Profile.POST_GAME:
 			return 45.0
 		_:
-			return 60.0
+			return 240.0
 
 
 static func default_max_tokens(profile: Profile) -> int:
 	match profile:
 		Profile.POST_GAME:
-			return 1024
+			return 2048
 		_:
 			return 2048
 
@@ -127,11 +127,21 @@ func chat_completions(
 		return { "ok": false, "error": "bad_choice_shape" }
 	var msg: Dictionary = (first as Dictionary).get("message", {}) as Dictionary
 	var content: String = str(msg.get("content", ""))
-	return { "ok": true, "content": content }
+	var result := { "ok": true, "content": content }
+	var usage := _extract_chat_usage(root)
+	if not usage.is_empty():
+		result["usage"] = usage
+	var thinking: String = str(msg.get("reasoning_content", "")).strip_edges()
+	if thinking.is_empty():
+		thinking = str(msg.get("thinking", "")).strip_edges()
+	if not thinking.is_empty():
+		result["thinking"] = thinking
+	return result
 
 
 ## OpenAI Responses API: thinking / GPT-5 family. POST {base}/responses with reasoning.effort and max_output_tokens.
 ## instructions ~= system prompt; user_content ~= user JSON snapshot.
+## When previous_response_id is non-empty, chains server-side context (reuse prior reasoning); pass response id from prior ok result.
 func responses_create(
 	http: HTTPRequest,
 	base_url: String,
@@ -141,6 +151,7 @@ func responses_create(
 	user_content: String,
 	reasoning_effort: String,
 	max_output_tokens: int,
+	previous_response_id: String = "",
 ) -> Dictionary:
 	if http == null:
 		return { "ok": false, "error": "http_missing" }
@@ -152,7 +163,7 @@ func responses_create(
 		return { "ok": false, "error": "missing_model" }
 
 	var gen_at_start: int = _cancel_generation
-	http.timeout = 120.0
+	http.timeout = 240.0
 
 	var url := "%s/responses" % base_url.rstrip("/")
 	var cap: int = max_output_tokens
@@ -169,10 +180,14 @@ func responses_create(
 		"model": trimmed_model,
 		"instructions": instructions,
 		"input": [{"role": "user", "content": user_content}],
-		"reasoning": {"effort": effort},
+		"reasoning": {"effort": effort, "summary": "auto"},
+		"store": true,
 	}
 	if cap > 0:
 		body_dict["max_output_tokens"] = cap
+	var prev := previous_response_id.strip_edges()
+	if not prev.is_empty():
+		body_dict["previous_response_id"] = prev
 
 	var json_body := JSON.stringify(body_dict)
 	if json_body.is_empty():
@@ -217,7 +232,36 @@ func responses_create(
 	if text_out.is_empty():
 		return { "ok": false, "error": "no_output_text" }
 
-	return { "ok": true, "content": text_out }
+	var rid: String = str(root.get("id", "")).strip_edges()
+	var result := { "ok": true, "content": text_out, "response_id": rid }
+	var usage := _extract_responses_usage(root)
+	if not usage.is_empty():
+		result["usage"] = usage
+	var thinking := _extract_responses_reasoning(root)
+	if not thinking.is_empty():
+		result["thinking"] = thinking
+	return result
+
+
+static func _extract_responses_reasoning(root: Dictionary) -> String:
+	var parts: PackedStringArray = PackedStringArray()
+	var out: Array = root.get("output", []) as Array
+	for item in out:
+		if typeof(item) != TYPE_DICTIONARY:
+			continue
+		var d: Dictionary = item
+		if str(d.get("type", "")) != "reasoning":
+			continue
+		var summary: Array = d.get("summary", []) as Array
+		for entry in summary:
+			if typeof(entry) != TYPE_DICTIONARY:
+				continue
+			var e: Dictionary = entry
+			if str(e.get("type", "")) == "summary_text":
+				var txt: String = str(e.get("text", "")).strip_edges()
+				if not txt.is_empty():
+					parts.append(txt)
+	return "\n".join(parts)
 
 
 static func _extract_responses_output_text(root: Dictionary) -> String:
@@ -238,6 +282,32 @@ static func _extract_responses_output_text(root: Dictionary) -> String:
 	return ""
 
 
+static func _extract_chat_usage(root: Dictionary) -> Dictionary:
+	var u: Dictionary = root.get("usage", {}) as Dictionary
+	if u.is_empty():
+		return {}
+	return {
+		"prompt_tokens": int(u.get("prompt_tokens", 0)),
+		"completion_tokens": int(u.get("completion_tokens", 0)),
+		"total_tokens": int(u.get("total_tokens", 0)),
+	}
+
+
+static func _extract_responses_usage(root: Dictionary) -> Dictionary:
+	var u: Dictionary = root.get("usage", {}) as Dictionary
+	if u.is_empty():
+		return {}
+	var out: Dictionary = {
+		"input_tokens": int(u.get("input_tokens", 0)),
+		"output_tokens": int(u.get("output_tokens", 0)),
+		"total_tokens": int(u.get("total_tokens", 0)),
+	}
+	var out_details: Dictionary = u.get("output_tokens_details", {}) as Dictionary
+	if not out_details.is_empty():
+		out["reasoning_tokens"] = int(out_details.get("reasoning_tokens", 0))
+	return out
+
+
 static func _result_code_to_reason(res: int) -> String:
 	match res:
 		HTTPRequest.RESULT_CANT_CONNECT:
@@ -256,6 +326,8 @@ static func _result_code_to_reason(res: int) -> String:
 			return "chunked_body_error"
 		HTTPRequest.RESULT_BODY_DECOMPRESS_FAILED:
 			return "decompress_failed"
+		HTTPRequest.RESULT_TIMEOUT:
+			return "timeout"
 		_:
 			return "request_error_%d" % res
 

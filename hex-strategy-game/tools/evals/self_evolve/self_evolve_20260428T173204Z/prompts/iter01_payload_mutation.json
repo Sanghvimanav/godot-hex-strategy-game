@@ -1,0 +1,10 @@
+{
+  "remove_paths": [],
+  "set_values": {
+    "planner_context.version": "landing_cell_priority_v2",
+    "planner_context.required_exact_match_overrides_safety": true,
+    "planner_context.prefer_attack_covering_predicted_landing": true,
+    "planner_context.attack_predicted_landing_even_if_currently_occupied_if_legal": true
+  },
+  "copy_paths": []
+}

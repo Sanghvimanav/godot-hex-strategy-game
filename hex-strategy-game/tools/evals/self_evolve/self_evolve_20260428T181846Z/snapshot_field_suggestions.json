@@ -1,0 +1,201 @@
+{
+  "suggested_snapshot_fields_to_add": [
+    {
+      "field_name": "predicted_fast_move_end_cells",
+      "where": "opponent_units[]",
+      "why": "Lets the planner intercept fast movers deterministically instead of guessing landing hexes.",
+      "example_value": [
+        [
+          -1,
+          -2
+        ],
+        [
+          -1,
+          -1
+        ]
+      ],
+      "iter": 1,
+      "run_id": "self_evolve_20260428T181846Z_iter01"
+    },
+    {
+      "field_name": "covers_predicted_enemy_end_cells",
+      "where": "ai_units[].legal_options[]",
+      "why": "Precomputes whether each option hits or occupies any predicted landing cell, simplifying interception and AOE targeting.",
+      "example_value": [
+        {
+          "enemy_unit_id": 12345,
+          "cells": [
+            [
+              -1,
+              -2
+            ]
+          ]
+        }
+      ],
+      "iter": 1,
+      "run_id": "self_evolve_20260428T181846Z_iter01"
+    },
+    {
+      "field_name": "end_cell_enemy_attackers_after_move_count",
+      "where": "ai_units[].legal_options[]",
+      "why": "Makes retreat/survival choices deterministic when intent says avoid range or stay safe.",
+      "example_value": 0,
+      "iter": 1,
+      "run_id": "self_evolve_20260428T181846Z_iter01"
+    },
+    {
+      "field_name": "reachable_end_cells_1t",
+      "where": "snapshot.enemy_units[]",
+      "why": "Exposes exact one-turn move/fast_move landing cells so the planner can target predicted landings deterministically.",
+      "example_value": [
+        [
+          -1,
+          4
+        ],
+        [
+          -1,
+          3
+        ],
+        [
+          -2,
+          4
+        ]
+      ],
+      "iter": 2,
+      "run_id": "self_evolve_20260428T181846Z_iter02"
+    },
+    {
+      "field_name": "constraint_match",
+      "where": "snapshot.ai_units[].legal_options[]",
+      "why": "Precomputed booleans for exact target-cell match, hit/intercept coverage match, exact end-cell match, allowed-end membership, and forbidden-end violation reduce aim-vs-hit mistakes and whitelist misses.",
+      "example_value": {
+        "matches_required_target_cell": true,
+        "covers_required_hit_cell": false,
+        "matches_required_end_cell": false,
+        "in_allowed_end_cells": true,
+        "violates_forbidden_end_cells": false
+      },
+      "iter": 2,
+      "run_id": "self_evolve_20260428T181846Z_iter02"
+    },
+    {
+      "field_name": "reaches_attack_range_next_turn",
+      "where": "snapshot.ai_units[].legal_options[]",
+      "why": "Helps melee/pressure units prefer advancing options when retreat is not explicitly requested.",
+      "example_value": true,
+      "iter": 2,
+      "run_id": "self_evolve_20260428T181846Z_iter02"
+    },
+    {
+      "field_name": "predicted_end_cells_1t",
+      "where": "enemy_units[]",
+      "why": "Directly exposes likely move/fast_move landing hexes so the planner can target them deterministically.",
+      "example_value": [
+        [
+          -1,
+          -2
+        ],
+        [
+          -1,
+          -1
+        ]
+      ],
+      "iter": 3,
+      "run_id": "self_evolve_20260428T181846Z_iter03"
+    },
+    {
+      "field_name": "covers_cells",
+      "where": "ai_units[].legal_options[]",
+      "why": "Normalized union of all cells an option can hit/intercept; prevents missing AOE or ray coverage when target_cell differs from hit cell.",
+      "example_value": [
+        [
+          -1,
+          -2
+        ],
+        [
+          -1,
+          -1
+        ],
+        [
+          0,
+          -1
+        ]
+      ],
+      "iter": 3,
+      "run_id": "self_evolve_20260428T181846Z_iter03"
+    },
+    {
+      "field_name": "covered_predicted_enemy_end_cells_1t",
+      "where": "ai_units[].legal_options[]",
+      "why": "Precomputes which enemy predicted landing cells this option covers, making secure hold-vs-move kill choices easier.",
+      "example_value": [
+        {
+          "enemy_id": 68182607565,
+          "cells": [
+            [
+              -1,
+              4
+            ],
+            [
+              -1,
+              3
+            ]
+          ]
+        }
+      ],
+      "iter": 3,
+      "run_id": "self_evolve_20260428T181846Z_iter03"
+    },
+    {
+      "field_name": "predicted_1t_end_cells",
+      "where": "snapshot.enemy_units[].predicted_1t_end_cells",
+      "why": "Lets the planner directly reason about plausible landing cells for fast movers instead of inferring them from prose.",
+      "example_value": [
+        [
+          -1,
+          -2
+        ],
+        [
+          0,
+          -2
+        ]
+      ],
+      "iter": 4,
+      "run_id": "self_evolve_20260428T181846Z_iter04"
+    },
+    {
+      "field_name": "coverage_cells",
+      "where": "snapshot.ai_units[].legal_options[].coverage_cells",
+      "why": "Provides one normalized union of all cells actually affected by an option, simplifying required_hit/intercept and AOE/ray decisions.",
+      "example_value": [
+        [
+          -1,
+          -2
+        ],
+        [
+          -1,
+          -1
+        ],
+        [
+          0,
+          -1
+        ]
+      ],
+      "iter": 4,
+      "run_id": "self_evolve_20260428T181846Z_iter04"
+    },
+    {
+      "field_name": "satisfies_constraints",
+      "where": "snapshot.ai_units[].legal_options[].satisfies_constraints",
+      "why": "Engine-side precheck prevents illegal picks by exposing whether each option satisfies current required/allowed/forbidden targeting and end-cell rules.",
+      "example_value": {
+        "required_target_cell": false,
+        "required_end_cell": true,
+        "allowed_end_cells": true,
+        "forbidden_end_cells": true
+      },
+      "iter": 4,
+      "run_id": "self_evolve_20260428T181846Z_iter04"
+    }
+  ]
+}
