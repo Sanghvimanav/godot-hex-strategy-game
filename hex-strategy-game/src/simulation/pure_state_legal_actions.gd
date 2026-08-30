@@ -4,23 +4,27 @@ class_name PureStateLegalActions
 ##
 ## Generates plain Dictionary actions directly from dictionary game state, then
 ## validates each candidate through ServerTurnExecutor so multiplayer validation
-## remains the single source of truth for legality.
+## remains the primary source of truth for action legality.
 
 const ServerTurnExecutor = preload("res://src/server/server_turn_executor.gd")
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
 
-## Returns every currently legal planned action for unit_id as plain dictionaries:
+## Returns every currently executable planned action for unit_id as plain dictionaries:
 ## { unit_id, action_key, path, end_point }.
 ## Passive actions are intentionally excluded because TurnExecutionCore schedules
 ## them automatically; they are not player/AI planning choices.
+##
+## If game_state includes hex_radius, candidate paths/targets are also constrained
+## to that board radius. States without geometry remain compatible with existing
+## server/test dictionaries and rely on ServerTurnExecutor validation alone.
 static func get_legal_actions(game_state: Dictionary, unit_id: int) -> Array:
 	var found: Dictionary = TurnExecutionCore.find_unit_by_id(game_state, unit_id)
 	if found.is_empty():
 		return []
 	var unit: Dictionary = found.unit
 	var group: Dictionary = found.group
-	if int(unit.get("health", 0)) <= 0:
+	if int(unit.get("health", 0)) <= 0 or _unit_has_active_stun(unit):
 		return []
 
 	var def_path: String = str(unit.get("def_path", ""))
@@ -43,10 +47,45 @@ static func get_legal_actions(game_state: Dictionary, unit_id: int) -> Array:
 	for raw_key in action_keys:
 		var action_key := str(raw_key)
 		for candidate in _candidate_actions_for_key(unit, action_key):
+			if not _candidate_within_board(game_state, candidate):
+				continue
 			var validation: Dictionary = ServerTurnExecutor.validate_action(game_state, candidate, str(group.get("name", "")))
 			if bool(validation.get("valid", false)):
 				result.append(candidate)
 	return result
+
+
+static func _unit_has_active_stun(unit: Dictionary) -> bool:
+	# Mirrors TurnExecutionCore's active-stun semantics: a newly applied stun has
+	# pending_first_tick=true and does not suppress the turn on which it lands.
+	for raw_effect in unit.get("effects", []):
+		if not (raw_effect is Dictionary):
+			continue
+		var effect: Dictionary = raw_effect
+		if str(effect.get("kind", "")) != "Stun":
+			continue
+		if int(effect.get("duration", 0)) <= 0:
+			continue
+		if bool(effect.get("pending_first_tick", false)):
+			continue
+		return true
+	return false
+
+
+static func _candidate_within_board(game_state: Dictionary, candidate: Dictionary) -> bool:
+	if not game_state.has("hex_radius"):
+		return true
+	var radius := int(game_state.get("hex_radius", -1))
+	if radius < 0:
+		return true
+	var cells: Array = candidate.get("path", []).duplicate()
+	cells.append(candidate.get("end_point", [0, 0]))
+	for raw_cell in cells:
+		if not (raw_cell is Array) or raw_cell.size() < 2:
+			return false
+		if HexGrid.hex_distance(0, 0, int(raw_cell[0]), int(raw_cell[1])) > radius:
+			return false
+	return true
 
 
 static func _candidate_actions_for_key(unit: Dictionary, action_key: String) -> Array:

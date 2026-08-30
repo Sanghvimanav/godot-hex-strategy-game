@@ -8,9 +8,10 @@ const ServerTurnExecutor = preload("res://src/server/server_turn_executor.gd")
 
 static func run_all(tests: Node) -> bool:
 	var ok := true
-	ok = _test_missing_and_dead_units_have_no_actions(tests) and ok
+	ok = _test_missing_dead_and_stunned_units_have_no_actions(tests) and ok
 	ok = _test_enumeration_does_not_mutate_state(tests) and ok
 	ok = _test_marine_has_six_moves_six_attacks_and_rest(tests) and ok
+	ok = _test_hex_radius_filters_off_board_targets(tests) and ok
 	ok = _test_medic_has_self_and_six_adjacent_heal_targets(tests) and ok
 	ok = _test_every_returned_action_passes_server_validation(tests) and ok
 	ok = _test_returned_action_can_be_simulated(tests) and ok
@@ -59,8 +60,8 @@ static func _make_medic_state() -> Dictionary:
 	}
 
 
-static func _test_missing_and_dead_units_have_no_actions(tests: Node) -> bool:
-	tests._log("test_pure_state_legal_actions: missing/dead units")
+static func _test_missing_dead_and_stunned_units_have_no_actions(tests: Node) -> bool:
+	tests._log("test_pure_state_legal_actions: missing/dead/stunned units")
 	var state := _make_marine_state()
 	if not PureStateLegalActions.get_legal_actions(state, 999).is_empty():
 		tests._fail("missing unit should have no legal actions")
@@ -69,7 +70,17 @@ static func _test_missing_and_dead_units_have_no_actions(tests: Node) -> bool:
 	if not PureStateLegalActions.get_legal_actions(dead_state, 1).is_empty():
 		tests._fail("dead unit should have no legal actions")
 		return false
-	tests._pass("missing/dead units have no legal actions")
+	var stunned_state := _make_marine_state()
+	stunned_state.groups[0].units[0]["effects"] = [{
+		"kind": "Stun",
+		"duration": 1,
+		"params": {},
+		"pending_first_tick": false,
+	}]
+	if not PureStateLegalActions.get_legal_actions(stunned_state, 1).is_empty():
+		tests._fail("actively stunned unit should have no executable planned actions")
+		return false
+	tests._pass("missing/dead/stunned units have no legal actions")
 	return true
 
 
@@ -106,6 +117,30 @@ static func _test_marine_has_six_moves_six_attacks_and_rest(tests: Node) -> bool
 		tests._fail("marine should have one rest action, got %d" % rest_count)
 		return false
 	tests._pass("marine has six moves, six attacks, and rest")
+	return true
+
+
+static func _test_hex_radius_filters_off_board_targets(tests: Node) -> bool:
+	tests._log("test_pure_state_legal_actions: hex radius filters off-board targets")
+	var state := _make_marine_state()
+	state["hex_radius"] = 1
+	state.groups[0].units[0]["cell"] = [1, 0]
+	var actions := PureStateLegalActions.get_legal_actions(state, 1)
+	var move_count := 0
+	var attack_count := 0
+	for action in actions:
+		var endpoint: Array = action.get("end_point", [0, 0])
+		if HexGrid.hex_distance(0, 0, int(endpoint[0]), int(endpoint[1])) > 1:
+			tests._fail("enumerator returned off-board target %s" % endpoint)
+			return false
+		if str(action.get("action_key", "")) == "move_short":
+			move_count += 1
+		elif str(action.get("action_key", "")) == "attack_short":
+			attack_count += 1
+	if move_count != 3 or attack_count != 3:
+		tests._fail("radius-1 edge marine should have 3 moves and 3 attacks, got %d/%d" % [move_count, attack_count])
+		return false
+	tests._pass("hex radius filters off-board targets")
 	return true
 
 
