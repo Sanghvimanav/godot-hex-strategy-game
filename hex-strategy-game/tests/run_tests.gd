@@ -22,6 +22,7 @@ func _ready() -> void:
 	var TestPureStateOpponentResponseSearch = load("res://tests/test_pure_state_opponent_response_search.gd") as GDScript
 	var TestOpponentConditionedCounters = load("res://tests/test_opponent_conditioned_counters.gd") as GDScript
 	var TestOpponentResponseRetreat = load("res://tests/test_opponent_response_retreat.gd") as GDScript
+	var TestPureStateGameRollout = load("res://tests/test_pure_state_game_rollout.gd") as GDScript
 	var TestServerTurnExecutor = load("res://tests/test_server_turn_executor.gd") as GDScript
 	var TestUnifiedPipeline = load("res://tests/test_unified_pipeline.gd") as GDScript
 	var TestStunEffects = load("res://tests/test_stun_effects.gd") as GDScript
@@ -89,6 +90,10 @@ func _ready() -> void:
 	else:
 		_pass_count += 1
 	if not TestOpponentResponseRetreat.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestPureStateGameRollout.run_all(self):
 		_fail_count += 1
 	else:
 		_pass_count += 1
