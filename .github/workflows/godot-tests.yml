@@ -1,0 +1,54 @@
+name: Godot Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: godot-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Headless test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Verify Godot version
+        run: godot --version
+
+      - name: Import project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Run headless test suite
+        working-directory: hex-strategy-game
+        shell: bash
+        run: |
+          set -o pipefail
+          godot --headless --path . res://tests/test_runner.tscn 2>&1 | tee test-output.log
+
+      - name: Upload test output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-test-output
+          path: hex-strategy-game/test-output.log
+          if-no-files-found: ignore

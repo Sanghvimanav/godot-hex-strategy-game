@@ -189,11 +189,11 @@ static func _test_validate_action_scout_attack_ray_range_window(tests: Node) -> 
 	return true
 
 static func _test_validate_action_extract_requires_resource(tests: Node) -> bool:
-	tests._log("test_server_turn_executor: validate_action extract requires resource on unit tile")
+	tests._log("test_server_turn_executor: validate_action mine_crystal requires crystal on unit tile")
 	var game_state := {
 		"groups": [
 			{ "name": "terran", "ai": false, "units": [
-				{ "unit_id": 1, "def_path": "res://src/unit/definitions/marine.tres", "cell": [0, 0], "health": 3, "max_health": 3, "energy": 0, "max_energy": 0 }
+				{ "unit_id": 1, "def_path": "res://src/unit/definitions/excavator.tres", "cell": [0, 0], "health": 2, "max_health": 2, "energy": 3, "max_energy": 3 }
 			]},
 			{ "name": "zerg", "ai": false, "units": [] }
 		],
@@ -201,22 +201,22 @@ static func _test_validate_action_extract_requires_resource(tests: Node) -> bool
 	}
 	var extract_action := {
 		"unit_id": 1,
-		"action_key": "extract_tile",
+		"action_key": "mine_crystal",
 		"path": [],
 		"end_point": [0, 0]
 	}
 	var fail_result := ServerTurnExecutor.validate_action(game_state, extract_action, "terran")
 	if fail_result.get("valid", false):
-		tests._fail("extract should fail when tile has no resource")
+		tests._fail("mine_crystal should fail when tile has no resource")
 		return false
 	game_state["tile_resources"] = {
-		HexGrid.get_cell_key(0, 0): { "amount": 1, "max_amount": 1, "resource_type": "ore" }
+		HexGrid.get_cell_key(0, 0): { "amount": 1, "max_amount": 1, "resource_type": "crystal" }
 	}
 	var ok_result := ServerTurnExecutor.validate_action(game_state, extract_action, "terran")
 	if not ok_result.get("valid", false):
-		tests._fail("extract should pass when tile has resource: %s" % ok_result.get("error", ""))
+		tests._fail("mine_crystal should pass when tile has crystal: %s" % ok_result.get("error", ""))
 		return false
-	tests._pass("validate_action extract requires resource")
+	tests._pass("validate_action mine_crystal requires crystal resource")
 	return true
 
 static func _test_validate_action_spawn_scout_requires_people(tests: Node) -> bool:
