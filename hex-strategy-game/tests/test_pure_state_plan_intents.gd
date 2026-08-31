@@ -3,6 +3,7 @@ extends RefCounted
 
 const PureStatePlans = preload("res://src/simulation/pure_state_plans.gd")
 const PureStatePlanIntents = preload("res://src/simulation/pure_state_plan_intents.gd")
+const PureStateOpponentResponseSearch = preload("res://src/simulation/pure_state_opponent_response_search.gd")
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
 
@@ -10,6 +11,7 @@ static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_zergling_actions_cover_four_intents(tests) and ok
 	ok = _test_own_and_opponent_selection_policies(tests) and ok
+	ok = _test_response_search_uses_four_way_diversity(tests) and ok
 	return ok
 
 
@@ -74,6 +76,38 @@ static func _test_own_and_opponent_selection_policies(tests: Node) -> bool:
 	tests._log("  own 4-plan intents: %s" % own_counts)
 	tests._log("  opponent 7-plan intents: %s" % opponent_counts)
 	tests._pass("own plans stay quality-heavy with a diversity floor while opponent plans enforce stronger coverage")
+	return true
+
+
+static func _test_response_search_uses_four_way_diversity(tests: Node) -> bool:
+	tests._log("test_pure_state_plan_intents: response search wires diversity to both sides")
+	var result := PureStateOpponentResponseSearch.search(
+		_zergling_vs_marine_state(),
+		"zerg",
+		"terran",
+		7,
+		4,
+		13,
+		4
+	)
+	if not bool(result.get("valid", false)):
+		tests._fail("expected valid response search for diversity integration fixture")
+		return false
+	var own_counts: Dictionary = result.get("own_candidate_intent_counts", {})
+	var opponent_counts: Dictionary = result.get("opponent_candidate_intent_counts", {})
+	for bucket in PureStatePlanIntents.BUCKET_ORDER:
+		if int(own_counts.get(bucket, 0)) != 1:
+			tests._fail("4-plan own response-search set should contain one %s candidate: %s" % [bucket, own_counts])
+			return false
+		if int(opponent_counts.get(bucket, 0)) != 1:
+			tests._fail("4-plan opponent response-search set should contain one %s candidate: %s" % [bucket, opponent_counts])
+			return false
+	if int(result.get("simulations_run", 0)) > 16:
+		tests._fail("four-by-four diverse integration search should remain bounded to 16 simulations")
+		return false
+	tests._log("  response-search own intents: %s" % own_counts)
+	tests._log("  response-search opponent intents: %s" % opponent_counts)
+	tests._pass("opponent-response search applies the shared four-bucket vocabulary to both candidate sets")
 	return true
 
 
