@@ -4,10 +4,13 @@ extends RefCounted
 const PureStateOpponentResponseSearch = preload("res://src/simulation/pure_state_opponent_response_search.gd")
 const PureStateOneTurnSearch = preload("res://src/simulation/pure_state_one_turn_search.gd")
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
+const TestOpponentResponseMarineSpread = preload("res://tests/test_opponent_response_marine_spread.gd")
 
 
 static func run_all(tests: Node) -> bool:
-	return _test_retreat_drill_prefers_robust_distance(tests)
+	var ok := _test_retreat_drill_prefers_robust_distance(tests)
+	ok = TestOpponentResponseMarineSpread.run_all(tests) and ok
+	return ok
 
 
 static func _test_retreat_drill_prefers_robust_distance(tests: Node) -> bool:
