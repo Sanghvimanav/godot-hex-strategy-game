@@ -71,7 +71,7 @@ static func _test_collapse_scenario_selects_winning_joint_plan(tests: Node) -> b
 
 
 static func _test_retreat_scenario_evaluation_overrides_proposal_bias(tests: Node) -> bool:
-	tests._log("test_pure_state_one_turn_search: retreat overrides proposal bias")
+	tests._log("test_pure_state_one_turn_search: evasive move overrides proposal bias")
 	var state := _pure_state_from_scenario("eval_phase_zergling_retreat_vs_3marines")
 	var marine_actions: Array = []
 	for unit_id in [1, 2, 3]:
@@ -88,45 +88,59 @@ static func _test_retreat_scenario_evaluation_overrides_proposal_bias(tests: Nod
 	_print_top_results(tests, result, 8)
 	var best_actions: Array = result.get("best_actions", [])
 	if best_actions.size() != 1 or not (best_actions[0] is Dictionary):
-		tests._fail("retreat best plan should contain one Zergling action")
+		tests._fail("retreat scenario best plan should contain one Zergling action")
 		return false
 	var best_action: Dictionary = best_actions[0]
-	var target := _cell_from_variant(best_action.get("end_point", []))
-	var retreat_targets := [Vector2i(-4, 3), Vector2i(-4, 2), Vector2i(-3, 3)]
-	if str(best_action.get("action_key", "")) != "fast_move" or target not in retreat_targets:
-		tests._fail("search should choose a stated retreat target, got %s" % best_action)
+	var best_target := _cell_from_variant(best_action.get("end_point", []))
+	if str(best_action.get("action_key", "")) != "fast_move" or best_target == Vector2i(-3, 2):
+		tests._fail("search should choose an evasive move away from the targeted old tile, got %s" % best_action)
 		return false
 
 	var ranked: Array = result.get("ranked_results", [])
 	var stay_result: Dictionary = {}
+	var stated_retreat_result: Dictionary = {}
+	var stated_retreat_targets := [Vector2i(-4, 3), Vector2i(-4, 2), Vector2i(-3, 3)]
 	for ranked_variant in ranked:
 		if not (ranked_variant is Dictionary):
 			continue
 		var item: Dictionary = ranked_variant
 		var actions: Array = item.get("actions", [])
-		if actions.size() == 1 and actions[0] is Dictionary and str((actions[0] as Dictionary).get("action_key", "")) == "reload":
+		if actions.size() != 1 or not (actions[0] is Dictionary):
+			continue
+		var action: Dictionary = actions[0]
+		var action_key := str(action.get("action_key", ""))
+		var target := _cell_from_variant(action.get("end_point", []))
+		if stay_result.is_empty() and action_key == "reload":
 			stay_result = item
-			break
+		if stated_retreat_result.is_empty() and action_key == "fast_move" and target in stated_retreat_targets:
+			stated_retreat_result = item
 	if stay_result.is_empty():
 		tests._fail("ranked search results should retain reload/stay for comparison")
 		return false
+	if stated_retreat_result.is_empty():
+		tests._fail("ranked search results should retain at least one scenario-stated farther retreat")
+		return false
 	if float(stay_result.get("proposal_score", 0.0)) <= float(result.get("best_proposal_score", 0.0)):
-		tests._fail("test expects cheap proposal heuristic to prefer stay over retreat")
+		tests._fail("test expects cheap proposal heuristic to prefer stay over the selected evasive move")
 		return false
 	if float(stay_result.get("evaluation_score", 0.0)) >= float(result.get("best_evaluation_score", 0.0)):
 		tests._fail("post-simulation evaluation should override proposal bias toward staying")
 		return false
+	if not is_equal_approx(float(stated_retreat_result.get("evaluation_score", 0.0)), float(result.get("best_evaluation_score", 0.0))):
+		tests._fail("farther stated retreat should tie the selected evasive move at a one-turn horizon")
+		return false
 	var best_breakdown: Dictionary = result.get("best_evaluation_breakdown", {})
 	if int(best_breakdown.get("friendly_units", 0)) != 1:
-		tests._fail("selected retreat should leave the Zergling alive: %s" % best_breakdown)
+		tests._fail("selected evasive move should leave the Zergling alive: %s" % best_breakdown)
 		return false
-	tests._log("  proposal preferred stay %.2f > retreat %.2f; evaluation chose retreat %.2f > stay %.2f" % [
+	tests._log("  proposal preferred stay %.2f > selected %.2f; evaluation chose survival %.2f > stay %.2f" % [
 		float(stay_result.get("proposal_score", 0.0)),
 		float(result.get("best_proposal_score", 0.0)),
 		float(result.get("best_evaluation_score", 0.0)),
 		float(stay_result.get("evaluation_score", 0.0)),
 	])
-	tests._pass("one-turn search uses simulated value to choose retreat over heuristic-preferred stay")
+	tests._log("  farther scenario retreat ties at eval=%.2f; one-turn search uses proposal score only as tie-breaker" % float(stated_retreat_result.get("evaluation_score", 0.0)))
+	tests._pass("one-turn search chooses survival over heuristic-preferred stay without overclaiming next-turn safety")
 	return true
 
 
