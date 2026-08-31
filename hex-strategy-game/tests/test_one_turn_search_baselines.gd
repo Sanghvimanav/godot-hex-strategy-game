@@ -56,7 +56,7 @@ static func _test_baneling_obvious_multi_kill(tests: Node) -> bool:
 ## Evaluator characterization: a nearly-dead 1-HP Baneling can trade itself for
 ## four points of damage across two 3-HP Marines while another Zerg unit remains.
 ## The current generic evaluator usually prefers preserving the extra unit count;
-## this case records that gap without pretending explode is a current hard rule.
+## this case records that gap without asserting that explode must already be chosen.
 static func _baseline_baneling_favorable_nonlethal_sacrifice(tests: Node) -> bool:
 	const CASE_ID := "baneling_favorable_nonlethal_sacrifice"
 	tests._log("test_one_turn_search_baselines: Baneling favorable nonlethal sacrifice")
