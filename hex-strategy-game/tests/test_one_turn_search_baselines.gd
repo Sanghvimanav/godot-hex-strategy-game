@@ -1,10 +1,9 @@
 extends RefCounted
-## Diagnostic baselines for one-turn search on existing tactical eval scenarios.
+## Diagnostic baselines for one-turn search on tactical eval scenarios.
 ##
-## These tests intentionally record whether the current search selects the scenario's
-## stated tactical action without forcing heuristics to match it. They fail only if
-## the search cannot run deterministically on the scenario. This gives later search,
-## evaluator, and opponent-model changes a concrete before/after baseline in CI logs.
+## Hard assertions are used when the tactic is unambiguously correct under the
+## current rules. Characterization cases record known evaluator/search gaps so a
+## later intelligence improvement produces a visible before/after signal.
 
 const PureStateOneTurnSearch = preload("res://src/simulation/pure_state_one_turn_search.gd")
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
@@ -12,29 +11,77 @@ const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
 static func run_all(tests: Node) -> bool:
 	var ok := true
-	ok = _baseline_baneling_sacrifice(tests) and ok
+	ok = _test_baneling_obvious_multi_kill(tests) and ok
+	ok = _baseline_baneling_favorable_nonlethal_sacrifice(tests) and ok
 	ok = _baseline_marine_aoe(tests, "eval_marine_aoe_branch_zerg_to_neg11", Vector2i(-1, -1)) and ok
 	ok = _baseline_marine_aoe(tests, "eval_marine_aoe_branch_zerg_to_neg1neg2", Vector2i(-1, -2)) and ok
 	ok = _baseline_scout_target_priority(tests) and ok
 	return ok
 
 
-static func _baseline_baneling_sacrifice(tests: Node) -> bool:
-	const SCENARIO_ID := "eval_baneling_explode_vs_2marines_hp3"
-	tests._log("test_one_turn_search_baselines: Baneling sacrifice")
-	var state := _pure_state_from_scenario(SCENARIO_ID)
-	if state.is_empty():
-		tests._fail("missing scenario %s" % SCENARIO_ID)
-		return false
+## True sacrifice regression: the Baneling is not the final Zerg unit and both
+## stacked Marines are at 2 HP, so explode kills both enemies and produces an
+## immediate terminal win. Search must choose it.
+static func _test_baneling_obvious_multi_kill(tests: Node) -> bool:
+	const CASE_ID := "baneling_obvious_multi_kill"
+	tests._log("test_one_turn_search_baselines: Baneling obvious multi-kill sacrifice")
+	var state := _baneling_fixture(2, 4)
 	var result := PureStateOneTurnSearch.search(state, "zerg")
-	if not _validate_search_result(tests, SCENARIO_ID, result):
+	if not _validate_search_result(tests, CASE_ID, result):
 		return false
 	_print_top_results(tests, result, 5)
 	var expected := _expected_status(result, "explode", Vector2i(0, 0))
-	tests._log("  expected explode -> [0,0]: selected=%s candidate_present=%s" % [
-		str(expected["selected"]), str(expected["candidate_present"]),
+	if not bool(expected.get("candidate_present", false)):
+		tests._fail("obvious Baneling explode should survive candidate generation")
+		return false
+	if not bool(expected.get("selected", false)):
+		tests._fail("Baneling should explode when it kills both 2-HP Marines while another Zerg unit survives")
+		return false
+	var best_eval := float(result.get("best_evaluation_score", 0.0))
+	var breakdown: Dictionary = result.get("best_evaluation_breakdown", {})
+	if float(breakdown.get("terminal", 0.0)) <= 0.0:
+		tests._fail("obvious Baneling multi-kill should resolve to a terminal Zerg win, got eval=%.2f breakdown=%s" % [
+			best_eval,
+			str(breakdown),
+		])
+		return false
+	tests._log("  selected explode -> [0,0], eval=%.2f terminal=%.2f" % [
+		best_eval,
+		float(breakdown.get("terminal", 0.0)),
 	])
-	tests._pass("Baneling sacrifice baseline recorded")
+	tests._pass("Baneling chooses a real multi-kill sacrifice that immediately wins")
+	return true
+
+
+## Evaluator characterization: a nearly-dead 1-HP Baneling can trade itself for
+## four points of damage across two 3-HP Marines while another Zerg unit remains.
+## The current generic evaluator usually prefers preserving the extra unit count;
+## this case records that gap without pretending explode is a current hard rule.
+static func _baseline_baneling_favorable_nonlethal_sacrifice(tests: Node) -> bool:
+	const CASE_ID := "baneling_favorable_nonlethal_sacrifice"
+	tests._log("test_one_turn_search_baselines: Baneling favorable nonlethal sacrifice")
+	var state := _baneling_fixture(3, 1)
+	var result := PureStateOneTurnSearch.search(state, "zerg")
+	if not _validate_search_result(tests, CASE_ID, result):
+		return false
+	_print_top_results(tests, result, 5)
+	var expected := _expected_status(result, "explode", Vector2i(0, 0))
+	if not bool(expected.get("candidate_present", false)):
+		tests._fail("favorable Baneling explode must remain present so this measures evaluator choice, not proposal recall")
+		return false
+	var explode_result := _find_result_with_action(result, "explode", Vector2i(0, 0))
+	var explode_eval := float(explode_result.get("evaluation_score", 0.0))
+	var best_eval := float(result.get("best_evaluation_score", 0.0))
+	tests._log("  explode selected=%s; best eval=%.2f; explode eval=%.2f" % [
+		str(expected.get("selected", false)),
+		best_eval,
+		explode_eval,
+	])
+	if bool(expected.get("selected", false)):
+		tests._log("  evaluator/search now values the nearly-dead Baneling sacrifice; characterization gap has improved")
+	else:
+		tests._log("  current evaluator still prefers preserving unit count over trading a 1-HP Baneling for 4 Marine damage")
+	tests._pass("Baneling nonlethal sacrifice evaluator baseline recorded with explode candidate present")
 	return true
 
 
@@ -127,6 +174,17 @@ static func _expected_status(result: Dictionary, action_key: String, target: Vec
 	return {"selected": selected, "candidate_present": candidate_present}
 
 
+static func _find_result_with_action(result: Dictionary, action_key: String, target: Vector2i) -> Dictionary:
+	for item_variant in result.get("ranked_results", []):
+		if not (item_variant is Dictionary):
+			continue
+		var item: Dictionary = item_variant
+		for action_variant in item.get("actions", []):
+			if action_variant is Dictionary and _action_matches(action_variant, action_key, target):
+				return item
+	return {}
+
+
 static func _action_matches(action: Dictionary, action_key: String, target: Vector2i) -> bool:
 	return str(action.get("action_key", "")) == action_key \
 		and _cell_from_variant(action.get("end_point", [])) == target
@@ -157,6 +215,28 @@ static func _plan_summary(actions: Array) -> String:
 			str(action.get("end_point", [])),
 		])
 	return "; ".join(parts)
+
+
+## Baneling-specific tactical fixture used by both sacrifice tests. Marines and
+## Baneling are stacked on [0,0]; a second Zergling is safely outside the blast
+## so Baneling self-sacrifice does not automatically eliminate the Zerg side.
+static func _baneling_fixture(marine_health: int, baneling_health: int) -> Dictionary:
+	var marine_a := _make_unit(1, "res://src/unit/definitions/marine.tres", Vector2i(0, 0))
+	var marine_b := _make_unit(2, "res://src/unit/definitions/marine.tres", Vector2i(0, 0))
+	marine_a["health"] = marine_health
+	marine_b["health"] = marine_health
+	var baneling := _make_unit(3, "res://src/unit/definitions/baneling.tres", Vector2i(0, 0))
+	baneling["health"] = baneling_health
+	var survivor := _make_unit(4, "res://src/unit/definitions/zergling.tres", Vector2i(4, 0))
+	return {
+		"scenario_id": "test_baneling_sacrifice_fixture",
+		"hex_radius": 5,
+		"groups": [
+			{"name": "terran", "resources": {}, "units": [marine_a, marine_b]},
+			{"name": "zerg", "ai": true, "resources": {}, "units": [baneling, survivor]},
+		],
+		"tile_resources": {},
+	}
 
 
 static func _find_unit_id_by_def(state: Dictionary, group_name: String, filename: String) -> int:
