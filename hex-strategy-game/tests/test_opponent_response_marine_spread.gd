@@ -105,7 +105,7 @@ static func _test_marines_spread_two_tile_fire_across_likely_zergling_moves(test
 		tests._fail("spread-fire plan should be a terminal Terran win under either retained move: %s" % worst_breakdown)
 		return false
 
-	tests._log("  predicted Zergling destinations: %s" % response_targets)
+	tests._log("  predicted Zergling destinations: %s" % str(response_targets))
 	tests._log("  selected Marine plan: %s" % _plan_summary(best_actions))
 	tests._log("  distinct primary targets=%d; static shot footprint=%s" % [primary_targets.size(), covered_cells.keys()])
 	_print_runtime(tests, result)
