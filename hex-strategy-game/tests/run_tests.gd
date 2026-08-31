@@ -15,6 +15,7 @@ func _ready() -> void:
 	var TestPureStateSimulator = load("res://tests/test_pure_state_simulator.gd") as GDScript
 	var TestPureStateLegalActions = load("res://tests/test_pure_state_legal_actions.gd") as GDScript
 	var TestPureStatePlans = load("res://tests/test_pure_state_plans.gd") as GDScript
+	var TestPureStateEvaluator = load("res://tests/test_pure_state_evaluator.gd") as GDScript
 	var TestServerTurnExecutor = load("res://tests/test_server_turn_executor.gd") as GDScript
 	var TestUnifiedPipeline = load("res://tests/test_unified_pipeline.gd") as GDScript
 	var TestStunEffects = load("res://tests/test_stun_effects.gd") as GDScript
@@ -54,6 +55,10 @@ func _ready() -> void:
 	else:
 		_pass_count += 1
 	if not TestPureStatePlans.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestPureStateEvaluator.run_all(self):
 		_fail_count += 1
 	else:
 		_pass_count += 1
