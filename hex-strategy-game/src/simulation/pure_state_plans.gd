@@ -8,6 +8,7 @@ class_name PureStatePlans
 ## proposal_score is only useful for deciding which plans deserve simulation.
 
 const PureStateLegalActions = preload("res://src/simulation/pure_state_legal_actions.gd")
+const PureStatePlanIntents = preload("res://src/simulation/pure_state_plan_intents.gd")
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
 const REST_ACTION_KEYS := ["reload", "recharge", "rest_no_energy"]
@@ -23,11 +24,17 @@ const REST_ACTION_KEYS := ["reload", "recharge", "rest_no_energy"]
 ## Defaults intentionally stay small: top 3 legal actions per plannable unit,
 ## then at most 50 complete plans. Units with no executable planned actions
 ## (for example stunned/immobile units) do not block planning for the group.
+##
+## When preserve_intent_diversity is true, per-unit action pruning and each beam
+## truncation preserve representatives of commit/hold/reposition/disengage. This
+## is intended for adversarial search pools where recall matters more than a
+## perfectly score-sorted proposal beam.
 static func get_candidate_plans(
 	game_state: Dictionary,
 	group_name: String,
 	max_actions_per_unit: int = 3,
-	max_plans: int = 50
+	max_plans: int = 50,
+	preserve_intent_diversity: bool = false
 ) -> Array:
 	if group_name.is_empty() or max_actions_per_unit <= 0 or max_plans <= 0:
 		return []
@@ -60,8 +67,17 @@ static func get_candidate_plans(
 			})
 		ranked.sort_custom(_ranked_action_before)
 		var kept: Array = []
-		for i in range(mini(max_actions_per_unit, ranked.size())):
-			kept.append(ranked[i])
+		if preserve_intent_diversity:
+			kept = PureStatePlanIntents.select_ranked_actions(
+				game_state,
+				group_name,
+				unit,
+				ranked,
+				max_actions_per_unit
+			)
+		else:
+			for i in range(mini(max_actions_per_unit, ranked.size())):
+				kept.append(ranked[i])
 		if not kept.is_empty():
 			choices_by_unit.append(kept)
 
@@ -84,8 +100,11 @@ static func get_candidate_plans(
 				})
 		expanded.sort_custom(_plan_before)
 		beam.clear()
-		for i in range(mini(max_plans, expanded.size())):
-			beam.append(expanded[i])
+		if preserve_intent_diversity:
+			beam = PureStatePlanIntents.select_pool_candidates(game_state, group_name, expanded, max_plans)
+		else:
+			for i in range(mini(max_plans, expanded.size())):
+				beam.append(expanded[i])
 
 	return beam
 

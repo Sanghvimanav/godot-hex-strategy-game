@@ -3,6 +3,13 @@ class_name PureStateOpponentResponseSearch
 ## Robust one-turn simultaneous search over bounded own-plan and opponent-plan sets.
 ##
 ## For each candidate own plan, simulate it against generated opponent plans.
+## Candidate sourcing preserves four tactical intent buckets before final selection:
+## commit / hold / reposition / disengage.
+##
+## Own candidates remain score-heavy with a diversity floor. Opponent candidates
+## use stronger diversity quotas because adversarial search must not miss a
+## qualitatively different counter merely because its proposal heuristic is low.
+##
 ## Rank own plans by:
 ##   1. highest worst-case evaluation
 ##   2. highest average evaluation
@@ -15,6 +22,7 @@ class_name PureStateOpponentResponseSearch
 ## would not change the selected plan.
 
 const PureStatePlans = preload("res://src/simulation/pure_state_plans.gd")
+const PureStatePlanIntents = preload("res://src/simulation/pure_state_plan_intents.gd")
 const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd")
 const PureStateEvaluator = preload("res://src/simulation/pure_state_evaluator.gd")
 
@@ -22,6 +30,7 @@ const DEFAULT_OWN_MAX_ACTIONS_PER_UNIT := 8
 const DEFAULT_OWN_MAX_PLANS := 12
 const DEFAULT_OPPONENT_MAX_ACTIONS_PER_UNIT := 10
 const DEFAULT_OPPONENT_MAX_PLANS := 8
+const SOURCE_POOL_MULTIPLIER := 4
 
 
 static func search(
@@ -45,24 +54,45 @@ static func search(
 	if not _has_group(game_state, group_name) or not _has_group(game_state, opponent_group_name):
 		return invalid
 
-	var own_candidates := PureStatePlans.get_candidate_plans(
+	# Generate a wider, intent-preserving source pool, then apply different final
+	# selection policies for our plans versus modeled opponent responses. Simulation
+	# bounds remain own_max_plans x opponent_max_plans.
+	var own_pool_limit := maxi(own_max_plans, own_max_plans * SOURCE_POOL_MULTIPLIER)
+	var own_pool := PureStatePlans.get_candidate_plans(
 		game_state,
 		group_name,
 		own_max_actions_per_unit,
+		own_pool_limit,
+		true
+	)
+	var own_candidates := PureStatePlanIntents.select_own_candidates(
+		game_state,
+		group_name,
+		own_pool,
 		own_max_plans
 	)
 	if own_candidates.is_empty():
 		return invalid
 
-	var opponent_candidates := PureStatePlans.get_candidate_plans(
+	var opponent_pool_limit := maxi(opponent_max_plans, opponent_max_plans * SOURCE_POOL_MULTIPLIER)
+	var opponent_pool := PureStatePlans.get_candidate_plans(
 		game_state,
 		opponent_group_name,
 		opponent_max_actions_per_unit,
+		opponent_pool_limit,
+		true
+	)
+	var opponent_candidates := PureStatePlanIntents.select_opponent_candidates(
+		game_state,
+		opponent_group_name,
+		opponent_pool,
 		opponent_max_plans
 	)
 	if opponent_candidates.is_empty():
-		opponent_candidates = [{"actions": [], "proposal_score": 0.0}]
+		opponent_candidates = [{"actions": [], "proposal_score": 0.0, "intent": PureStatePlanIntents.HOLD}]
 
+	var own_intent_counts := PureStatePlanIntents.count_intents(own_candidates)
+	var opponent_intent_counts := PureStatePlanIntents.count_intents(opponent_candidates)
 	var ranked: Array = []
 	var best_full: Dictionary = {}
 	var simulations_run := 0
@@ -99,6 +129,7 @@ static func search(
 				"evaluation_score": evaluation,
 				"opponent_actions": opponent_actions,
 				"opponent_proposal_score": float(opponent.get("proposal_score", 0.0)),
+				"opponent_intent": str(opponent.get("intent", "")),
 				"evaluation_breakdown": breakdown,
 			}
 			response_count += 1
@@ -128,6 +159,7 @@ static func search(
 
 		var result := {
 			"actions": own_actions,
+			"intent": str(own.get("intent", "")),
 			"proposal_score": float(own.get("proposal_score", 0.0)),
 			"worst_case_score": float(worst_result.get("evaluation_score", 0.0)),
 			"average_score": sum_evaluation / float(response_count),
@@ -136,6 +168,7 @@ static func search(
 			"responses_considered": response_count,
 			"responses_total": opponent_candidates.size(),
 			"worst_response_actions": (worst_result.get("opponent_actions", []) as Array).duplicate(true),
+			"worst_response_intent": str(worst_result.get("opponent_intent", "")),
 			"worst_response_proposal_score": float(worst_result.get("opponent_proposal_score", 0.0)),
 			"worst_evaluation_breakdown": (worst_result.get("evaluation_breakdown", {}) as Dictionary).duplicate(true),
 		}
@@ -157,16 +190,22 @@ static func search(
 		"valid": true,
 		"group_name": group_name,
 		"opponent_group_name": opponent_group_name,
+		"own_source_candidates": own_pool.size(),
+		"opponent_source_candidates": opponent_pool.size(),
 		"own_candidates_considered": ranked.size(),
 		"opponent_candidates_considered": opponent_candidates.size(),
+		"own_candidate_intent_counts": own_intent_counts,
+		"opponent_candidate_intent_counts": opponent_intent_counts,
 		"simulations_run": simulations_run,
 		"pruned_candidates": pruned_candidates,
 		"elapsed_ms": elapsed_ms,
 		"best_actions": (best_full.get("actions", []) as Array).duplicate(true),
+		"best_intent": str(best_full.get("intent", "")),
 		"best_proposal_score": float(best_full.get("proposal_score", 0.0)),
 		"best_worst_case_score": float(best_full.get("worst_case_score", 0.0)),
 		"best_average_score": float(best_full.get("average_score", 0.0)),
 		"best_worst_response_actions": (best_full.get("worst_response_actions", []) as Array).duplicate(true),
+		"best_worst_response_intent": str(best_full.get("worst_response_intent", "")),
 		"best_worst_response_proposal_score": float(best_full.get("worst_response_proposal_score", 0.0)),
 		"best_worst_evaluation_breakdown": (best_full.get("worst_evaluation_breakdown", {}) as Dictionary).duplicate(true),
 		"best_worst_next_state": (best_full.get("worst_next_state", {}) as Dictionary).duplicate(true),
@@ -263,16 +302,22 @@ static func _empty_result(group_name: String, opponent_group_name: String) -> Di
 		"valid": false,
 		"group_name": group_name,
 		"opponent_group_name": opponent_group_name,
+		"own_source_candidates": 0,
+		"opponent_source_candidates": 0,
 		"own_candidates_considered": 0,
 		"opponent_candidates_considered": 0,
+		"own_candidate_intent_counts": {},
+		"opponent_candidate_intent_counts": {},
 		"simulations_run": 0,
 		"pruned_candidates": 0,
 		"elapsed_ms": 0.0,
 		"best_actions": [],
+		"best_intent": "",
 		"best_proposal_score": 0.0,
 		"best_worst_case_score": 0.0,
 		"best_average_score": 0.0,
 		"best_worst_response_actions": [],
+		"best_worst_response_intent": "",
 		"best_worst_response_proposal_score": 0.0,
 		"best_worst_evaluation_breakdown": {},
 		"best_worst_next_state": {},
