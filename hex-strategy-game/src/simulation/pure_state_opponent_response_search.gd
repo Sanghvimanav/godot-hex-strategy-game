@@ -19,7 +19,7 @@ const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd
 const PureStateEvaluator = preload("res://src/simulation/pure_state_evaluator.gd")
 
 const DEFAULT_OWN_MAX_ACTIONS_PER_UNIT := 8
-const DEFAULT_OWN_MAX_PLANS := 8
+const DEFAULT_OWN_MAX_PLANS := 12
 const DEFAULT_OPPONENT_MAX_ACTIONS_PER_UNIT := 10
 const DEFAULT_OPPONENT_MAX_PLANS := 8
 
