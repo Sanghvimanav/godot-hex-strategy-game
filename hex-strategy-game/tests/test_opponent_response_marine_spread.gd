@@ -5,6 +5,7 @@ extends RefCounted
 
 const PureStateOpponentResponseSearch = preload("res://src/simulation/pure_state_opponent_response_search.gd")
 const PureStatePlans = preload("res://src/simulation/pure_state_plans.gd")
+const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd")
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
 
@@ -43,8 +44,8 @@ static func _test_marines_spread_two_tile_fire_across_likely_zergling_moves(test
 
 	# M1/M2 begin adjacent to the Zergling at [0,0]. M3 is one ring farther out.
 	# A Marine attack damages its primary target plus one direction-relative side
-	# hex, so the robust joint plan can cover both predicted destinations without
-	# requiring all Marines to guess the same tile.
+	# hex, so the robust joint plan can use distinct fire lanes plus movement to
+	# cover both predicted destinations.
 	var result := PureStateOpponentResponseSearch.search(state, "terran", "zerg", 8, 40, 8, 2)
 	if not bool(result.get("valid", false)):
 		tests._fail("Marine opponent-response search should be valid")
@@ -55,6 +56,7 @@ static func _test_marines_spread_two_tile_fire_across_likely_zergling_moves(test
 	var attack_actions: Array = []
 	var primary_targets: Dictionary = {}
 	var covered_cells: Dictionary = {}
+	var saw_two_tile_attack := false
 	for action_variant in best_actions:
 		if not (action_variant is Dictionary):
 			continue
@@ -64,7 +66,10 @@ static func _test_marines_spread_two_tile_fire_across_likely_zergling_moves(test
 		attack_actions.append(action)
 		var target := _cell_from_variant(action.get("end_point", []))
 		primary_targets[_cell_key(target)] = true
-		for damage_cell in _marine_damage_cells(state, action):
+		var damage_cells := _marine_damage_cells(state, action)
+		if damage_cells.size() >= 2:
+			saw_two_tile_attack = true
+		for damage_cell in damage_cells:
 			covered_cells[_cell_key(damage_cell)] = true
 
 	if attack_actions.size() < 2:
@@ -73,23 +78,36 @@ static func _test_marines_spread_two_tile_fire_across_likely_zergling_moves(test
 	if primary_targets.size() < 2:
 		tests._fail("expected spread fire across at least two primary targets, got %s" % _plan_summary(best_actions))
 		return false
-	for target in response_targets:
-		if not covered_cells.has(_cell_key(target)):
-			tests._fail("robust Marine fire should cover predicted Zergling destination %s; plan=%s covered=%s" % [
-				target,
+	if not saw_two_tile_attack:
+		tests._fail("Marine attack_short should expose its primary + side-hex damage footprint")
+		return false
+
+	# Verify the selected joint Marine plan against every retained Zergling response
+	# using the real simulator. This intentionally allows the third Marine's move to
+	# contribute to the simultaneous tactic instead of requiring every response tile
+	# to appear in a static pre-turn shot footprint.
+	for candidate_variant in zerg_candidates:
+		var candidate: Dictionary = candidate_variant
+		var zerg_actions: Array = candidate.get("actions", [])
+		var simulation := PureStateSimulator.simulate_turn(state, {
+			"terran": best_actions,
+			"zerg": zerg_actions,
+		})
+		if _living_unit_count(simulation.get("next_state", {}), "zerg") != 0:
+			tests._fail("selected spread-fire plan should eliminate the Zergling against response %s; plan=%s" % [
+				_plan_summary(zerg_actions),
 				_plan_summary(best_actions),
-				covered_cells.keys(),
 			])
 			return false
 
 	var worst_breakdown: Dictionary = result.get("best_worst_evaluation_breakdown", {})
 	if float(worst_breakdown.get("terminal", 0.0)) <= 0.0:
-		tests._fail("spread-fire plan should eliminate the 1-HP Zergling under either retained move: %s" % worst_breakdown)
+		tests._fail("spread-fire plan should be a terminal Terran win under either retained move: %s" % worst_breakdown)
 		return false
 
 	tests._log("  predicted Zergling destinations: %s" % response_targets)
 	tests._log("  selected Marine plan: %s" % _plan_summary(best_actions))
-	tests._log("  distinct primary targets=%d; covered cells=%s" % [primary_targets.size(), covered_cells.keys()])
+	tests._log("  distinct primary targets=%d; static shot footprint=%s" % [primary_targets.size(), covered_cells.keys()])
 	_print_runtime(tests, result)
 	tests._pass("opponent modeling makes multiple Marines spread their two-tile fire across plausible Zergling moves")
 	return true
@@ -143,6 +161,21 @@ static func _marine_damage_cells(state: Dictionary, action: Dictionary) -> Array
 		if aoe_cell not in out:
 			out.append(aoe_cell)
 	return out
+
+
+static func _living_unit_count(state: Dictionary, group_name: String) -> int:
+	for group_variant in state.get("groups", []):
+		if not (group_variant is Dictionary):
+			continue
+		var group: Dictionary = group_variant
+		if str(group.get("name", "")) != group_name:
+			continue
+		var count := 0
+		for unit_variant in group.get("units", []):
+			if unit_variant is Dictionary and int((unit_variant as Dictionary).get("health", 0)) > 0:
+				count += 1
+		return count
+	return 0
 
 
 static func _make_unit(unit_id: int, def_path: String, cell: Vector2i) -> Dictionary:
