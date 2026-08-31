@@ -2,22 +2,24 @@ extends RefCounted
 class_name PureStateOpponentResponseSearch
 ## Robust one-turn simultaneous search over bounded own-plan and opponent-plan sets.
 ##
-## For each candidate own plan, simulate it against every generated opponent plan.
+## For each candidate own plan, simulate it against generated opponent plans.
 ## Rank own plans by:
 ##   1. highest worst-case evaluation
 ##   2. highest average evaluation
 ##   3. highest own proposal score
 ##   4. deterministic plan signature
 ##
-## This is intentionally not probabilistic yet. Opponent proposal scores are used
-## only to break ties between equally bad responses for diagnostics.
+## Once a completed candidate establishes the current best worst-case score, later
+## candidates are cut off as soon as one response makes their worst-case strictly
+## worse. That branch cannot recover under minimax ranking, so further simulations
+## would not change the selected plan.
 
 const PureStatePlans = preload("res://src/simulation/pure_state_plans.gd")
 const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd")
 const PureStateEvaluator = preload("res://src/simulation/pure_state_evaluator.gd")
 
 const DEFAULT_OWN_MAX_ACTIONS_PER_UNIT := 8
-const DEFAULT_OWN_MAX_PLANS := 12
+const DEFAULT_OWN_MAX_PLANS := 8
 const DEFAULT_OPPONENT_MAX_ACTIONS_PER_UNIT := 10
 const DEFAULT_OPPONENT_MAX_PLANS := 8
 
@@ -64,6 +66,7 @@ static func search(
 	var ranked: Array = []
 	var best_full: Dictionary = {}
 	var simulations_run := 0
+	var pruned_candidates := 0
 
 	for own_variant in own_candidates:
 		if not (own_variant is Dictionary):
@@ -73,6 +76,7 @@ static func search(
 		var response_count := 0
 		var sum_evaluation := 0.0
 		var worst_result: Dictionary = {}
+		var pruned := false
 
 		for opponent_variant in opponent_candidates:
 			if not (opponent_variant is Dictionary):
@@ -95,7 +99,7 @@ static func search(
 				"evaluation_score": evaluation,
 				"opponent_actions": opponent_actions,
 				"opponent_proposal_score": float(opponent.get("proposal_score", 0.0)),
-				"evaluation_breakdown": breakdown.duplicate(true),
+				"evaluation_breakdown": breakdown,
 			}
 			response_count += 1
 			simulations_run += 1
@@ -103,8 +107,21 @@ static func search(
 
 			if worst_result.is_empty() or _response_is_worse(response, worst_result):
 				worst_result = response.duplicate(true)
-				worst_result["next_state"] = next_state.duplicate(true)
-				worst_result["recording"] = (simulation.get("recording", {}) as Dictionary).duplicate(true)
+				# These are already fresh simulator outputs. Keep references while this
+				# candidate is active; deep-copy only the final selected candidate.
+				worst_result["next_state"] = next_state
+				worst_result["recording"] = simulation.get("recording", {})
+
+			# Safe minimax cutoff: once this candidate has a response strictly worse
+			# than the best completed candidate's worst case, no unseen response can
+			# improve its worst-case value enough to win.
+			if not best_full.is_empty():
+				var current_worst := float(worst_result.get("evaluation_score", 0.0))
+				var best_worst := float(best_full.get("worst_case_score", 0.0))
+				if current_worst < best_worst and not is_equal_approx(current_worst, best_worst):
+					pruned = true
+					pruned_candidates += 1
+					break
 
 		if response_count <= 0 or worst_result.is_empty():
 			continue
@@ -114,14 +131,19 @@ static func search(
 			"proposal_score": float(own.get("proposal_score", 0.0)),
 			"worst_case_score": float(worst_result.get("evaluation_score", 0.0)),
 			"average_score": sum_evaluation / float(response_count),
+			"average_complete": not pruned,
+			"pruned": pruned,
 			"responses_considered": response_count,
+			"responses_total": opponent_candidates.size(),
 			"worst_response_actions": (worst_result.get("opponent_actions", []) as Array).duplicate(true),
 			"worst_response_proposal_score": float(worst_result.get("opponent_proposal_score", 0.0)),
 			"worst_evaluation_breakdown": (worst_result.get("evaluation_breakdown", {}) as Dictionary).duplicate(true),
 		}
 		ranked.append(result)
 
-		if best_full.is_empty() or _own_result_before(result, best_full):
+		# A pruned candidate is already proven unable to beat best_full. Only fully
+		# evaluated candidates can become the alpha bound for later candidates.
+		if not pruned and (best_full.is_empty() or _own_result_before(result, best_full)):
 			best_full = result.duplicate(true)
 			best_full["worst_next_state"] = (worst_result.get("next_state", {}) as Dictionary).duplicate(true)
 			best_full["worst_recording"] = (worst_result.get("recording", {}) as Dictionary).duplicate(true)
@@ -138,6 +160,7 @@ static func search(
 		"own_candidates_considered": ranked.size(),
 		"opponent_candidates_considered": opponent_candidates.size(),
 		"simulations_run": simulations_run,
+		"pruned_candidates": pruned_candidates,
 		"elapsed_ms": elapsed_ms,
 		"best_actions": (best_full.get("actions", []) as Array).duplicate(true),
 		"best_proposal_score": float(best_full.get("proposal_score", 0.0)),
@@ -198,6 +221,10 @@ static func _own_result_before(a: Dictionary, b: Dictionary) -> bool:
 	var b_worst := float(b.get("worst_case_score", 0.0))
 	if not is_equal_approx(a_worst, b_worst):
 		return a_worst > b_worst
+	var a_complete := bool(a.get("average_complete", true))
+	var b_complete := bool(b.get("average_complete", true))
+	if a_complete != b_complete:
+		return a_complete
 	var a_average := float(a.get("average_score", 0.0))
 	var b_average := float(b.get("average_score", 0.0))
 	if not is_equal_approx(a_average, b_average):
@@ -239,6 +266,7 @@ static func _empty_result(group_name: String, opponent_group_name: String) -> Di
 		"own_candidates_considered": 0,
 		"opponent_candidates_considered": 0,
 		"simulations_run": 0,
+		"pruned_candidates": 0,
 		"elapsed_ms": 0.0,
 		"best_actions": [],
 		"best_proposal_score": 0.0,
