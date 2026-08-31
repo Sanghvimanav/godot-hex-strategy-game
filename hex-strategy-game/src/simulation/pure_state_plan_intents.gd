@@ -288,9 +288,9 @@ static func _lowest_redundant_index(selected: Array) -> int:
 
 
 static func _contains_candidate(candidates: Array, candidate: Dictionary) -> bool:
-	var signature := _plan_signature(candidate.get("actions", []))
+	var signature := _candidate_signature(candidate)
 	for existing_variant in candidates:
-		if existing_variant is Dictionary and _plan_signature((existing_variant as Dictionary).get("actions", [])) == signature:
+		if existing_variant is Dictionary and _candidate_signature(existing_variant as Dictionary) == signature:
 			return true
 	return false
 
@@ -300,7 +300,17 @@ static func _candidate_before(a: Dictionary, b: Dictionary) -> bool:
 	var b_score := float(b.get("proposal_score", b.get("score", 0.0)))
 	if not is_equal_approx(a_score, b_score):
 		return a_score > b_score
-	return _plan_signature(a.get("actions", [a.get("action", {})])) < _plan_signature(b.get("actions", [b.get("action", {})]))
+	return _candidate_signature(a) < _candidate_signature(b)
+
+
+static func _candidate_signature(candidate: Dictionary) -> String:
+	var actions = candidate.get("actions", null)
+	if actions is Array:
+		return _plan_signature(actions)
+	var action = candidate.get("action", {})
+	if action is Dictionary:
+		return _plan_signature([action])
+	return ""
 
 
 static func _nearest_enemy_distance(game_state: Dictionary, group_name: String, from_cell: Vector2i) -> int:
