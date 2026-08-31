@@ -2,27 +2,23 @@ extends RefCounted
 class_name PureStateOpponentResponseSearch
 ## Robust one-turn simultaneous search over bounded own-plan and opponent-plan sets.
 ##
-## For each candidate own plan, simulate it against generated opponent plans.
-## Candidate sourcing preserves four tactical intent buckets before final selection:
-## commit / hold / reposition / disengage.
+## Opponent plans are generated first. Their modeled movement destinations are then
+## fed back into own proposal generation so legal attacks covering those future
+## cells survive even when the cells are empty in the current planning state.
+## Simulator/evaluator semantics are unchanged: conditioning only improves recall.
 ##
-## Own candidates remain score-heavy with a diversity floor. Opponent candidates
-## use stronger diversity quotas because adversarial search must not miss a
-## qualitatively different counter merely because its proposal heuristic is low.
+## Candidate sourcing also preserves four tactical intent buckets before final
+## selection: commit / hold / reposition / disengage.
 ##
 ## Rank own plans by:
 ##   1. highest worst-case evaluation
 ##   2. highest average evaluation
 ##   3. highest own proposal score
 ##   4. deterministic plan signature
-##
-## Once a completed candidate establishes the current best worst-case score, later
-## candidates are cut off as soon as one response makes their worst-case strictly
-## worse. That branch cannot recover under minimax ranking, so further simulations
-## would not change the selected plan.
 
 const PureStatePlans = preload("res://src/simulation/pure_state_plans.gd")
 const PureStatePlanIntents = preload("res://src/simulation/pure_state_plan_intents.gd")
+const PureStateCounterConditioning = preload("res://src/simulation/pure_state_counter_conditioning.gd")
 const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd")
 const PureStateEvaluator = preload("res://src/simulation/pure_state_evaluator.gd")
 
@@ -54,26 +50,8 @@ static func search(
 	if not _has_group(game_state, group_name) or not _has_group(game_state, opponent_group_name):
 		return invalid
 
-	# Generate a wider, intent-preserving source pool, then apply different final
-	# selection policies for our plans versus modeled opponent responses. Simulation
-	# bounds remain own_max_plans x opponent_max_plans.
-	var own_pool_limit := maxi(own_max_plans, own_max_plans * SOURCE_POOL_MULTIPLIER)
-	var own_pool := PureStatePlans.get_candidate_plans(
-		game_state,
-		group_name,
-		own_max_actions_per_unit,
-		own_pool_limit,
-		true
-	)
-	var own_candidates := PureStatePlanIntents.select_own_candidates(
-		game_state,
-		group_name,
-		own_pool,
-		own_max_plans
-	)
-	if own_candidates.is_empty():
-		return invalid
-
+	# Generate modeled opponent responses first. Their movement destinations become
+	# hypotheses our own proposal generator should be capable of countering.
 	var opponent_pool_limit := maxi(opponent_max_plans, opponent_max_plans * SOURCE_POOL_MULTIPLIER)
 	var opponent_pool := PureStatePlans.get_candidate_plans(
 		game_state,
@@ -90,6 +68,33 @@ static func search(
 	)
 	if opponent_candidates.is_empty():
 		opponent_candidates = [{"actions": [], "proposal_score": 0.0, "intent": PureStatePlanIntents.HOLD}]
+	var counter_condition_cells := PureStateCounterConditioning.get_condition_cells(opponent_candidates)
+
+	# Generate our normal intent-diverse pool, then inject legal damaging actions
+	# whose real footprint covers modeled opponent movement destinations.
+	var own_pool_limit := maxi(own_max_plans, own_max_plans * SOURCE_POOL_MULTIPLIER)
+	var own_base_pool := PureStatePlans.get_candidate_plans(
+		game_state,
+		group_name,
+		own_max_actions_per_unit,
+		own_pool_limit,
+		true
+	)
+	var own_pool := PureStateCounterConditioning.inject_counter_plans(
+		game_state,
+		group_name,
+		own_base_pool,
+		counter_condition_cells
+	)
+	var counter_injected_source_candidates := maxi(0, own_pool.size() - own_base_pool.size())
+	var own_candidates := PureStatePlanIntents.select_own_candidates(
+		game_state,
+		group_name,
+		own_pool,
+		own_max_plans
+	)
+	if own_candidates.is_empty():
+		return invalid
 
 	var own_intent_counts := PureStatePlanIntents.count_intents(own_candidates)
 	var opponent_intent_counts := PureStatePlanIntents.count_intents(opponent_candidates)
@@ -138,14 +143,11 @@ static func search(
 
 			if worst_result.is_empty() or _response_is_worse(response, worst_result):
 				worst_result = response.duplicate(true)
-				# These are already fresh simulator outputs. Keep references while this
-				# candidate is active; deep-copy only the final selected candidate.
 				worst_result["next_state"] = next_state
 				worst_result["recording"] = simulation.get("recording", {})
 
 			# Safe minimax cutoff: once this candidate has a response strictly worse
-			# than the best completed candidate's worst case, no unseen response can
-			# improve its worst-case value enough to win.
+			# than the best completed candidate's worst case, it cannot recover.
 			if not best_full.is_empty():
 				var current_worst := float(worst_result.get("evaluation_score", 0.0))
 				var best_worst := float(best_full.get("worst_case_score", 0.0))
@@ -161,6 +163,8 @@ static func search(
 			"actions": own_actions,
 			"intent": str(own.get("intent", "")),
 			"proposal_score": float(own.get("proposal_score", 0.0)),
+			"counter_conditioned": bool(own.get("counter_conditioned", false)),
+			"counter_cells": (own.get("counter_cells", []) as Array).duplicate(true),
 			"worst_case_score": float(worst_result.get("evaluation_score", 0.0)),
 			"average_score": sum_evaluation / float(response_count),
 			"average_complete": not pruned,
@@ -174,8 +178,6 @@ static func search(
 		}
 		ranked.append(result)
 
-		# A pruned candidate is already proven unable to beat best_full. Only fully
-		# evaluated candidates can become the alpha bound for later candidates.
 		if not pruned and (best_full.is_empty() or _own_result_before(result, best_full)):
 			best_full = result.duplicate(true)
 			best_full["worst_next_state"] = (worst_result.get("next_state", {}) as Dictionary).duplicate(true)
@@ -190,7 +192,10 @@ static func search(
 		"valid": true,
 		"group_name": group_name,
 		"opponent_group_name": opponent_group_name,
+		"own_base_source_candidates": own_base_pool.size(),
 		"own_source_candidates": own_pool.size(),
+		"counter_injected_source_candidates": counter_injected_source_candidates,
+		"counter_condition_cells": counter_condition_cells.duplicate(true),
 		"opponent_source_candidates": opponent_pool.size(),
 		"own_candidates_considered": ranked.size(),
 		"opponent_candidates_considered": opponent_candidates.size(),
@@ -201,6 +206,8 @@ static func search(
 		"elapsed_ms": elapsed_ms,
 		"best_actions": (best_full.get("actions", []) as Array).duplicate(true),
 		"best_intent": str(best_full.get("intent", "")),
+		"best_counter_conditioned": bool(best_full.get("counter_conditioned", false)),
+		"best_counter_cells": (best_full.get("counter_cells", []) as Array).duplicate(true),
 		"best_proposal_score": float(best_full.get("proposal_score", 0.0)),
 		"best_worst_case_score": float(best_full.get("worst_case_score", 0.0)),
 		"best_average_score": float(best_full.get("average_score", 0.0)),
@@ -302,7 +309,10 @@ static func _empty_result(group_name: String, opponent_group_name: String) -> Di
 		"valid": false,
 		"group_name": group_name,
 		"opponent_group_name": opponent_group_name,
+		"own_base_source_candidates": 0,
 		"own_source_candidates": 0,
+		"counter_injected_source_candidates": 0,
+		"counter_condition_cells": [],
 		"opponent_source_candidates": 0,
 		"own_candidates_considered": 0,
 		"opponent_candidates_considered": 0,
@@ -313,6 +323,8 @@ static func _empty_result(group_name: String, opponent_group_name: String) -> Di
 		"elapsed_ms": 0.0,
 		"best_actions": [],
 		"best_intent": "",
+		"best_counter_conditioned": false,
+		"best_counter_cells": [],
 		"best_proposal_score": 0.0,
 		"best_worst_case_score": 0.0,
 		"best_average_score": 0.0,

@@ -20,6 +20,7 @@ func _ready() -> void:
 	var TestPureStateOneTurnSearch = load("res://tests/test_pure_state_one_turn_search.gd") as GDScript
 	var TestOneTurnSearchBaselines = load("res://tests/test_one_turn_search_baselines.gd") as GDScript
 	var TestPureStateOpponentResponseSearch = load("res://tests/test_pure_state_opponent_response_search.gd") as GDScript
+	var TestOpponentConditionedCounters = load("res://tests/test_opponent_conditioned_counters.gd") as GDScript
 	var TestOpponentResponseRetreat = load("res://tests/test_opponent_response_retreat.gd") as GDScript
 	var TestServerTurnExecutor = load("res://tests/test_server_turn_executor.gd") as GDScript
 	var TestUnifiedPipeline = load("res://tests/test_unified_pipeline.gd") as GDScript
@@ -80,6 +81,10 @@ func _ready() -> void:
 	else:
 		_pass_count += 1
 	if not TestPureStateOpponentResponseSearch.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestOpponentConditionedCounters.run_all(self):
 		_fail_count += 1
 	else:
 		_pass_count += 1
