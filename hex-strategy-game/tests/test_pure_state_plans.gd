@@ -79,23 +79,26 @@ static func _test_existing_zergling_collapse_scenario(tests: Node) -> bool:
 		tests._fail("scenario should produce bounded candidate plans, got %d" % plans.size())
 		return false
 
-	var collapse_plan: Dictionary = {}
+	var shown := mini(5, plans.size())
+	tests._log("top %d candidate plans:" % shown)
+	for i in range(shown):
+		var ranked_plan: Dictionary = plans[i]
+		tests._log("  #%d score=%.2f %s" % [
+			i + 1,
+			float(ranked_plan.get("proposal_score", 0.0)),
+			_format_actions(ranked_plan.get("actions", [])),
+		])
+
 	var collapse_cell := Vector2i(-2, 1)
+	var top_plan: Dictionary = plans[0]
+	if not _is_four_zergling_collapse(top_plan, collapse_cell):
+		tests._fail("expected coordinated four-Zergling collapse to rank #1; top=%s" % top_plan)
+		return false
+
+	var collapse_plan: Dictionary = {}
 	for plan_variant in plans:
 		var plan: Dictionary = plan_variant
-		var actions: Array = plan.get("actions", [])
-		if actions.size() != 4:
-			continue
-		var all_collapse := true
-		for action_variant in actions:
-			if not (action_variant is Dictionary):
-				all_collapse = false
-				break
-			var action: Dictionary = action_variant
-			if str(action.get("action_key", "")) != "fast_move" or _cell_from_variant(action.get("end_point", [0, 0])) != collapse_cell:
-				all_collapse = false
-				break
-		if all_collapse:
+		if _is_four_zergling_collapse(plan, collapse_cell):
 			collapse_plan = plan
 			break
 
@@ -103,16 +106,54 @@ static func _test_existing_zergling_collapse_scenario(tests: Node) -> bool:
 		tests._fail("candidate set should include the scenario's coordinated four-Zergling collapse onto [-2,1]")
 		return false
 
+	var terran_before := _group_units(state, "terran").size()
+	var zerg_before := _group_units(state, "zerg").size()
 	var result := PureStateSimulator.simulate_turn(state, {
 		"terran": [],
-		"zerg": collapse_plan.get("actions", []),
+		"zerg": top_plan.get("actions", []),
 	})
 	var remaining_terran := _group_units(result.get("next_state", {}), "terran")
+	var remaining_zerg := _group_units(result.get("next_state", {}), "zerg")
+	tests._log("top plan simulation: Terran %d -> %d units; Zerg %d -> %d units" % [
+		terran_before,
+		remaining_terran.size(),
+		zerg_before,
+		remaining_zerg.size(),
+	])
 	if not remaining_terran.is_empty():
-		tests._fail("simulating the generated collapse plan should eliminate the three stacked Marines; remaining=%s" % remaining_terran)
+		tests._fail("simulating the top-ranked generated collapse plan should eliminate the three stacked Marines; remaining=%s" % remaining_terran)
 		return false
-	tests._pass("real scenario generates a coordinated winning collapse plan and simulator resolves it")
+	tests._pass("real scenario ranks the coordinated winning collapse #1 and simulator resolves it")
 	return true
+
+
+static func _is_four_zergling_collapse(plan: Dictionary, collapse_cell: Vector2i) -> bool:
+	var actions: Array = plan.get("actions", [])
+	if actions.size() != 4:
+		return false
+	for action_variant in actions:
+		if not (action_variant is Dictionary):
+			return false
+		var action: Dictionary = action_variant
+		if str(action.get("action_key", "")) != "fast_move":
+			return false
+		if _cell_from_variant(action.get("end_point", [0, 0])) != collapse_cell:
+			return false
+	return true
+
+
+static func _format_actions(actions: Array) -> String:
+	var parts: PackedStringArray = []
+	for action_variant in actions:
+		if not (action_variant is Dictionary):
+			continue
+		var action: Dictionary = action_variant
+		parts.append("U%d %s -> %s" % [
+			int(action.get("unit_id", -1)),
+			str(action.get("action_key", "")),
+			str(action.get("end_point", [])),
+		])
+	return "; ".join(parts)
 
 
 static func _two_scout_two_target_fixture() -> Dictionary:
