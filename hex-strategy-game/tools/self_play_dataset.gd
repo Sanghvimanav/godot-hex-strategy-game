@@ -62,6 +62,7 @@ func _run_dataset() -> void:
 			"dataset_preset": preset,
 			"budget_profile": str(job.get("budget_profile", "")),
 			"rotation_steps": int(job.get("rotation_steps", 0)),
+			"variation_seed": int(job.get("variation_seed", 0)),
 			"base_scenario_id": str(job.get("scenario_id", "")),
 		}
 		var result := PureStateTrainingData.generate_game_examples(
@@ -98,6 +99,7 @@ func _run_dataset() -> void:
 			"scenario_id": str(job.get("scenario_id", "")),
 			"budget_profile": str(job.get("budget_profile", "")),
 			"rotation_steps": int(job.get("rotation_steps", 0)),
+			"variation_seed": int(job.get("variation_seed", 0)),
 			"max_turns": int(job.get("max_turns", 0)),
 			"own_max_plans": int(job.get("own_max_plans", 0)),
 			"opponent_max_plans": int(job.get("opponent_max_plans", 0)),
@@ -109,10 +111,11 @@ func _run_dataset() -> void:
 			"example_count": example_count,
 		}
 		game_summaries.append(summary)
-		print("[self-play] %s profile=%s rotation=%d status=%s winner=%s turns=%d examples=%d" % [
+		print("[self-play] %s profile=%s rotation=%d seed=%d status=%s winner=%s turns=%d examples=%d" % [
 			game_id,
 			str(job.get("budget_profile", "")),
 			int(job.get("rotation_steps", 0)),
+			int(job.get("variation_seed", 0)),
 			status,
 			winner,
 			int(result.get("turns_played", 0)),
