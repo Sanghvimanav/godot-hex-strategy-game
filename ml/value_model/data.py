@@ -236,30 +236,58 @@ def load_jsonl_examples(path: str | Path) -> list[dict[str, Any]]:
     return examples
 
 
-def split_examples_by_game(
-    examples: Sequence[dict[str, Any]], validation_fraction: float = 0.2, seed: int = 0
+def example_group_value(example: dict[str, Any], group_key: str) -> str:
+    """Return a non-empty grouping value from a dotted example key path."""
+    if not group_key:
+        raise ValueError("group_key is required")
+    value: Any = example
+    for part in group_key.split("."):
+        if not isinstance(value, dict) or part not in value:
+            raise ValueError(f"example is missing split key '{group_key}'")
+        value = value[part]
+    result = str(value)
+    if not result:
+        raise ValueError(f"example split key '{group_key}' is empty")
+    return result
+
+
+def split_examples_by_group(
+    examples: Sequence[dict[str, Any]],
+    validation_fraction: float = 0.2,
+    seed: int = 0,
+    group_key: str = "game_id",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Split by game_id so states/perspectives from one game never leak across sets."""
+    """Split whole groups so related examples never leak across train/validation."""
     if not 0.0 <= validation_fraction < 1.0:
         raise ValueError("validation_fraction must be in [0, 1)")
-    by_game: dict[str, list[dict[str, Any]]] = {}
+    by_group: dict[str, list[dict[str, Any]]] = {}
     for example in examples:
-        game_id = str(example.get("game_id", ""))
-        if not game_id:
-            raise ValueError("every example must have game_id")
-        by_game.setdefault(game_id, []).append(example)
+        group_value = example_group_value(example, group_key)
+        by_group.setdefault(group_value, []).append(example)
 
-    game_ids = sorted(by_game)
-    random.Random(seed).shuffle(game_ids)
-    if len(game_ids) <= 1 or validation_fraction == 0.0:
-        validation_ids: set[str] = set()
+    group_values = sorted(by_group)
+    random.Random(seed).shuffle(group_values)
+    if len(group_values) <= 1 or validation_fraction == 0.0:
+        validation_values: set[str] = set()
     else:
-        validation_count = max(1, round(len(game_ids) * validation_fraction))
-        validation_count = min(validation_count, len(game_ids) - 1)
-        validation_ids = set(game_ids[:validation_count])
+        validation_count = max(1, round(len(group_values) * validation_fraction))
+        validation_count = min(validation_count, len(group_values) - 1)
+        validation_values = set(group_values[:validation_count])
 
     train: list[dict[str, Any]] = []
     validation: list[dict[str, Any]] = []
-    for game_id, game_examples in by_game.items():
-        (validation if game_id in validation_ids else train).extend(game_examples)
+    for group_value, group_examples in by_group.items():
+        (validation if group_value in validation_values else train).extend(group_examples)
     return train, validation
+
+
+def split_examples_by_game(
+    examples: Sequence[dict[str, Any]], validation_fraction: float = 0.2, seed: int = 0
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Backward-compatible game-level split for ordinary training."""
+    return split_examples_by_group(
+        examples,
+        validation_fraction=validation_fraction,
+        seed=seed,
+        group_key="game_id",
+    )

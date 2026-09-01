@@ -9,7 +9,13 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from .data import HexStateEncoder, ValueExampleDataset, load_jsonl_examples, split_examples_by_game
+from .data import (
+    HexStateEncoder,
+    ValueExampleDataset,
+    example_group_value,
+    load_jsonl_examples,
+    split_examples_by_group,
+)
 from .metrics import handwritten_evaluator_score, sign_accuracy
 from .model import HexValueNet
 
@@ -39,13 +45,20 @@ def _evaluate(model: HexValueNet, dataset: ValueExampleDataset, batch_size: int,
     }
 
 
-def train(args: argparse.Namespace) -> dict[str, float | int | str]:
+def _split_groups(examples: list[dict], split_key: str) -> list[str]:
+    return sorted({example_group_value(example, split_key) for example in examples})
+
+
+def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
     _seed_everything(args.seed)
     all_examples = load_jsonl_examples(args.data)
     if not all_examples:
         raise ValueError("dataset is empty")
-    train_examples, validation_examples = split_examples_by_game(
-        all_examples, validation_fraction=args.validation_fraction, seed=args.seed
+    train_examples, validation_examples = split_examples_by_group(
+        all_examples,
+        validation_fraction=args.validation_fraction,
+        seed=args.seed,
+        group_key=args.split_key,
     )
     encoder = HexStateEncoder()
     train_dataset = ValueExampleDataset(train_examples, encoder)
@@ -94,15 +107,21 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str]:
     output.parent.mkdir(parents=True, exist_ok=True)
     torch.save(checkpoint, output)
 
-    result: dict[str, float | int | str] = {
+    train_groups = _split_groups(train_examples, args.split_key)
+    validation_groups = _split_groups(validation_examples, args.split_key)
+    result: dict[str, float | int | str | list[str]] = {
         "examples": len(all_examples),
         "train_examples": len(train_examples),
         "validation_examples": len(validation_examples),
+        "split_key": args.split_key,
+        "train_split_groups": train_groups,
+        "validation_split_groups": validation_groups,
         "train_mse": train_metrics["mse"],
         "train_sign_accuracy": train_metrics["sign_accuracy"],
         "eval_mse": eval_metrics["mse"],
         "eval_sign_accuracy": eval_metrics["sign_accuracy"],
         "handwritten_eval_sign_accuracy_nonterminal": baseline_accuracy,
+        "neural_minus_handwritten_sign_accuracy": eval_metrics["sign_accuracy"] - baseline_accuracy,
         "checkpoint": str(output),
     }
     print(json.dumps(result, indent=2, sort_keys=True))
@@ -118,6 +137,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--validation-fraction", type=float, default=0.2)
+    parser.add_argument(
+        "--split-key",
+        default="game_id",
+        help="Dotted example key used to keep related examples together (for example source.base_scenario_id)",
+    )
     parser.add_argument("--hidden-channels", type=int, default=32)
     parser.add_argument("--residual-blocks", type=int, default=2)
     parser.add_argument("--seed", type=int, default=0)
