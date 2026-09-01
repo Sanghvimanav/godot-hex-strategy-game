@@ -7,6 +7,8 @@ const PureStateTrainingData = preload("res://src/simulation/pure_state_training_
 static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_starter_preset_is_versioned_and_diverse(tests) and ok
+	ok = _test_diverse_preset_expands_tactical_families(tests) and ok
+	ok = _test_seeded_variation_is_reproducible_and_valid(tests) and ok
 	ok = _test_six_hex_rotations_round_trip(tests) and ok
 	ok = _test_smoke_game_emits_rules_provenance(tests) and ok
 	return ok
@@ -43,6 +45,93 @@ static func _test_starter_preset_is_versioned_and_diverse(tests: Node) -> bool:
 			tests._fail("starter preset should include %s search profile" % required)
 			return false
 	tests._pass("starter preset is unique, bounded, and spans fast/balanced/broad search")
+	return true
+
+
+static func _test_diverse_preset_expands_tactical_families(tests: Node) -> bool:
+	tests._log("test_pure_state_self_play_suite: diverse preset spans mechanics and families")
+	var jobs := PureStateSelfPlaySuite.get_preset("diverse")
+	if jobs.size() != 24:
+		tests._fail("diverse preset should contain 24 jobs, got %d" % jobs.size())
+		return false
+	var ids: Dictionary = {}
+	var families: Dictionary = {}
+	var varied_jobs := 0
+	var definition_paths: Dictionary = {}
+	for job_variant in jobs:
+		if not (job_variant is Dictionary):
+			return false
+		var job: Dictionary = job_variant
+		var game_id := str(job.get("game_id", ""))
+		if game_id.is_empty() or ids.has(game_id):
+			tests._fail("diverse game ids must be unique: %s" % game_id)
+			return false
+		ids[game_id] = true
+		families[str(job.get("scenario_id", ""))] = true
+		if int(job.get("variation_seed", 0)) != 0:
+			varied_jobs += 1
+		var state: Dictionary = job.get("state", {})
+		for group_variant in state.get("groups", []):
+			if not (group_variant is Dictionary):
+				continue
+			for unit_variant in (group_variant as Dictionary).get("units", []):
+				if unit_variant is Dictionary:
+					definition_paths[str((unit_variant as Dictionary).get("def_path", ""))] = true
+	if families.size() < 10:
+		tests._fail("diverse preset should span at least 10 tactical families, got %d" % families.size())
+		return false
+	if varied_jobs != 14:
+		tests._fail("diverse preset should contain 14 seeded variants, got %d" % varied_jobs)
+		return false
+	for required_path in [
+		"res://src/unit/definitions/hydralisk.tres",
+		"res://src/unit/definitions/medic.tres",
+		"res://src/unit/definitions/excavator.tres",
+		"res://src/unit/definitions/shardling.tres",
+	]:
+		if not definition_paths.has(required_path):
+			tests._fail("diverse preset is missing unit coverage for %s" % required_path)
+			return false
+	tests._pass("diverse preset expands to 24 jobs, 10+ families, and support/ranged/economy units")
+	return true
+
+
+static func _test_seeded_variation_is_reproducible_and_valid(tests: Node) -> bool:
+	tests._log("test_pure_state_self_play_suite: seeded variation is reproducible and bounded")
+	var original := PureStateSelfPlaySuite.build_state("attrition")
+	var snapshot := original.duplicate(true)
+	var first := PureStateSelfPlaySuite.vary_state(original, 12345)
+	var again := PureStateSelfPlaySuite.vary_state(original, 12345)
+	var different := PureStateSelfPlaySuite.vary_state(original, 54321)
+	if first != again:
+		tests._fail("same variation seed should produce identical states")
+		return false
+	if first == different:
+		tests._fail("different variation seeds should produce different tactical states")
+		return false
+	if original != snapshot:
+		tests._fail("variation helper must not mutate its source state")
+		return false
+	var radius := int(first.get("hex_radius", 0))
+	for group_variant in first.get("groups", []):
+		if not (group_variant is Dictionary):
+			continue
+		for unit_variant in (group_variant as Dictionary).get("units", []):
+			if not (unit_variant is Dictionary):
+				continue
+			var unit: Dictionary = unit_variant
+			if int(unit.get("health", 0)) <= 0:
+				tests._fail("variation must never create a dead starting unit")
+				return false
+			var energy := int(unit.get("energy", 0))
+			if energy < 0 or energy > int(unit.get("max_energy", 0)):
+				tests._fail("variation must keep energy within unit bounds")
+				return false
+			var cell: Array = unit.get("cell", [])
+			if cell.size() < 2 or not _cell_in_hex(Vector2i(int(cell[0]), int(cell[1])), radius):
+				tests._fail("variation moved a unit outside radius %d: %s" % [radius, str(cell)])
+				return false
+	tests._pass("seeded variation is deterministic, pure, alive, and inside the map")
 	return true
 
 
@@ -110,3 +199,8 @@ static func _test_smoke_game_emits_rules_provenance(tests: Node) -> bool:
 	])
 	tests._pass("terminal smoke self-play emits labels carrying rules/suite provenance")
 	return true
+
+
+static func _cell_in_hex(cell: Vector2i, radius: int) -> bool:
+	var s := -cell.x - cell.y
+	return max(abs(cell.x), max(abs(cell.y), abs(s))) <= radius
