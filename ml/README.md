@@ -59,9 +59,36 @@ python -m ml.value_model.train \
   --output artifacts/value_model.pt
 ```
 
-The trainer splits by `game_id`, never by individual rows, so states and opposite-perspective copies from the same game cannot leak between training and validation sets.
+The default trainer splits by `game_id`, never by individual rows, so states and opposite-perspective copies from the same game cannot leak between training and validation sets.
 
-The printed report includes model MSE/sign accuracy and the current `PureStateEvaluator` sign accuracy on nonterminal evaluation states.
+For experiments where multiple games are transformed variants of the same tactical setup, use a broader grouping key so those variants stay together. The starter self-play suite records `source.base_scenario_id`, so the first real comparison uses:
+
+```bash
+python -m ml.value_model.train \
+  --data artifacts/self_play/examples.jsonl \
+  --output artifacts/value_model.pt \
+  --validation-fraction 0.25 \
+  --split-key source.base_scenario_id
+```
+
+This holds out entire tactical scenario families rather than allowing rotated versions of the same setup to appear on both sides of the split.
+
+The printed report includes model MSE/sign accuracy, train/validation split groups, and the current `PureStateEvaluator` sign accuracy on the same held-out nonterminal evaluation states.
+
+## First real comparison
+
+`.github/workflows/value-model-experiment.yml` is an on-demand experiment runner. It also runs when experiment-related files change in a pull request, which gives the first implementation PR one real comparison without making ordinary gameplay PRs pay for self-play/training.
+
+It performs the complete pipeline:
+
+1. generate the versioned `starter` self-play dataset
+2. audit terminal/unlabeled/failed game counts
+3. train `HexValueNet` on CPU
+4. hold out whole `source.base_scenario_id` families
+5. compare neural and handwritten evaluator sign accuracy on the held-out states
+6. upload `examples.jsonl`, `manifest.json`, `metrics.json`, `summary.md`, and the PyTorch checkpoint as a 14-day workflow artifact
+
+This starter experiment is intentionally small and should be interpreted as directional evidence only. If it shows useful signal, the next step is a larger, more diverse dataset and then an actual gameplay arena where search using the neural evaluator plays against search using the handwritten evaluator.
 
 ## Test
 

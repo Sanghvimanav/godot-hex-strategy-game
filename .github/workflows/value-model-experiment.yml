@@ -1,0 +1,155 @@
+name: Value Model Experiment
+
+on:
+  workflow_dispatch:
+    inputs:
+      preset:
+        description: Self-play preset to generate
+        required: true
+        default: starter
+        type: choice
+        options:
+          - starter
+          - smoke
+      epochs:
+        description: Training epochs
+        required: true
+        default: 60
+        type: number
+  pull_request:
+    paths:
+      - ".github/workflows/value-model-experiment.yml"
+      - "ml/value_model/**"
+      - "ml/tests/**"
+      - "hex-strategy-game/tools/self_play_dataset.gd"
+      - "hex-strategy-game/tools/self_play_dataset.tscn"
+      - "hex-strategy-game/tools/run_self_play_dataset.sh"
+      - "hex-strategy-game/src/simulation/pure_state_self_play_suite.gd"
+      - "hex-strategy-game/src/simulation/pure_state_training_data.gd"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: value-model-experiment-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  experiment:
+    name: Generate, train, compare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EXPERIMENT_PRESET: ${{ github.event_name == 'workflow_dispatch' && inputs.preset || 'starter' }}
+      EXPERIMENT_EPOCHS: ${{ github.event_name == 'workflow_dispatch' && inputs.epochs || '60' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Generate real self-play dataset
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/self_play
+          cd hex-strategy-game
+          ./tools/run_self_play_dataset.sh \
+            --preset="${EXPERIMENT_PRESET}" \
+            --out="${GITHUB_WORKSPACE}/artifacts/self_play"
+
+      - name: Audit generated dataset
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("artifacts/self_play/manifest.json").read_text())
+          print(json.dumps(manifest, indent=2, sort_keys=True))
+          if manifest["games_failed"] != 0:
+              raise SystemExit("self-play generation contained failed games")
+          if manifest["games_labeled"] < 2:
+              raise SystemExit("need at least two terminal games for a held-out experiment")
+          PY
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Train with held-out scenario families
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m ml.value_model.train \
+            --data artifacts/self_play/examples.jsonl \
+            --output artifacts/value_model.pt \
+            --epochs "${EXPERIMENT_EPOCHS}" \
+            --validation-fraction 0.25 \
+            --split-key source.base_scenario_id \
+            | tee artifacts/metrics.json
+
+      - name: Write experiment summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = json.loads(Path("artifacts/self_play/manifest.json").read_text())
+          metrics = json.loads(Path("artifacts/metrics.json").read_text())
+          neural = float(metrics["eval_sign_accuracy"])
+          handwritten = float(metrics["handwritten_eval_sign_accuracy_nonterminal"])
+          delta = neural - handwritten
+          direction = "ahead" if delta > 0 else "behind" if delta < 0 else "tied"
+
+          summary = f"""## First real value-model experiment
+
+          This is a **small directional experiment**, not a production-quality benchmark.
+
+          | Metric | Result |
+          | --- | ---: |
+          | Labeled games | {manifest['games_labeled']} / {manifest['games_requested']} |
+          | Unlabeled turn-limit games | {manifest['games_unlabeled']} |
+          | Training examples | {metrics['train_examples']} |
+          | Held-out examples | {metrics['validation_examples']} |
+          | Neural held-out sign accuracy | {neural:.1%} |
+          | Handwritten evaluator sign accuracy | {handwritten:.1%} |
+          | Neural minus handwritten | {delta:+.1%} |
+
+          **Split key:** `{metrics['split_key']}`  
+          **Training scenario families:** {', '.join(metrics['train_split_groups']) or 'none'}  
+          **Held-out scenario families:** {', '.join(metrics['validation_split_groups']) or 'none'}  
+          **Game outcomes:** `{manifest['outcomes']}`
+
+          On this tiny held-out sample, the neural evaluator is **{direction}** the handwritten evaluator. The next decision should be based on the size/diversity of the held-out set, not this number alone.
+          """
+          Path("artifacts/summary.md").write_text(summary, encoding="utf-8")
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
+              handle.write(summary)
+          print(summary)
+          PY
+
+      - name: Upload experiment artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: value-model-experiment-${{ github.run_number }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14

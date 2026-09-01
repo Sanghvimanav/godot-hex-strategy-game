@@ -19,6 +19,7 @@ from ml.value_model.data import (
     ValueExampleDataset,
     load_jsonl_examples,
     split_examples_by_game,
+    split_examples_by_group,
 )
 from ml.value_model.metrics import handwritten_evaluator_score, sign_accuracy
 from ml.value_model.model import HexValueNet
@@ -36,7 +37,12 @@ def _unit(unit_id: int, kind: str, cell: list[int], health: int = 2, energy: int
     }
 
 
-def _example(perspective: str = "zerg", outcome: float = 1.0, game_id: str = "g1") -> dict:
+def _example(
+    perspective: str = "zerg",
+    outcome: float = 1.0,
+    game_id: str = "g1",
+    scenario_family: str = "synthetic",
+) -> dict:
     return {
         "schema_version": 1,
         "game_id": game_id,
@@ -46,6 +52,7 @@ def _example(perspective: str = "zerg", outcome: float = 1.0, game_id: str = "g1
         "outcome": outcome,
         "terminal": False,
         "winner": "zerg",
+        "source": {"base_scenario_id": scenario_family},
         "state": {
             "scenario_id": "synthetic",
             "hex_radius": 1,
@@ -96,6 +103,26 @@ class ValueModelTests(unittest.TestCase):
         self.assertTrue(train_ids)
         self.assertTrue(validation_ids)
         self.assertTrue(train_ids.isdisjoint(validation_ids))
+
+    def test_split_by_scenario_family_keeps_rotations_together(self) -> None:
+        examples = []
+        for family in ("collapse", "baneling", "mixed", "spread"):
+            for rotation in range(2):
+                game_id = f"{family}-r{rotation}"
+                examples.append(_example("zerg", 1.0, game_id, family))
+                examples.append(_example("terran", -1.0, game_id, family))
+        train, validation = split_examples_by_group(
+            examples,
+            validation_fraction=0.25,
+            seed=0,
+            group_key="source.base_scenario_id",
+        )
+        train_families = {item["source"]["base_scenario_id"] for item in train}
+        validation_families = {item["source"]["base_scenario_id"] for item in validation}
+        self.assertEqual(len(validation_families), 1)
+        self.assertTrue(train_families.isdisjoint(validation_families))
+        held_out = next(iter(validation_families))
+        self.assertTrue(all(item["source"]["base_scenario_id"] == held_out for item in validation))
 
     def test_jsonl_loader(self) -> None:
         import json
