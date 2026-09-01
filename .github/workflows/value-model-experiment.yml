@@ -6,9 +6,10 @@ on:
       preset:
         description: Self-play preset to generate
         required: true
-        default: starter
+        default: diverse
         type: choice
         options:
+          - diverse
           - starter
           - smoke
       epochs:
@@ -40,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      EXPERIMENT_PRESET: ${{ github.event_name == 'workflow_dispatch' && inputs.preset || 'starter' }}
+      EXPERIMENT_PRESET: ${{ github.event_name == 'workflow_dispatch' && inputs.preset || 'diverse' }}
       EXPERIMENT_EPOCHS: ${{ github.event_name == 'workflow_dispatch' && inputs.epochs || '60' }}
 
     steps:
@@ -74,6 +75,7 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/self_play/manifest.json").read_text())
@@ -82,6 +84,16 @@ jobs:
               raise SystemExit("self-play generation contained failed games")
           if manifest["games_labeled"] < 2:
               raise SystemExit("need at least two terminal games for a held-out experiment")
+          labeled_families = {
+              game["scenario_id"]
+              for game in manifest["games"]
+              if game.get("labeled")
+          }
+          if os.environ["EXPERIMENT_PRESET"] == "diverse" and len(labeled_families) < 4:
+              raise SystemExit(
+                  f"diverse preset needs at least four labeled tactical families; got {sorted(labeled_families)}"
+              )
+          print("labeled_families=", sorted(labeled_families))
           PY
 
       - name: Set up Python
@@ -117,14 +129,21 @@ jobs:
           handwritten = float(metrics["handwritten_eval_sign_accuracy_nonterminal"])
           delta = neural - handwritten
           direction = "ahead" if delta > 0 else "behind" if delta < 0 else "tied"
+          labeled_families = sorted({
+              game["scenario_id"]
+              for game in manifest["games"]
+              if game.get("labeled")
+          })
 
-          summary = f"""## First real value-model experiment
+          summary = f"""## Value-model generalization experiment
 
-          This is a **small directional experiment**, not a production-quality benchmark.
+          This is a **directional experiment**, not a production-quality benchmark.
 
           | Metric | Result |
           | --- | ---: |
+          | Preset | {manifest['preset']} |
           | Labeled games | {manifest['games_labeled']} / {manifest['games_requested']} |
+          | Labeled tactical families | {len(labeled_families)} |
           | Unlabeled turn-limit games | {manifest['games_unlabeled']} |
           | Training examples | {metrics['train_examples']} |
           | Held-out examples | {metrics['validation_examples']} |
@@ -135,9 +154,10 @@ jobs:
           **Split key:** `{metrics['split_key']}`  
           **Training scenario families:** {', '.join(metrics['train_split_groups']) or 'none'}  
           **Held-out scenario families:** {', '.join(metrics['validation_split_groups']) or 'none'}  
+          **All labeled families:** {', '.join(labeled_families) or 'none'}  
           **Game outcomes:** `{manifest['outcomes']}`
 
-          On this tiny held-out sample, the neural evaluator is **{direction}** the handwritten evaluator. The next decision should be based on the size/diversity of the held-out set, not this number alone.
+          On this held-out sample, the neural evaluator is **{direction}** the handwritten evaluator. Strength claims should still be based on broader data and eventually direct gameplay arenas.
           """
           Path("artifacts/summary.md").write_text(summary, encoding="utf-8")
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
