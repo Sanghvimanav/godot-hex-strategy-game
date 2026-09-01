@@ -17,14 +17,45 @@ The raw JSONL remains the canonical dataset. Tensor encoding is deliberately out
 
 `HexValueNet` is intentionally small: a convolutional stem, two residual blocks by default, masked global pooling over valid hexes, and an MLP value head with `tanh` output.
 
-This PR does **not** wire the network back into gameplay yet. First we want to measure whether it can predict eventual winners better than the current handwritten evaluator.
+The network is not wired back into gameplay yet. First we want to measure whether it can predict eventual winners better than the current handwritten evaluator.
+
+## Generate self-play data
+
+The game rules are still evolving, so generated datasets should be treated as disposable, versioned artifacts. The batch generator records the current git SHA in both `manifest.json` and every training example's `source.rules_version` field.
+
+From the Godot project directory:
+
+```bash
+./tools/run_self_play_dataset.sh \
+  --preset=starter \
+  --out=user://self_play_dataset
+```
+
+Outputs:
+
+- `examples.jsonl` — terminal-outcome-supervised value examples
+- `manifest.json` — rules SHA, suite version, search budgets, per-game status/outcome, and example counts
+
+The `starter` preset currently uses 10 deterministic jobs across four tactical setups. It mixes 2x2, 4x4, and limited 8x8 opponent-response search, plus rotated starting positions. Broad 8x8 jobs are intentionally limited to short decisive situations because they are expensive.
+
+Campaign scenarios are intentionally excluded for now. The pure rollout currently ends on unit elimination, while some campaigns have scenario-specific objectives; those should become first-class value-model inputs before campaign self-play is used for training.
+
+For a cheap pipeline check:
+
+```bash
+./tools/run_self_play_dataset.sh \
+  --preset=smoke \
+  --out=user://self_play_smoke
+```
+
+Repeated identical deterministic games are not useful training data, so the generator varies curated starting states/rotations rather than blindly replaying the same job N times.
 
 ## Train
 
 ```bash
 python -m pip install -r ml/requirements.txt
 python -m ml.value_model.train \
-  --data path/to/self_play.jsonl \
+  --data path/to/examples.jsonl \
   --output artifacts/value_model.pt
 ```
 
@@ -38,4 +69,4 @@ The printed report includes model MSE/sign accuracy and the current `PureStateEv
 python -m unittest discover -s ml/tests -v
 ```
 
-Tests use synthetic schema-v1 examples only; they do not generate self-play games or call an API.
+Python tests use synthetic schema-v1 examples only; they do not generate self-play games or call an API. Godot's normal headless suite includes one cheap self-play smoke regression that verifies dataset provenance and terminal labeling semantics.
