@@ -19,7 +19,8 @@ static func generate_game_examples(
 	max_turns: int = PureStateGameRollout.DEFAULT_MAX_TURNS,
 	max_actions_per_unit: int = PureStateGameRollout.DEFAULT_MAX_ACTIONS_PER_UNIT,
 	own_max_plans: int = PureStateGameRollout.DEFAULT_OWN_MAX_PLANS,
-	opponent_max_plans: int = PureStateGameRollout.DEFAULT_OPPONENT_MAX_PLANS
+	opponent_max_plans: int = PureStateGameRollout.DEFAULT_OPPONENT_MAX_PLANS,
+	extra_source_metadata: Dictionary = {}
 ) -> Dictionary:
 	var rollout := PureStateGameRollout.play_game(
 		game_state,
@@ -37,6 +38,9 @@ static func generate_game_examples(
 		"own_max_plans": own_max_plans,
 		"opponent_max_plans": opponent_max_plans,
 	}
+	# Batch generators can attach immutable provenance (rules commit, suite version,
+	# preset, rotation, etc.) without changing the stable top-level example schema.
+	source_metadata.merge(extra_source_metadata.duplicate(true), true)
 	return build_examples_from_rollout(
 		rollout,
 		group_a,
