@@ -23,7 +23,8 @@ static func play_game(
 	max_turns: int = DEFAULT_MAX_TURNS,
 	max_actions_per_unit: int = DEFAULT_MAX_ACTIONS_PER_UNIT,
 	own_max_plans: int = DEFAULT_OWN_MAX_PLANS,
-	opponent_max_plans: int = DEFAULT_OPPONENT_MAX_PLANS
+	opponent_max_plans: int = DEFAULT_OPPONENT_MAX_PLANS,
+	record_states: bool = false
 ) -> Dictionary:
 	var invalid := _empty_result(game_state, group_a, group_b)
 	if group_a.is_empty() or group_b.is_empty() or group_a == group_b:
@@ -63,11 +64,14 @@ static func play_game(
 
 		if not bool(search_a.get("valid", false)) or not bool(search_b.get("valid", false)):
 			var failed_history := history.duplicate(true)
-			failed_history.append({
+			var failed_record := {
 				"turn": turn_index + 1,
 				"search_a_valid": bool(search_a.get("valid", false)),
 				"search_b_valid": bool(search_b.get("valid", false)),
-			})
+			}
+			if record_states:
+				failed_record["state_before"] = state.duplicate(true)
+			failed_history.append(failed_record)
 			return _build_result(false, "search_failed", "", turn_index, state, failed_history, group_a, group_b)
 
 		var actions_a: Array = (search_a.get("best_actions", []) as Array).duplicate(true)
@@ -87,6 +91,9 @@ static func play_game(
 		turn_record[group_b + "_actions"] = actions_b
 		turn_record[group_a + "_worst_case_score"] = float(search_a.get("best_worst_case_score", 0.0))
 		turn_record[group_b + "_worst_case_score"] = float(search_b.get("best_worst_case_score", 0.0))
+		if record_states:
+			turn_record["state_before"] = state.duplicate(true)
+			turn_record["state_after"] = next_state.duplicate(true)
 		history.append(turn_record)
 		state = next_state
 
