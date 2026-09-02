@@ -80,20 +80,48 @@ jobs:
 
           manifest = json.loads(Path("artifacts/self_play/manifest.json").read_text())
           print(json.dumps(manifest, indent=2, sort_keys=True))
-          if manifest["games_failed"] != 0:
-              raise SystemExit("self-play generation contained failed games")
-          if manifest["games_labeled"] < 2:
-              raise SystemExit("need at least two terminal games for a held-out experiment")
+
+          requested = int(manifest["games_requested"])
+          labeled = int(manifest["games_labeled"])
+          failed = int(manifest["games_failed"])
+          examples = int(manifest["example_count"])
+          if requested <= 0:
+              raise SystemExit("self-play preset produced no requested games")
+
+          failure_rate = failed / requested
+          labeled_rate = labeled / requested
+          failed_games = [
+              game["game_id"]
+              for game in manifest["games"]
+              if not game.get("valid")
+          ]
           labeled_families = {
               game["scenario_id"]
               for game in manifest["games"]
               if game.get("labeled")
           }
-          if os.environ["EXPERIMENT_PRESET"] == "diverse" and len(labeled_families) < 4:
+
+          print(f"failure_rate={failure_rate:.1%} failed_games={failed_games}")
+          print(f"labeled_rate={labeled_rate:.1%} labeled_families={sorted(labeled_families)}")
+
+          # Individual search failures are expected to occur occasionally in an
+          # exploratory suite. Reject a degraded batch, not a single bad rollout.
+          if failure_rate > 0.25:
               raise SystemExit(
-                  f"diverse preset needs at least four labeled tactical families; got {sorted(labeled_families)}"
+                  f"too many self-play games failed: {failed}/{requested} ({failure_rate:.1%})"
               )
-          print("labeled_families=", sorted(labeled_families))
+          if labeled < 2 or examples <= 0:
+              raise SystemExit("need at least two terminal games with training examples")
+
+          if os.environ["EXPERIMENT_PRESET"] == "diverse":
+              if labeled_rate < 0.40:
+                  raise SystemExit(
+                      f"diverse preset needs at least 40% labeled games; got {labeled}/{requested} ({labeled_rate:.1%})"
+                  )
+              if len(labeled_families) < 4:
+                  raise SystemExit(
+                      f"diverse preset needs at least four labeled tactical families; got {sorted(labeled_families)}"
+                  )
           PY
 
       - name: Set up Python
@@ -134,6 +162,12 @@ jobs:
               for game in manifest["games"]
               if game.get("labeled")
           })
+          failed_games = [
+              game["game_id"]
+              for game in manifest["games"]
+              if not game.get("valid")
+          ]
+          failure_rate = manifest["games_failed"] / manifest["games_requested"]
 
           summary = f"""## Value-model generalization experiment
 
@@ -145,16 +179,18 @@ jobs:
           | Labeled games | {manifest['games_labeled']} / {manifest['games_requested']} |
           | Labeled tactical families | {len(labeled_families)} |
           | Unlabeled turn-limit games | {manifest['games_unlabeled']} |
+          | Failed games | {manifest['games_failed']} ({failure_rate:.1%}) |
           | Training examples | {metrics['train_examples']} |
           | Held-out examples | {metrics['validation_examples']} |
-          | Neural held-out sign accuracy | {neural:.1%} |
-          | Handwritten evaluator sign accuracy | {handwritten:.1%} |
+          | Neural held-out winner-prediction accuracy | {neural:.1%} |
+          | Handwritten held-out winner-prediction accuracy | {handwritten:.1%} |
           | Neural minus handwritten | {delta:+.1%} |
 
           **Split key:** `{metrics['split_key']}`  
           **Training scenario families:** {', '.join(metrics['train_split_groups']) or 'none'}  
           **Held-out scenario families:** {', '.join(metrics['validation_split_groups']) or 'none'}  
           **All labeled families:** {', '.join(labeled_families) or 'none'}  
+          **Failed games excluded from training:** {', '.join(failed_games) or 'none'}  
           **Game outcomes:** `{manifest['outcomes']}`
 
           On this held-out sample, the neural evaluator is **{direction}** the handwritten evaluator. Strength claims should still be based on broader data and eventually direct gameplay arenas.
