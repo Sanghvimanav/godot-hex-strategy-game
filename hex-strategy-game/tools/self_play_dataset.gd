@@ -152,8 +152,13 @@ func _run_dataset() -> void:
 		all_examples.size(),
 		str(outcomes),
 	])
+	if failed_games > 0:
+		push_warning("Self-play batch completed with %d failed game(s); see manifest for per-game status" % failed_games)
 
-	get_tree().quit(0 if write_ok and failed_games == 0 else 1)
+	# Individual search/simulation failures are recorded as unusable games in the
+	# manifest. Dataset-quality policy belongs to the caller so exploratory batches
+	# can still train from the valid terminal games that were successfully produced.
+	get_tree().quit(0 if write_ok else 1)
 
 
 func _parse_cmdline_kv() -> Dictionary:
