@@ -2,12 +2,12 @@ extends RefCounted
 class_name PureStateGameRollout
 ## Simple deterministic full-game rollout for two AI-controlled groups.
 ##
-## Each turn both groups plan from the same pre-turn state using bounded
-## opponent-response search. Their selected plans are then resolved simultaneously
+## Each turn both groups plan from the same pre-turn state through the canonical
+## GameplayAI entry point. Their selected plans are then resolved simultaneously
 ## by the pure-state simulator. The rollout stops on elimination, search failure,
 ## or a caller-provided turn cap.
 
-const PureStateOpponentResponseSearch = preload("res://src/simulation/pure_state_opponent_response_search.gd")
+const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
 const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd")
 
 const DEFAULT_MAX_TURNS := 12
@@ -43,39 +43,41 @@ static func play_game(
 	for turn_index in range(max_turns):
 		# Both searches intentionally read the same pre-turn state. Neither side gets
 		# privileged knowledge of the other side's selected simultaneous action.
-		var search_a := PureStateOpponentResponseSearch.search(
-			state,
-			group_a,
-			group_b,
+		var policy_settings := GameplayAI.handwritten_settings(
 			max_actions_per_unit,
 			own_max_plans,
 			max_actions_per_unit,
 			opponent_max_plans
 		)
-		var search_b := PureStateOpponentResponseSearch.search(
+		var decision_a := GameplayAI.choose_actions(
+			state,
+			group_a,
+			group_b,
+			policy_settings
+		)
+		var decision_b := GameplayAI.choose_actions(
 			state,
 			group_b,
 			group_a,
-			max_actions_per_unit,
-			own_max_plans,
-			max_actions_per_unit,
-			opponent_max_plans
+			policy_settings
 		)
 
-		if not bool(search_a.get("valid", false)) or not bool(search_b.get("valid", false)):
+		if not bool(decision_a.get("valid", false)) or not bool(decision_b.get("valid", false)):
 			var failed_history := history.duplicate(true)
 			var failed_record := {
 				"turn": turn_index + 1,
-				"search_a_valid": bool(search_a.get("valid", false)),
-				"search_b_valid": bool(search_b.get("valid", false)),
+				"search_a_valid": bool(decision_a.get("valid", false)),
+				"search_b_valid": bool(decision_b.get("valid", false)),
 			}
 			if record_states:
 				failed_record["state_before"] = state.duplicate(true)
 			failed_history.append(failed_record)
 			return _build_result(false, "search_failed", "", turn_index, state, failed_history, group_a, group_b)
 
-		var actions_a: Array = (search_a.get("best_actions", []) as Array).duplicate(true)
-		var actions_b: Array = (search_b.get("best_actions", []) as Array).duplicate(true)
+		var actions_a: Array = (decision_a.get("actions", []) as Array).duplicate(true)
+		var actions_b: Array = (decision_b.get("actions", []) as Array).duplicate(true)
+		var diagnostics_a: Dictionary = decision_a.get("diagnostics", {})
+		var diagnostics_b: Dictionary = decision_b.get("diagnostics", {})
 		var submitted := _submitted_actions(state, group_a, actions_a, group_b, actions_b)
 		var simulation := PureStateSimulator.simulate_turn(state, submitted)
 		var next_state: Dictionary = simulation.get("next_state", {})
@@ -89,8 +91,8 @@ static func play_game(
 		}
 		turn_record[group_a + "_actions"] = actions_a
 		turn_record[group_b + "_actions"] = actions_b
-		turn_record[group_a + "_worst_case_score"] = float(search_a.get("best_worst_case_score", 0.0))
-		turn_record[group_b + "_worst_case_score"] = float(search_b.get("best_worst_case_score", 0.0))
+		turn_record[group_a + "_worst_case_score"] = float(diagnostics_a.get("best_worst_case_score", 0.0))
+		turn_record[group_b + "_worst_case_score"] = float(diagnostics_b.get("best_worst_case_score", 0.0))
 		if record_states:
 			turn_record["state_before"] = state.duplicate(true)
 			turn_record["state_after"] = next_state.duplicate(true)
