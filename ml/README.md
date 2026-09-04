@@ -137,7 +137,7 @@ It performs the complete pipeline:
 6. generate same-commit counterfactual candidates and report candidate ranking plus top-plan regret for the neural, handwritten, and planner proposal evaluators
 7. upload datasets, manifests, metrics, summary, and the PyTorch checkpoint as a 14-day workflow artifact
 
-The standalone Counterfactual Benchmark workflow remains the correctness and scenario-review gate. The Value Model Experiment generates its own same-commit counterfactual inputs instead of triggering or downloading another workflow's artifacts, so every model result is reproducible from one commit and one run.
+The standalone Counterfactual Benchmark workflow remains the correctness and scenario-validation gate. The Value Model Experiment uses the separate `curated` decision suite by default and generates same-commit inputs instead of triggering or downloading another workflow's artifacts, so every model result is reproducible from one commit and one run.
 
 These experiments are still directional, not production-quality benchmarks. The eventual strength benchmark is direct gameplay: identical search driven by the neural evaluator versus identical search driven by the handwritten evaluator. Opponent interestingness should be tracked separately from strength.
 
