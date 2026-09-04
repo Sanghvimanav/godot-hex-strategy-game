@@ -85,7 +85,7 @@ Winner-sign accuracy is a coarse state metric: it asks only whether an evaluator
 
 `candidate_ranking_metrics` compares every candidate pair with different target values inside a shared `decision_id`. Correct ordering earns one point, a predicted tie earns half credit, and target ties are omitted.
 
-`top_plan_regret_metrics` measures the target value lost by executing the highest-predicted candidate instead of an oracle-best candidate:
+`top_plan_regret_metrics` measures the target value lost by executing the highest-predicted candidate instead of the benchmark-best candidate:
 
 ```text
 regret = max(candidate target values) - target value of argmax(predicted values)
@@ -112,6 +112,17 @@ Turn-limit and failed rollouts stay unlabeled. Each candidate therefore reports 
 
 The `starter` suite currently covers three tactical decisions from both faction perspectives. It is deliberately small: its immediate purpose is to validate the target definition and exercise candidate-ranking/top-plan-regret metrics before scaling the scenario set.
 
+After training a checkpoint, score the same candidate rows with the neural value model, handwritten state evaluator, and planner proposal score:
+
+```bash
+python -m ml.value_model.evaluate_counterfactual \
+  --candidates artifacts/counterfactual/candidates.jsonl \
+  --checkpoint artifacts/value_model.pt \
+  --output artifacts/counterfactual_metrics.json
+```
+
+Candidate predictions are weighted over the same labeled opponent/continuation samples as their targets. This keeps unlabeled turn limits out of both sides of the comparison.
+
 ## Generalization experiment
 
 `.github/workflows/value-model-experiment.yml` is an on-demand experiment runner and runs when experiment-related files change in a pull request. Its default preset is now `diverse`.
@@ -123,7 +134,10 @@ It performs the complete pipeline:
 3. train `HexValueNet` on CPU
 4. hold out whole `source.base_scenario_id` families
 5. compare neural and handwritten evaluator sign accuracy on the held-out states
-6. upload `examples.jsonl`, `manifest.json`, `metrics.json`, `summary.md`, and the PyTorch checkpoint as a 14-day workflow artifact
+6. generate same-commit counterfactual candidates and report candidate ranking plus top-plan regret for the neural, handwritten, and planner proposal evaluators
+7. upload datasets, manifests, metrics, summary, and the PyTorch checkpoint as a 14-day workflow artifact
+
+The standalone Counterfactual Benchmark workflow remains the correctness and scenario-review gate. The Value Model Experiment generates its own same-commit counterfactual inputs instead of triggering or downloading another workflow's artifacts, so every model result is reproducible from one commit and one run.
 
 These experiments are still directional, not production-quality benchmarks. The eventual strength benchmark is direct gameplay: identical search driven by the neural evaluator versus identical search driven by the handwritten evaluator. Opponent interestingness should be tracked separately from strength.
 
