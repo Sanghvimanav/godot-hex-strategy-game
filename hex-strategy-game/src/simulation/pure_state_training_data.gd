@@ -2,9 +2,9 @@ extends RefCounted
 class_name PureStateTrainingData
 ## Converts deterministic full-game self-play rollouts into supervised value targets.
 ##
-## V1 deliberately emits labels only for true terminal games. A turn-limit game is
-## valid rollout data, but it is not treated as a draw because the eventual winner
-## is unknown. Each visited state is emitted once from each player's perspective.
+## V1 emits labels only for terminal objectives. An ordinary turn-limit game remains
+## unlabeled because its eventual winner is unknown; a scenario may explicitly declare
+## a winner at its objective horizon. Each visited state is emitted once per perspective.
 
 const PureStateGameRollout = preload("res://src/simulation/pure_state_game_rollout.gd")
 
@@ -96,7 +96,7 @@ static func build_examples_from_rollout(
 		result["valid"] = false
 		return result
 	if status != "terminal":
-		# Do not poison value targets by pretending a turn cap is a draw.
+		# Do not poison value targets from an unadjudicated turn cap.
 		return result
 
 	var states := _visited_states_from_rollout(rollout)
