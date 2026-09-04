@@ -21,7 +21,8 @@ static func generate_game_examples(
 	max_actions_per_unit: int = PureStateGameRollout.DEFAULT_MAX_ACTIONS_PER_UNIT,
 	own_max_plans: int = PureStateGameRollout.DEFAULT_OWN_MAX_PLANS,
 	opponent_max_plans: int = PureStateGameRollout.DEFAULT_OPPONENT_MAX_PLANS,
-	extra_source_metadata: Dictionary = {}
+	extra_source_metadata: Dictionary = {},
+	turn_limit_winner: String = ""
 ) -> Dictionary:
 	var rollout := PureStateGameRollout.play_game(
 		game_state,
@@ -31,13 +32,15 @@ static func generate_game_examples(
 		max_actions_per_unit,
 		own_max_plans,
 		opponent_max_plans,
-		true
+		true,
+		turn_limit_winner
 	)
 	var source_metadata := {
 		"max_turns": max_turns,
 		"max_actions_per_unit": max_actions_per_unit,
 		"own_max_plans": own_max_plans,
 		"opponent_max_plans": opponent_max_plans,
+		"turn_limit_winner": turn_limit_winner,
 	}
 	# Batch generators can attach immutable provenance (rules commit, suite version,
 	# preset, rotation, etc.) without changing the stable top-level example schema.
@@ -61,11 +64,13 @@ static func build_examples_from_rollout(
 	var status := str(rollout.get("status", ""))
 	var winner := str(rollout.get("winner", ""))
 	var turns_played := int(rollout.get("turns_played", 0))
+	var termination_reason := str(rollout.get("termination_reason", ""))
 	var result := {
 		"valid": bool(rollout.get("valid", false)),
 		"labeled": false,
 		"status": status,
 		"winner": winner,
+		"termination_reason": termination_reason,
 		"turns_played": turns_played,
 		"game_id": game_id,
 		"examples": [],
@@ -77,6 +82,7 @@ static func build_examples_from_rollout(
 			"game_id": game_id,
 			"status": status,
 			"winner": winner,
+			"termination_reason": termination_reason,
 			"turns_played": turns_played,
 			"groups": [group_a, group_b],
 			"source": source_metadata.duplicate(true),
