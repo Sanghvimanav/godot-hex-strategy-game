@@ -15,9 +15,10 @@ on:
       counterfactual_preset:
         description: Counterfactual suite used for decision-quality evaluation
         required: true
-        default: starter
+        default: curated
         type: choice
         options:
+          - curated
           - starter
           - smoke
       epochs:
@@ -53,7 +54,7 @@ jobs:
     timeout-minutes: 45
     env:
       EXPERIMENT_PRESET: ${{ github.event_name == 'workflow_dispatch' && inputs.preset || 'diverse' }}
-      COUNTERFACTUAL_PRESET: ${{ github.event_name == 'workflow_dispatch' && inputs.counterfactual_preset || 'starter' }}
+      COUNTERFACTUAL_PRESET: ${{ github.event_name == 'workflow_dispatch' && inputs.counterfactual_preset || 'curated' }}
       EXPERIMENT_EPOCHS: ${{ github.event_name == 'workflow_dispatch' && inputs.epochs || '60' }}
 
     steps:
