@@ -23,6 +23,7 @@ from ml.value_model.data import (
     split_examples_by_game,
     split_examples_by_group,
 )
+from ml.value_model.evaluate_counterfactual import evaluate_counterfactual_rows
 from ml.value_model.metrics import (
     candidate_ranking_metrics,
     handwritten_evaluator_score,
@@ -171,6 +172,75 @@ class ValueModelTests(unittest.TestCase):
             candidate_ranking_metrics([0.1], [1.0, -1.0], ["turn-a"])
         with self.assertRaises(ValueError):
             top_plan_regret_metrics([0.1], [1.0], [])
+
+    def test_counterfactual_evaluation_scores_real_candidate_rows(self) -> None:
+        weak_state = _example()["state"]
+        strong_state = json.loads(json.dumps(weak_state))
+        strong_state["groups"][0]["units"].append(_unit(3, "zergling", [0, 1], 2))
+
+        def candidate(candidate_id: str, target: float, proposal: float, state: dict) -> dict:
+            return {
+                "decision_id": "decision-a",
+                "candidate_id": candidate_id,
+                "perspective_group": "zerg",
+                "opponent_group": "terran",
+                "proposal_score": proposal,
+                "target_estimate": {
+                    "return_count": 1,
+                    "mean_return": target,
+                    "labeled_weight_fraction": 1.0,
+                },
+                "samples": [
+                    {
+                        "valid": True,
+                        "labeled": True,
+                        "weight": 1.0,
+                        "state_after_first_turn": state,
+                    }
+                ],
+            }
+
+        encoder = HexStateEncoder()
+        model = HexValueNet(hidden_channels=4, residual_blocks=0)
+        for parameter in model.parameters():
+            parameter.data.zero_()
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint_path = Path(directory) / "model.pt"
+            torch.save(
+                {
+                    "model_state_dict": model.state_dict(),
+                    "model_config": {
+                        "hidden_channels": 4,
+                        "residual_blocks": 0,
+                        "board_channels": encoder.board_channels,
+                        "global_features": encoder.global_features,
+                        "board_size": encoder.board_size,
+                        "max_radius": encoder.max_radius,
+                        "unit_types": list(encoder.unit_types),
+                    },
+                },
+                checkpoint_path,
+            )
+            result = evaluate_counterfactual_rows(
+                [
+                    candidate("weak", -1.0, 1.0, weak_state),
+                    candidate("strong", 1.0, 0.0, strong_state),
+                ],
+                checkpoint_path,
+            )
+
+        self.assertEqual(result["evaluated_candidates"], 2)
+        self.assertEqual(result["evaluated_decisions"], 1)
+        neural = result["evaluators"]["neural_value_model"]
+        handwritten = result["evaluators"]["handwritten_state_evaluator"]
+        proposal = result["evaluators"]["planner_proposal_score"]
+        self.assertAlmostEqual(float(neural["candidate_ranking_accuracy"]), 0.5)
+        self.assertAlmostEqual(float(neural["top_plan_mean_regret"]), 2.0)
+        self.assertAlmostEqual(float(handwritten["candidate_ranking_accuracy"]), 1.0)
+        self.assertAlmostEqual(float(handwritten["top_plan_mean_regret"]), 0.0)
+        self.assertAlmostEqual(float(proposal["candidate_ranking_accuracy"]), 0.0)
+        self.assertAlmostEqual(float(proposal["top_plan_mean_regret"]), 2.0)
 
     def test_trainer_compares_evaluators_on_same_nonterminal_population(self) -> None:
         examples = []
