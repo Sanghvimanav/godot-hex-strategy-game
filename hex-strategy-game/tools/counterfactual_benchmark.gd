@@ -97,7 +97,7 @@ func _run_benchmark() -> void:
 			"decision_id": str(job.get("decision_id", "")),
 			"scenario_id": str(job.get("scenario_id", "")),
 			"behavior_id": str(job.get("behavior_id", "")),
-			"review_prompt": str(job.get("review_prompt", "")),
+			"scenario_prompt": str(job.get("scenario_prompt", "")),
 			"valid": valid,
 			"candidate_count": (result.get("candidate_results", []) as Array).size(),
 			"estimated_best_candidate_ids": (result.get("estimated_best_candidate_ids", []) as Array).duplicate(),
