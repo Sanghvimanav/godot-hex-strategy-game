@@ -11,7 +11,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_pairwise_comparisons_preserve_uncertainty(tests) and ok
 	ok = _test_terminal_candidate_and_unlabeled_candidate(tests) and ok
 	ok = _test_suite_and_jsonl_provenance(tests) and ok
-	ok = _test_human_review_cases_are_named_and_distinct(tests) and ok
+	ok = _test_curated_cases_are_named_and_distinct(tests) and ok
 	return ok
 
 
@@ -189,11 +189,11 @@ static func _test_suite_and_jsonl_provenance(tests: Node) -> bool:
 
 
 
-static func _test_human_review_cases_are_named_and_distinct(tests: Node) -> bool:
-	tests._log("test_pure_state_counterfactual_benchmark: human review behavior cases")
-	var jobs := PureStateCounterfactualSuite.get_preset("human_review", "rules-review")
+static func _test_curated_cases_are_named_and_distinct(tests: Node) -> bool:
+	tests._log("test_pure_state_counterfactual_benchmark: curated behavior cases")
+	var jobs := PureStateCounterfactualSuite.get_preset("curated", "rules-curated")
 	if jobs.size() != 7:
-		tests._fail("human-review preset should contain seven behavior decisions")
+		tests._fail("curated preset should contain seven behavior decisions")
 		return false
 	var behaviors: Dictionary = {}
 	for job_variant in jobs:
@@ -201,16 +201,16 @@ static func _test_human_review_cases_are_named_and_distinct(tests: Node) -> bool
 			return false
 		var job: Dictionary = job_variant
 		var behavior_id := str(job.get("behavior_id", ""))
-		var review_prompt := str(job.get("review_prompt", ""))
-		if behavior_id.is_empty() or behaviors.has(behavior_id) or review_prompt.is_empty():
-			tests._fail("review behavior ids/prompts must be non-empty and unique")
+		var scenario_prompt := str(job.get("scenario_prompt", ""))
+		if behavior_id.is_empty() or behaviors.has(behavior_id) or scenario_prompt.is_empty():
+			tests._fail("curated behavior ids/prompts must be non-empty and unique")
 			return false
 		behaviors[behavior_id] = true
 		var config: Dictionary = job.get("config", {})
 		var candidates: Array = config.get("own_candidates", [])
 		var opponent_samples: Array = config.get("opponent_samples", [])
 		if candidates.size() != 3 or opponent_samples.size() != 3:
-			tests._fail("each review case should compare three named choices against three responses")
+			tests._fail("each curated case should compare three named choices against three responses")
 			return false
 		for candidate_variant in candidates:
 			var candidate: Dictionary = candidate_variant
@@ -222,9 +222,9 @@ static func _test_human_review_cases_are_named_and_distinct(tests: Node) -> bool
 				return false
 	for required in ["sacrifice", "preservation", "spreading", "retreating", "trapped_zergling", "coordinated_commitment", "production_pressure"]:
 		if not behaviors.has(required):
-			tests._fail("missing human-review behavior case: %s" % required)
+			tests._fail("missing curated behavior case: %s" % required)
 			return false
-	tests._pass("seven review cases expose named choices, prompts, and opponent responses")
+	tests._pass("seven curated cases expose named choices, prompts, and opponent responses")
 	return true
 
 
