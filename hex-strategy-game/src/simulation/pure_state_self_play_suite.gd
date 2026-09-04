@@ -8,7 +8,7 @@ class_name PureStateSelfPlaySuite
 
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
-const SUITE_VERSION := 4
+const SUITE_VERSION := 5
 const DEFAULT_MAX_ACTIONS_PER_UNIT := 8
 
 const BUDGET_PROFILES := {
@@ -47,8 +47,8 @@ static func get_preset(preset_name: String) -> Array:
 				_make_job("baneling-finish-fast-r1", "baneling_finish", "fast", 1, 3),
 				_make_job("baneling-finish-balanced-r3", "baneling_finish", "balanced", 3, 3),
 				_make_job("baneling-finish-broad-r5", "baneling_finish", "broad", 5, 3),
-				_make_job("marine-spread-balanced-r0", "marine_spread", "balanced", 0, 4),
-				_make_job("marine-spread-balanced-r3", "marine_spread", "balanced", 3, 4),
+				_make_job("marine-spread-balanced-r0", "marine_spread", "balanced", 0, 1, "zerg"),
+				_make_job("marine-spread-balanced-r3", "marine_spread", "balanced", 3, 1, "zerg"),
 				_make_job("mixed-force-fast-r0", "mixed_force", "fast", 0, 6),
 				_make_job("mixed-force-fast-r3", "mixed_force", "fast", 3, 6),
 			]
@@ -174,9 +174,10 @@ static func _make_job(
 	scenario_id: String,
 	budget_profile: String,
 	rotation_steps: int,
-	max_turns: int
+	max_turns: int,
+	turn_limit_winner: String = ""
 ) -> Dictionary:
-	return _make_varied_job(game_id, scenario_id, budget_profile, rotation_steps, max_turns, 0)
+	return _make_varied_job(game_id, scenario_id, budget_profile, rotation_steps, max_turns, 0, turn_limit_winner)
 
 
 static func _make_varied_job(
@@ -185,7 +186,8 @@ static func _make_varied_job(
 	budget_profile: String,
 	rotation_steps: int,
 	max_turns: int,
-	variation_seed: int
+	variation_seed: int,
+	turn_limit_winner: String = ""
 ) -> Dictionary:
 	var profile: Dictionary = BUDGET_PROFILES.get(budget_profile, {})
 	var base_state := build_state(scenario_id)
@@ -201,6 +203,7 @@ static func _make_varied_job(
 		"group_a": "terran",
 		"group_b": "zerg",
 		"max_turns": max_turns,
+		"turn_limit_winner": turn_limit_winner,
 		"max_actions_per_unit": DEFAULT_MAX_ACTIONS_PER_UNIT,
 		"own_max_plans": int(profile.get("own_max_plans", 1)),
 		"opponent_max_plans": int(profile.get("opponent_max_plans", 1)),
