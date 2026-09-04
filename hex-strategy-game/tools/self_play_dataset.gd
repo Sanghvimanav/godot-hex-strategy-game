@@ -75,13 +75,15 @@ func _run_dataset() -> void:
 			int(job.get("max_actions_per_unit", 1)),
 			int(job.get("own_max_plans", 1)),
 			int(job.get("opponent_max_plans", 1)),
-			source_metadata
+			source_metadata,
+			str(job.get("turn_limit_winner", ""))
 		)
 
 		var valid := bool(result.get("valid", false))
 		var labeled := bool(result.get("labeled", false))
 		var status := str(result.get("status", ""))
 		var winner := str(result.get("winner", ""))
+		var termination_reason := str(result.get("termination_reason", ""))
 		var example_count := int(result.get("example_count", 0))
 		var trace = result.get("trace", null)
 		if trace is Dictionary:
@@ -105,12 +107,14 @@ func _run_dataset() -> void:
 			"rotation_steps": int(job.get("rotation_steps", 0)),
 			"variation_seed": int(job.get("variation_seed", 0)),
 			"max_turns": int(job.get("max_turns", 0)),
+			"turn_limit_winner": str(job.get("turn_limit_winner", "")),
 			"own_max_plans": int(job.get("own_max_plans", 0)),
 			"opponent_max_plans": int(job.get("opponent_max_plans", 0)),
 			"valid": valid,
 			"labeled": labeled,
 			"status": status,
 			"winner": winner,
+			"termination_reason": termination_reason,
 			"turns_played": int(result.get("turns_played", 0)),
 			"example_count": example_count,
 		}
