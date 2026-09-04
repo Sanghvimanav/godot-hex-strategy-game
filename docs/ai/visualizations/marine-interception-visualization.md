@@ -1,7 +1,7 @@
 # Marine interception visualization
 
 This diagram documents the formation used by the `marine_spread` self-play
-scenario as of self-play suite version 4.
+scenario as of self-play suite version 5.
 
 ## Formation and intended coverage
 
@@ -10,6 +10,7 @@ scenario as of self-play suite version 4.
 - Marine 2 and Scout 2: `(1, -1)`
 - Marine combined fire coverage: `(0, -1)`, `(0, 0)`, `(0, 1)`
 - Scout targets: `(-1, 0)`, `(-1, 1)`
+- Objective horizon: one turn; if the Zergling survives, Zerg wins by adjudication
 
 The units at `(1, 0)` and `(1, -1)` are intentionally stacked. The diagram
 shows desired coordinated coverage, not actions observed in a rollout trace.
