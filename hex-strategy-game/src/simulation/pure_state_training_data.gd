@@ -9,6 +9,7 @@ class_name PureStateTrainingData
 const PureStateGameRollout = preload("res://src/simulation/pure_state_game_rollout.gd")
 
 const SCHEMA_VERSION := 1
+const TRACE_SCHEMA_VERSION := 1
 
 
 static func generate_game_examples(
@@ -59,15 +60,29 @@ static func build_examples_from_rollout(
 ) -> Dictionary:
 	var status := str(rollout.get("status", ""))
 	var winner := str(rollout.get("winner", ""))
+	var turns_played := int(rollout.get("turns_played", 0))
 	var result := {
 		"valid": bool(rollout.get("valid", false)),
 		"labeled": false,
 		"status": status,
 		"winner": winner,
-		"turns_played": int(rollout.get("turns_played", 0)),
+		"turns_played": turns_played,
 		"game_id": game_id,
 		"examples": [],
 		"example_count": 0,
+		# Traces are diagnostic artifacts, not training examples. Preserve them for
+		# terminal, turn-limit, and failed games so every rollout can be inspected.
+		"trace": {
+			"trace_schema_version": TRACE_SCHEMA_VERSION,
+			"game_id": game_id,
+			"status": status,
+			"winner": winner,
+			"turns_played": turns_played,
+			"groups": [group_a, group_b],
+			"source": source_metadata.duplicate(true),
+			"turns": (rollout.get("history", []) as Array).duplicate(true),
+			"final_state": (rollout.get("final_state", {}) as Dictionary).duplicate(true),
+		},
 	}
 	if not bool(result.get("valid", false)):
 		return result
