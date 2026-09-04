@@ -6,7 +6,7 @@ A fair AI that coordinates simultaneous actions, avoids obvious blunders, offers
 
 ## Current position
 
-The pure simulator, legal actions, bounded joint planning, opponent-response search, tactical intents, whole-game rollout, richer self-play export, and first value model exist. The neural evaluator is still directional evidence rather than a gameplay upgrade, so retain the handwritten evaluator as the baseline. PR #44 adds policy-conditional counterfactual targets, candidate-ranking metrics, top-plan regret, and reviewed tactical cases.
+The pure simulator, legal actions, bounded joint planning, opponent-response search, tactical intents, whole-game rollout, richer self-play export, and first value model exist. The neural evaluator is still directional evidence rather than a gameplay upgrade, so retain the handwritten evaluator as the baseline. PR #44 adds policy-conditional counterfactual targets, candidate-ranking metrics, top-plan regret, and curated tactical cases.
 
 ## Plan
 
