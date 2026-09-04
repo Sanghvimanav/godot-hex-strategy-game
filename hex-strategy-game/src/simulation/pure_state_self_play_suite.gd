@@ -8,7 +8,7 @@ class_name PureStateSelfPlaySuite
 
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
-const SUITE_VERSION := 3
+const SUITE_VERSION := 4
 const DEFAULT_MAX_ACTIONS_PER_UNIT := 8
 
 const BUDGET_PROFILES := {
@@ -269,9 +269,13 @@ static func _marine_spread_state() -> Dictionary:
 		"hex_radius": 4,
 		"groups": [
 			{"name": "terran", "resources": {}, "units": [
+				# Two Marine/Scout stacks create a coordinated interception puzzle:
+				# Marines can cover the three q=0 cells while Scouts reach the
+				# two distance-two escape cells on the left.
 				_make_unit(1, "res://src/unit/definitions/marine.tres", Vector2i(1, 0)),
 				_make_unit(2, "res://src/unit/definitions/marine.tres", Vector2i(1, -1)),
-				_make_unit(3, "res://src/unit/definitions/marine.tres", Vector2i(2, -2)),
+				_make_unit(5, "res://src/unit/definitions/scout.tres", Vector2i(1, 0)),
+				_make_unit(6, "res://src/unit/definitions/scout.tres", Vector2i(1, -1)),
 			]},
 			{"name": "zerg", "resources": {}, "units": [
 				_make_unit(4, "res://src/unit/definitions/zergling.tres", Vector2i(0, 0), 1),
