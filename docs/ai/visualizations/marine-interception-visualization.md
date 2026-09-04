@@ -1,8 +1,7 @@
 # Marine interception visualization
 
-This diagram documents a proposed replacement for the third Marine in the
-`marine_spread` training layout. It is a design aid only; it does not change the
-self-play scenario.
+This diagram documents the formation used by the `marine_spread` self-play
+scenario as of self-play suite version 4.
 
 ## Formation and intended coverage
 
@@ -14,6 +13,7 @@ self-play scenario.
 
 The units at `(1, 0)` and `(1, -1)` are intentionally stacked. The diagram
 shows desired coordinated coverage, not actions observed in a rollout trace.
+The `r3` job rotates this complete layout by 180 degrees.
 
 ## Recreating or changing the diagram
 
