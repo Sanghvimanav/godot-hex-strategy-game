@@ -7,7 +7,7 @@ class_name PureStateCounterfactualSuite
 ## regenerated targets remain comparable within a rules version.
 
 const PureStateSelfPlaySuite = preload("res://src/simulation/pure_state_self_play_suite.gd")
-const PureStateCounterfactualReviewSuite = preload("res://src/simulation/pure_state_counterfactual_review_suite.gd")
+const PureStateCounterfactualCuratedSuite = preload("res://src/simulation/pure_state_counterfactual_curated_suite.gd")
 
 const SUITE_VERSION := 1
 const OPPONENT_MIXTURE_VERSION := "starter_opponent_mixture_v1"
@@ -51,7 +51,7 @@ const CONTINUATION_PROFILES := [
 
 
 static func available_presets() -> Array[String]:
-	return ["smoke", "starter", "human_review"]
+	return ["smoke", "starter", "curated"]
 
 
 static func get_preset(preset_name: String, rules_version: String = "unknown") -> Array:
@@ -79,8 +79,8 @@ static func get_preset(preset_name: String, rules_version: String = "unknown") -
 				"weight": 1.0,
 			}]
 			return [smoke_job]
-		"human_review":
-			return PureStateCounterfactualReviewSuite.get_jobs(rules_version)
+		"curated":
+			return PureStateCounterfactualCuratedSuite.get_jobs(rules_version)
 		"starter":
 			return [
 				_make_job("cf-collapse-zerg", "collapse", "zerg", "terran", 6, rules_version),
