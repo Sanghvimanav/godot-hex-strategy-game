@@ -46,9 +46,9 @@ Presets:
 
 - `smoke` — one cheap terminal pipeline check
 - `starter` — the original 10-job / four-family benchmark retained for historical comparison
-- `diverse` — 24 jobs across 10 tactical families, including Hydralisk range/stun, Medic sustain, Scout kiting, worker/economy screens, Baneling flanks, and mixed attrition
+- `diverse` — 26 jobs across 11 tactical families, including Hydralisk range/stun, Medic sustain, Scout kiting, worker/economy screens, Baneling flanks, mixed attrition, and a long-horizon Fester siege
 
-The 14 added `diverse` jobs use fixed variation seeds. Each seed can perturb unit positions by at most one legal hex and vary HP, energy, and resource context. The same rules commit + suite version + seed reproduces the same starting state.
+Fourteen added `diverse` jobs use fixed variation seeds. Each seed can perturb unit positions by at most one legal hex and vary HP, energy, and resource context. Two additional Fester siege jobs keep the producer and its people town at the rotation-invariant origin and allow 14 turns: Zerg starts one people short of spawning, so its screen must buy time to consume and reinforce while Terran must attack before production compounds. The same rules commit + suite version + seed reproduces the same starting state.
 
 Campaign scenarios are intentionally excluded for now. The pure rollout currently ends on unit elimination, while some campaigns have scenario-specific objectives; those should become first-class value-model inputs before campaign self-play is used for training.
 
