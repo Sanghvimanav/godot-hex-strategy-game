@@ -88,6 +88,7 @@ static func play_game(
 		var turn_record := {
 			"turn": turn_index + 1,
 			"alive_after": counts,
+			"execution": (simulation.get("recording", {}) as Dictionary).duplicate(true),
 		}
 		turn_record[group_a + "_actions"] = actions_a
 		turn_record[group_b + "_actions"] = actions_b
