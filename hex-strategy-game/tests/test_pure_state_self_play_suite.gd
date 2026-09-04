@@ -8,6 +8,7 @@ const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd
 static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_starter_preset_is_versioned_and_diverse(tests) and ok
+	ok = _test_marine_spread_matches_interception_formation(tests) and ok
 	ok = _test_diverse_preset_expands_tactical_families(tests) and ok
 	ok = _test_seeded_variation_is_reproducible_and_valid(tests) and ok
 	ok = _test_six_hex_rotations_round_trip(tests) and ok
@@ -47,6 +48,46 @@ static func _test_starter_preset_is_versioned_and_diverse(tests: Node) -> bool:
 			tests._fail("starter preset should include %s search profile" % required)
 			return false
 	tests._pass("starter preset is unique, bounded, and spans fast/balanced/broad search")
+	return true
+
+
+static func _test_marine_spread_matches_interception_formation(tests: Node) -> bool:
+	tests._log("test_pure_state_self_play_suite: Marine spread interception formation")
+	var state := PureStateSelfPlaySuite.build_state("marine_spread")
+	var groups: Array = state.get("groups", [])
+	if groups.size() != 2:
+		tests._fail("Marine spread should contain Terran and Zerg groups")
+		return false
+	var terran_units: Array = (groups[0] as Dictionary).get("units", [])
+	var zerg_units: Array = (groups[1] as Dictionary).get("units", [])
+	if terran_units.size() != 4 or zerg_units.size() != 1:
+		tests._fail("Marine spread should contain four Terran units and one Zergling")
+		return false
+
+	var expected := {
+		1: {"def": "res://src/unit/definitions/marine.tres", "cell": [1, 0]},
+		2: {"def": "res://src/unit/definitions/marine.tres", "cell": [1, -1]},
+		5: {"def": "res://src/unit/definitions/scout.tres", "cell": [1, 0]},
+		6: {"def": "res://src/unit/definitions/scout.tres", "cell": [1, -1]},
+	}
+	for unit_variant in terran_units:
+		if not (unit_variant is Dictionary):
+			return false
+		var unit: Dictionary = unit_variant
+		var unit_id := int(unit.get("unit_id", -1))
+		if not expected.has(unit_id):
+			tests._fail("unexpected Terran unit in Marine spread: %s" % str(unit))
+			return false
+		var expected_unit: Dictionary = expected[unit_id]
+		if str(unit.get("def_path", "")) != str(expected_unit.get("def", "")) or unit.get("cell", []) != expected_unit.get("cell", []):
+			tests._fail("Marine spread unit %d does not match the documented stack" % unit_id)
+			return false
+
+	var zergling: Dictionary = zerg_units[0]
+	if str(zergling.get("def_path", "")) != "res://src/unit/definitions/zergling.tres" or zergling.get("cell", []) != [0, 0] or int(zergling.get("health", 0)) != 1:
+		tests._fail("Marine spread should retain the one-health Zergling at the origin")
+		return false
+	tests._pass("Marine spread matches the documented two Marine/Scout stacks")
 	return true
 
 
