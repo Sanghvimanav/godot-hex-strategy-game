@@ -8,7 +8,7 @@ class_name PureStateSelfPlaySuite
 
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
-const SUITE_VERSION := 2
+const SUITE_VERSION := 3
 const DEFAULT_MAX_ACTIONS_PER_UNIT := 8
 
 const BUDGET_PROFILES := {
@@ -73,6 +73,11 @@ static func get_preset(preset_name: String) -> Array:
 				_make_varied_job("baneling-flank-balanced-s52", "baneling_flank", "balanced", 3, 7, 52),
 				_make_varied_job("attrition-fast-s61", "attrition", "fast", 1, 9, 61),
 				_make_varied_job("attrition-balanced-s62", "attrition", "balanced", 4, 9, 62),
+				# The town stays at the rotation-invariant origin. These intentionally
+				# run longer so delay, repeated consumption, and spawning can affect
+				# the elimination result instead of being cut off as a short skirmish.
+				_make_job("fester-siege-fast-r0", "fester_siege", "fast", 0, 14),
+				_make_job("fester-siege-balanced-r3", "fester_siege", "balanced", 3, 14),
 			])
 			return jobs
 	return []
@@ -100,6 +105,8 @@ static func build_state(scenario_id: String) -> Dictionary:
 			return _baneling_flank_state()
 		"attrition":
 			return _attrition_state()
+		"fester_siege":
+			return _fester_siege_state()
 	return {}
 
 
@@ -415,6 +422,38 @@ static func _attrition_state() -> Dictionary:
 			]},
 		],
 		"tile_resources": {},
+	}
+
+
+static func _fester_siege_state() -> Dictionary:
+	# Elimination remains the only victory condition. Zerg begins one people
+	# short of spawning, so the Fester must consume from the town before the
+	# first reinforcement. The initial Zerglings screen the producer while the
+	# nearby Marines have a narrow window to break through before production
+	# compounds. Twelve people supports several consume/heal cycles without
+	# making the producer immortal.
+	return {
+		"scenario_id": "training_fester_siege",
+		"hex_radius": 5,
+		"groups": [
+			{"name": "terran", "resources": {}, "units": [
+				_make_unit(1, "res://src/unit/definitions/marine.tres", Vector2i(3, -1)),
+				_make_unit(2, "res://src/unit/definitions/marine.tres", Vector2i(3, 0)),
+				_make_unit(3, "res://src/unit/definitions/marine.tres", Vector2i(2, 1)),
+			]},
+			{"name": "zerg", "resources": {"people": 2}, "units": [
+				_make_unit(4, "res://src/unit/definitions/fester.tres", Vector2i(0, 0)),
+				_make_unit(5, "res://src/unit/definitions/zergling.tres", Vector2i(1, 0)),
+				_make_unit(6, "res://src/unit/definitions/zergling.tres", Vector2i(1, -1)),
+			]},
+		],
+		"tile_resources": {
+			HexGrid.get_cell_key(0, 0): {
+				"amount": 12,
+				"max_amount": 12,
+				"resource_type": "people",
+			},
+		},
 	}
 
 
