@@ -248,6 +248,19 @@ static func _test_smoke_game_emits_rules_provenance(tests: Node) -> bool:
 	if not bool(result.get("valid", false)) or not bool(result.get("labeled", false)):
 		tests._fail("smoke self-play game should terminate and emit labels: %s" % result)
 		return false
+	var trace: Dictionary = result.get("trace", {})
+	var trace_turns: Array = trace.get("turns", [])
+	if int(trace.get("trace_schema_version", 0)) != PureStateTrainingData.TRACE_SCHEMA_VERSION or trace_turns.is_empty():
+		tests._fail("smoke self-play game should preserve a versioned turn trace")
+		return false
+	var first_turn: Dictionary = trace_turns[0]
+	if not first_turn.has("state_before") or not first_turn.has("state_after") or not first_turn.has("execution"):
+		tests._fail("turn trace should include before/after states and execution recording")
+		return false
+	if not first_turn.has(str(job.get("group_a", "")) + "_actions") or not first_turn.has(str(job.get("group_b", "")) + "_actions"):
+		tests._fail("turn trace should include both groups' chosen actions")
+		return false
+
 	var examples: Array = result.get("examples", [])
 	if examples.is_empty():
 		tests._fail("smoke self-play game should emit at least one training example")
