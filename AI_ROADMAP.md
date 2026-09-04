@@ -6,18 +6,18 @@ A fair AI that coordinates simultaneous actions, avoids obvious blunders, offers
 
 ## Current position
 
-The pure simulator, legal actions, bounded joint planning, opponent-response search, tactical intents, whole-game rollout, self-play export, and first value model already exist. PR #42 broadens the data, but its latest held-out result is **45% neural accuracy vs 100% handwritten**, with **9/24 turn limits** and **2/24 search failures**. Do not replace the handwritten evaluator yet.
+The pure simulator, legal actions, bounded joint planning, opponent-response search, tactical intents, whole-game rollout, richer self-play export, and first value model exist. The neural evaluator is still directional evidence rather than a gameplay upgrade, so retain the handwritten evaluator as the baseline. PR #44 adds policy-conditional counterfactual targets, candidate-ranking metrics, top-plan regret, and reviewed tactical cases.
 
 ## Plan
 
-1. **Finish #42:** record the final result, merge the broader suite, and fix the failed/unfinished rollout cases.
-2. **Create the real benchmark:** fast tactical checks on every PR plus seeded full-game arenas measuring win rate, blunders, behavioral diversity, and turn time.
-3. **Improve self-play:** vary legal maps, units, resources, objectives, and policies; replay each position with multiple exploration seeds to learn win probability instead of one deterministic outcome.
-4. **Build a hybrid AI:** keep the existing bounded search, add the learned value behind a flag, retain the handwritten fallback, and add shallow multi-turn lookahead only where the benchmark proves it helps.
-5. **Tune for fun:** set difficulty with search budget and controlled mistakes; set personalities with tactical-intent preferences; validate both through blind human playtests.
+1. **Complete the benchmark:** merge PR #44, split it into fast per-PR checks and full scheduled/manual runs, then add seeded full-game arenas measuring win rate, blunders, behavioral diversity, and turn time.
+2. **Strengthen the understandable baseline:** bound material, health, production, resource, and objective values so long-term Civilization-like state is represented without any one feature dominating.
+3. **Improve self-play:** vary legal maps, units, resources, objectives, and policies; replay comparable positions with multiple exploration seeds to estimate policy-conditional win probability rather than treating one deterministic outcome as truth.
+4. **Build a measured hybrid AI:** keep bounded search and the handwritten fallback, add learned value behind a flag, and add shallow multi-turn lookahead only where tactical and full-game benchmarks show an improvement within the time budget.
+5. **Tune for fun:** set difficulty with search budget and controlled mistakes; set personalities with tactical-intent preferences; validate strength and interestingness separately through blind human playtests.
 
 ## Ship gate
 
-Promote a new AI only when it beats the current AI on held-out full games, stays inside the turn-time budget, respects fog of war, and players prefer playing against it.
+Promote a new AI only when it beats the current AI on held-out seeded full games, reduces serious tactical regret, stays inside the turn-time budget, respects fog of war and scenario objectives, and players prefer playing against it.
 
-**Immediate next implementation PR after #42: the benchmark and head-to-head arena.**
+**Immediate next step: finish PR #44, then add fast/full benchmark tiers and the seeded head-to-head arena before changing gameplay evaluation.**

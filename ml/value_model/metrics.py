@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Hashable, Sequence
 
 import torch
 
@@ -80,3 +80,107 @@ def sign_accuracy(scores: Sequence[float] | torch.Tensor, targets: Sequence[floa
     if target_tensor.numel() == 0:
         return float("nan")
     return float((torch.sign(score_tensor) == torch.sign(target_tensor)).float().mean().item())
+
+
+
+def _group_candidate_indices(
+    predictions: Sequence[float] | torch.Tensor,
+    targets: Sequence[float] | torch.Tensor,
+    decision_ids: Sequence[Hashable],
+) -> tuple[torch.Tensor, torch.Tensor, dict[Hashable, list[int]]]:
+    prediction_tensor = torch.as_tensor(predictions, dtype=torch.float32).flatten()
+    target_tensor = torch.as_tensor(targets, dtype=torch.float32).flatten()
+    if prediction_tensor.numel() != target_tensor.numel():
+        raise ValueError("predictions and targets must contain the same number of candidates")
+    if prediction_tensor.numel() != len(decision_ids):
+        raise ValueError("decision_ids must contain one id per candidate")
+    grouped: dict[Hashable, list[int]] = {}
+    for index, decision_id in enumerate(decision_ids):
+        grouped.setdefault(decision_id, []).append(index)
+    return prediction_tensor, target_tensor, grouped
+
+
+def candidate_ranking_metrics(
+    predictions: Sequence[float] | torch.Tensor,
+    targets: Sequence[float] | torch.Tensor,
+    decision_ids: Sequence[Hashable],
+    tie_tolerance: float = 1e-8,
+) -> dict[str, float | int]:
+    """Measure pairwise ordering within each decision's candidate plans.
+
+    Target ties are omitted because neither candidate is objectively better.
+    Prediction ties receive half credit. Every remaining candidate pair is
+    weighted equally across the benchmark.
+    """
+    prediction_tensor, target_tensor, grouped = _group_candidate_indices(
+        predictions, targets, decision_ids
+    )
+    correct_credit = 0.0
+    comparable_pairs = 0
+    decisions_with_pairs = 0
+    for indices in grouped.values():
+        decision_pairs = 0
+        for left_offset, left in enumerate(indices):
+            for right in indices[left_offset + 1 :]:
+                target_delta = float(target_tensor[left] - target_tensor[right])
+                if abs(target_delta) <= tie_tolerance:
+                    continue
+                prediction_delta = float(prediction_tensor[left] - prediction_tensor[right])
+                comparable_pairs += 1
+                decision_pairs += 1
+                if abs(prediction_delta) <= tie_tolerance:
+                    correct_credit += 0.5
+                elif (prediction_delta > 0.0) == (target_delta > 0.0):
+                    correct_credit += 1.0
+        if decision_pairs > 0:
+            decisions_with_pairs += 1
+
+    accuracy = correct_credit / comparable_pairs if comparable_pairs else float("nan")
+    return {
+        "candidate_ranking_accuracy": accuracy,
+        "candidate_ranking_pairs": comparable_pairs,
+        "candidate_ranking_decisions": decisions_with_pairs,
+    }
+
+
+def top_plan_regret_metrics(
+    predictions: Sequence[float] | torch.Tensor,
+    targets: Sequence[float] | torch.Tensor,
+    decision_ids: Sequence[Hashable],
+    tie_tolerance: float = 1e-8,
+) -> dict[str, float | int]:
+    """Measure value lost by choosing the top predicted plan per decision.
+
+    Prediction ties are resolved by stable input order, matching a deterministic
+    planner. Decisions with fewer than two candidates are excluded because they
+    contain no choice.
+    """
+    prediction_tensor, target_tensor, grouped = _group_candidate_indices(
+        predictions, targets, decision_ids
+    )
+    regrets: list[float] = []
+    optimal_choices = 0
+    for indices in grouped.values():
+        if len(indices) < 2:
+            continue
+        chosen = max(indices, key=lambda index: float(prediction_tensor[index]))
+        oracle_value = max(float(target_tensor[index]) for index in indices)
+        chosen_value = float(target_tensor[chosen])
+        regret = max(0.0, oracle_value - chosen_value)
+        regrets.append(regret)
+        if regret <= tie_tolerance:
+            optimal_choices += 1
+
+    if not regrets:
+        return {
+            "top_plan_mean_regret": float("nan"),
+            "top_plan_max_regret": float("nan"),
+            "top_plan_optimal_rate": float("nan"),
+            "top_plan_decisions": 0,
+        }
+    return {
+        "top_plan_mean_regret": sum(regrets) / len(regrets),
+        "top_plan_max_regret": max(regrets),
+        "top_plan_optimal_rate": optimal_choices / len(regrets),
+        "top_plan_decisions": len(regrets),
+    }

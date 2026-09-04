@@ -84,11 +84,17 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
     eval_dataset = validation_dataset if validation_examples else train_dataset
     eval_metrics = _evaluate(model, eval_dataset, args.batch_size, device)
 
+    # Compare neural and handwritten evaluators on exactly the same held-out
+    # nonterminal examples. Terminal positions remain useful for overall model
+    # metrics, but their winner is already exposed by the board state and terminal
+    # feature, so mixing them into only one side of the comparison is misleading.
     nonterminal_eval = [example for example in eval_examples if not bool(example.get("terminal", False))]
-    baseline_examples = nonterminal_eval if nonterminal_eval else eval_examples
-    baseline_scores = [handwritten_evaluator_score(example) for example in baseline_examples]
-    baseline_targets = [float(example.get("outcome", 0.0)) for example in baseline_examples]
+    nonterminal_dataset = ValueExampleDataset(nonterminal_eval, encoder)
+    neural_nonterminal_metrics = _evaluate(model, nonterminal_dataset, args.batch_size, device)
+    baseline_scores = [handwritten_evaluator_score(example) for example in nonterminal_eval]
+    baseline_targets = [float(example.get("outcome", 0.0)) for example in nonterminal_eval]
     baseline_accuracy = sign_accuracy(baseline_scores, baseline_targets)
+    comparison_delta = neural_nonterminal_metrics["sign_accuracy"] - baseline_accuracy
 
     checkpoint = {
         "model_state_dict": model.state_dict(),
@@ -120,8 +126,14 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
         "train_sign_accuracy": train_metrics["sign_accuracy"],
         "eval_mse": eval_metrics["mse"],
         "eval_sign_accuracy": eval_metrics["sign_accuracy"],
+        "eval_nonterminal_examples": len(nonterminal_eval),
+        "neural_eval_mse_nonterminal": neural_nonterminal_metrics["mse"],
+        "neural_eval_sign_accuracy_nonterminal": neural_nonterminal_metrics["sign_accuracy"],
         "handwritten_eval_sign_accuracy_nonterminal": baseline_accuracy,
-        "neural_minus_handwritten_sign_accuracy": eval_metrics["sign_accuracy"] - baseline_accuracy,
+        "neural_minus_handwritten_sign_accuracy_nonterminal": comparison_delta,
+        # Backward-compatible key, now corrected to the shared nonterminal population.
+        "neural_minus_handwritten_sign_accuracy": comparison_delta,
+        "metric_comparison_population": "held_out_nonterminal",
         "checkpoint": str(output),
     }
     print(json.dumps(result, indent=2, sort_keys=True))

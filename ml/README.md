@@ -79,6 +79,39 @@ This holds out entire tactical scenario families rather than allowing rotations/
 
 The printed report includes model MSE/sign accuracy, train/validation split groups, and the current `PureStateEvaluator` sign accuracy on the same held-out nonterminal evaluation states.
 
+### Decision-quality metrics
+
+Winner-sign accuracy is a coarse state metric: it asks only whether an evaluator predicts the eventual winner's side of zero. Search needs a stricter benchmark because it uses values to choose among candidate plans at the same decision.
+
+`candidate_ranking_metrics` compares every candidate pair with different target values inside a shared `decision_id`. Correct ordering earns one point, a predicted tie earns half credit, and target ties are omitted.
+
+`top_plan_regret_metrics` measures the target value lost by executing the highest-predicted candidate instead of an oracle-best candidate:
+
+```text
+regret = max(candidate target values) - target value of argmax(predicted values)
+```
+
+Zero regret means the evaluator selected an actually optimal candidate. Mean regret measures typical decision loss, maximum regret catches catastrophic choices, and the optimal-selection rate reports how often regret is zero.
+
+The counterfactual benchmark exporter now emits alternative candidates sharing a stable `decision_id`. From the Godot project directory:
+
+```bash
+bash tools/run_counterfactual_benchmark.sh \
+  --preset=starter \
+  --out=user://counterfactual_benchmark
+```
+
+It writes `candidates.jsonl` plus a `manifest.json`. A candidate target is the weighted terminal return under two explicit assumptions:
+
+- an opponent-plan proposal mixture for the simultaneous first turn
+- a continuation-search-budget mixture for play after that joint turn
+
+This is a policy-conditional counterfactual estimate, not an objectively correct or oracle value. The rules SHA, suite version, opponent-mixture version, continuation-mixture version, individual sample weights, and plan signatures are exported so a target can be reproduced and compared only under the assumptions that produced it.
+
+Turn-limit and failed rollouts stay unlabeled. Each candidate therefore reports `labeled_weight_fraction` as coverage rather than treating missing outcomes as draws. `return_stddev` and `estimated_standard_error` summarize disagreement among the weighted policy samples; they are descriptive sensitivity heuristics, not calibrated confidence intervals. Pairwise comparisons use that spread to leave close candidates `uncertain`, and `estimated_best_candidate_ids` may contain more than one candidate.
+
+The `starter` suite currently covers three tactical decisions from both faction perspectives. It is deliberately small: its immediate purpose is to validate the target definition and exercise candidate-ranking/top-plan-regret metrics before scaling the scenario set.
+
 ## Generalization experiment
 
 `.github/workflows/value-model-experiment.yml` is an on-demand experiment runner and runs when experiment-related files change in a pull request. Its default preset is now `diverse`.

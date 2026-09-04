@@ -153,9 +153,9 @@ jobs:
 
           manifest = json.loads(Path("artifacts/self_play/manifest.json").read_text())
           metrics = json.loads(Path("artifacts/metrics.json").read_text())
-          neural = float(metrics["eval_sign_accuracy"])
+          neural = float(metrics["neural_eval_sign_accuracy_nonterminal"])
           handwritten = float(metrics["handwritten_eval_sign_accuracy_nonterminal"])
-          delta = neural - handwritten
+          delta = float(metrics["neural_minus_handwritten_sign_accuracy_nonterminal"])
           direction = "ahead" if delta > 0 else "behind" if delta < 0 else "tied"
           labeled_families = sorted({
               game["scenario_id"]
@@ -182,8 +182,9 @@ jobs:
           | Failed games | {manifest['games_failed']} ({failure_rate:.1%}) |
           | Training examples | {metrics['train_examples']} |
           | Held-out examples | {metrics['validation_examples']} |
-          | Neural held-out winner-prediction accuracy | {neural:.1%} |
-          | Handwritten held-out winner-prediction accuracy | {handwritten:.1%} |
+          | Held-out nonterminal comparison examples | {metrics['eval_nonterminal_examples']} |
+          | Neural nonterminal winner-prediction accuracy | {neural:.1%} |
+          | Handwritten nonterminal winner-prediction accuracy | {handwritten:.1%} |
           | Neural minus handwritten | {delta:+.1%} |
 
           **Split key:** `{metrics['split_key']}`  
@@ -193,7 +194,7 @@ jobs:
           **Failed games excluded from training:** {', '.join(failed_games) or 'none'}  
           **Game outcomes:** `{manifest['outcomes']}`
 
-          On this held-out sample, the neural evaluator is **{direction}** the handwritten evaluator. Strength claims should still be based on broader data and eventually direct gameplay arenas.
+          Both evaluator accuracies use the exact same held-out nonterminal states. On this sample, the neural evaluator is **{direction}** the handwritten evaluator. Strength claims should still be based on broader data and eventually direct gameplay arenas.
           """
           Path("artifacts/summary.md").write_text(summary, encoding="utf-8")
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
