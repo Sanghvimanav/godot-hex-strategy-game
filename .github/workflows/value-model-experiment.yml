@@ -107,8 +107,19 @@ jobs:
           labeled = int(manifest["games_labeled"])
           failed = int(manifest["games_failed"])
           examples = int(manifest["example_count"])
+          trace_count = int(manifest["trace_count"])
+          traces_path = Path("artifacts/self_play/traces.jsonl")
           if requested <= 0:
               raise SystemExit("self-play preset produced no requested games")
+          if trace_count != requested or not traces_path.exists():
+              raise SystemExit(
+                  f"expected one diagnostic trace per game; got {trace_count}/{requested}"
+              )
+          trace_lines = [line for line in traces_path.read_text().splitlines() if line.strip()]
+          if len(trace_lines) != trace_count:
+              raise SystemExit(
+                  f"trace manifest/file mismatch: manifest={trace_count} file={len(trace_lines)}"
+              )
 
           failure_rate = failed / requested
           labeled_rate = labeled / requested
