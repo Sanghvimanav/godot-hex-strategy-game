@@ -2,6 +2,7 @@ extends RefCounted
 ## Tests for bounded pure-state joint plan generation, including one real scenario.
 
 const PureStatePlans = preload("res://src/simulation/pure_state_plans.gd")
+const PureStateOpponentResponseSearch = preload("res://src/simulation/pure_state_opponent_response_search.gd")
 const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd")
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
@@ -9,6 +10,7 @@ const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_plan_generation_is_bounded_complete_and_pure(tests) and ok
+	ok = _test_all_stunned_group_gets_forced_hold_plan(tests) and ok
 	ok = _test_focus_and_split_fire_survive_pruning(tests) and ok
 	ok = _test_existing_zergling_collapse_scenario(tests) and ok
 	return ok
@@ -37,6 +39,41 @@ static func _test_plan_generation_is_bounded_complete_and_pure(tests: Node) -> b
 	tests._pass("plan generation is bounded, complete, and pure")
 	return true
 
+
+static func _test_all_stunned_group_gets_forced_hold_plan(tests: Node) -> bool:
+	tests._log("test_pure_state_plans: all-stunned group advances with a forced hold")
+	var stunned := _make_unit(1, "res://src/unit/definitions/marine.tres", Vector2i(0, 0))
+	stunned["effects"] = [{
+		"kind": "Stun",
+		"duration": 1,
+		"pending_first_tick": false,
+	}]
+	var state := {
+		"hex_radius": 5,
+		"groups": [
+			{"name": "terran", "units": [stunned], "resources": {}},
+			{"name": "zerg", "units": [
+				_make_unit(2, "res://src/unit/definitions/hydralisk.tres", Vector2i(2, 0)),
+			], "resources": {}},
+		],
+		"tile_resources": {},
+	}
+	var plans := PureStatePlans.get_candidate_plans(state, "terran", 3, 4)
+	if plans.size() != 1 or not (plans[0] is Dictionary):
+		tests._fail("an all-stunned living group should have exactly one forced plan: %s" % plans)
+		return false
+	if not ((plans[0] as Dictionary).get("actions", []) as Array).is_empty():
+		tests._fail("the forced stunned plan must submit no actions: %s" % plans[0])
+		return false
+	var search := PureStateOpponentResponseSearch.search(state, "terran", "zerg", 3, 4, 3, 4)
+	if not bool(search.get("valid", false)):
+		tests._fail("opponent-response search must accept the forced hold plan: %s" % search)
+		return false
+	if not (search.get("best_actions", []) as Array).is_empty():
+		tests._fail("the stunned side must not invent an action: %s" % search.get("best_actions", []))
+		return false
+	tests._pass("all-stunned groups produce a valid empty plan instead of failing search")
+	return true
 
 static func _test_focus_and_split_fire_survive_pruning(tests: Node) -> bool:
 	tests._log("test_pure_state_plans: focus + split fire diversity")
