@@ -24,7 +24,8 @@ static func play_game(
 	max_actions_per_unit: int = DEFAULT_MAX_ACTIONS_PER_UNIT,
 	own_max_plans: int = DEFAULT_OWN_MAX_PLANS,
 	opponent_max_plans: int = DEFAULT_OPPONENT_MAX_PLANS,
-	record_states: bool = false
+	record_states: bool = false,
+	turn_limit_winner: String = ""
 ) -> Dictionary:
 	var invalid := _empty_result(game_state, group_a, group_b)
 	if group_a.is_empty() or group_b.is_empty() or group_a == group_b:
@@ -33,12 +34,14 @@ static func play_game(
 		return invalid
 	if not _has_group(game_state, group_a) or not _has_group(game_state, group_b):
 		return invalid
+	if not turn_limit_winner.is_empty() and turn_limit_winner not in [group_a, group_b]:
+		return invalid
 
 	var state := game_state.duplicate(true)
 	var history: Array = []
 	var initial_outcome := _outcome(state, group_a, group_b)
 	if bool(initial_outcome.get("terminal", false)):
-		return _build_result(true, "terminal", str(initial_outcome.get("winner", "")), 0, state, history, group_a, group_b)
+		return _build_result(true, "terminal", str(initial_outcome.get("winner", "")), 0, state, history, group_a, group_b, "elimination")
 
 	for turn_index in range(max_turns):
 		# Both searches intentionally read the same pre-turn state. Neither side gets
@@ -110,10 +113,23 @@ static func play_game(
 				state,
 				history,
 				group_a,
-				group_b
+				group_b,
+				"elimination"
 			)
 
-	return _build_result(true, "turn_limit", "", max_turns, state, history, group_a, group_b)
+	if not turn_limit_winner.is_empty():
+		return _build_result(
+			true,
+			"terminal",
+			turn_limit_winner,
+			max_turns,
+			state,
+			history,
+			group_a,
+			group_b,
+			"turn_limit_adjudication"
+		)
+	return _build_result(true, "turn_limit", "", max_turns, state, history, group_a, group_b, "turn_limit")
 
 
 static func _outcome(state: Dictionary, group_a: String, group_b: String) -> Dictionary:
@@ -184,12 +200,14 @@ static func _build_result(
 	state: Dictionary,
 	history: Array,
 	group_a: String,
-	group_b: String
+	group_b: String,
+	termination_reason: String = ""
 ) -> Dictionary:
 	return {
 		"valid": valid,
 		"status": status,
 		"winner": winner,
+		"termination_reason": termination_reason,
 		"turns_played": turns_played,
 		"final_state": state.duplicate(true),
 		"history": history.duplicate(true),
