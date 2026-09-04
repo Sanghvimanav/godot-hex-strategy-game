@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-# Full review matrix covers all named scenario-construction cases; the fast/full split follows.
+# Full curated matrix covers all named scenario-construction cases; the fast/full split follows.
         include:
           - case_id: smoke
             preset: smoke
@@ -42,27 +42,27 @@ jobs:
           - case_id: marine-spread-terran
             preset: starter
             decision_id: cf-marine-spread-terran
-          - case_id: review-sacrifice
-            preset: human_review
-            decision_id: review-sacrifice-baneling
-          - case_id: review-preservation
-            preset: human_review
-            decision_id: review-preserve-wounded-scout
-          - case_id: review-spreading
-            preset: human_review
-            decision_id: review-spread-marine-screen
-          - case_id: review-retreating
-            preset: human_review
-            decision_id: review-retreat-wounded-marine
-          - case_id: review-trapped-zergling
-            preset: human_review
-            decision_id: review-trapped-zergling-last-kill
-          - case_id: review-production-pressure
-            preset: human_review
-            decision_id: review-attack-zerg-production-early
-          - case_id: review-coordinated-commitment
-            preset: human_review
-            decision_id: review-coordinate-fire-lanes
+          - case_id: curated-sacrifice
+            preset: curated
+            decision_id: curated-sacrifice-baneling
+          - case_id: curated-preservation
+            preset: curated
+            decision_id: curated-preserve-wounded-scout
+          - case_id: curated-spreading
+            preset: curated
+            decision_id: curated-spread-marine-screen
+          - case_id: curated-retreating
+            preset: curated
+            decision_id: curated-retreat-wounded-marine
+          - case_id: curated-trapped-zergling
+            preset: curated
+            decision_id: curated-trapped-zergling-last-kill
+          - case_id: curated-production-pressure
+            preset: curated
+            decision_id: curated-attack-zerg-production-early
+          - case_id: curated-coordinated-commitment
+            preset: curated
+            decision_id: curated-coordinate-fire-lanes
 
     steps:
       - name: Checkout repository
