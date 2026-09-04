@@ -9,6 +9,7 @@ static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_starter_preset_is_versioned_and_diverse(tests) and ok
 	ok = _test_marine_spread_matches_interception_formation(tests) and ok
+	ok = _test_turn_limit_winner_is_labeled(tests) and ok
 	ok = _test_diverse_preset_expands_tactical_families(tests) and ok
 	ok = _test_seeded_variation_is_reproducible_and_valid(tests) and ok
 	ok = _test_six_hex_rotations_round_trip(tests) and ok
@@ -87,7 +88,49 @@ static func _test_marine_spread_matches_interception_formation(tests: Node) -> b
 	if str(zergling.get("def_path", "")) != "res://src/unit/definitions/zergling.tres" or zergling.get("cell", []) != [0, 0] or int(zergling.get("health", 0)) != 1:
 		tests._fail("Marine spread should retain the one-health Zergling at the origin")
 		return false
-	tests._pass("Marine spread matches the documented two Marine/Scout stacks")
+	var marine_jobs: Array = []
+	for job_variant in PureStateSelfPlaySuite.get_preset("starter"):
+		if job_variant is Dictionary and str((job_variant as Dictionary).get("scenario_id", "")) == "marine_spread":
+			marine_jobs.append(job_variant)
+	if marine_jobs.size() != 2:
+		tests._fail("starter preset should retain two Marine spread rotations")
+		return false
+	for job_variant in marine_jobs:
+		var job: Dictionary = job_variant
+		if int(job.get("max_turns", 0)) != 1 or str(job.get("turn_limit_winner", "")) != "zerg":
+			tests._fail("Marine spread should award Zerg the game when Terran misses the one-turn kill")
+			return false
+	tests._pass("Marine spread matches the documented stacks and one-turn objective")
+	return true
+
+
+static func _test_turn_limit_winner_is_labeled(tests: Node) -> bool:
+	tests._log("test_pure_state_self_play_suite: configured turn cap produces a loss label")
+	# Mixed force cannot eliminate either full army in one turn from this starting
+	# distance, making the configured adjudication deterministic.
+	var result := PureStateTrainingData.generate_game_examples(
+		PureStateSelfPlaySuite.build_state("mixed_force"),
+		"terran",
+		"zerg",
+		"test-turn-cap-loss",
+		1,
+		8,
+		4,
+		4,
+		{},
+		"zerg"
+	)
+	if not bool(result.get("valid", false)) or not bool(result.get("labeled", false)):
+		tests._fail("configured turn-cap winner should produce labeled examples")
+		return false
+	if str(result.get("winner", "")) != "zerg" or str(result.get("termination_reason", "")) != "turn_limit_adjudication":
+		tests._fail("configured turn cap should register a Zerg win with explicit provenance")
+		return false
+	var examples: Array = result.get("examples", [])
+	if examples.is_empty() or float((examples[0] as Dictionary).get("outcome", 0.0)) != -1.0:
+		tests._fail("Terran perspective should receive a loss target at the configured turn cap")
+		return false
+	tests._pass("configured turn cap becomes a labeled Terran loss")
 	return true
 
 
