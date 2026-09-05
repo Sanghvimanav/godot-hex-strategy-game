@@ -7,6 +7,8 @@ class_name PureStateEvaluator
 ## scores the resulting state after simulation. A learned value model can replace
 ## or augment this implementation later without changing the simulator/search API.
 
+const PureStateCommandHexRules = preload("res://src/simulation/pure_state_command_hex_rules.gd")
+
 const TERMINAL_WEIGHT := 100000.0
 const UNIT_COUNT_WEIGHT := 100.0
 const HEALTH_WEIGHT := 10.0
@@ -31,6 +33,7 @@ static func evaluate_breakdown(game_state: Dictionary, group_name: String) -> Di
 			"health": 0.0,
 			"resources": 0.0,
 			"energy": 0.0,
+			"objective": 0.0,
 		}
 
 	var own := _group_totals(own_group)
@@ -65,7 +68,8 @@ static func evaluate_breakdown(game_state: Dictionary, group_name: String) -> Di
 	var health_component := float(int(own["health"]) - int(enemies["health"])) * HEALTH_WEIGHT
 	var resource_component := (float(own["resources"]) - float(enemies["resources"])) * RESOURCE_WEIGHT
 	var energy_component := float(int(own["energy"]) - int(enemies["energy"])) * ENERGY_WEIGHT
-	var total := terminal_component + unit_component + health_component + resource_component + energy_component
+	var objective_component := PureStateCommandHexRules.objective_score(game_state, group_name)
+	var total := terminal_component + unit_component + health_component + resource_component + energy_component + objective_component
 
 	return {
 		"valid": true,
@@ -75,6 +79,7 @@ static func evaluate_breakdown(game_state: Dictionary, group_name: String) -> Di
 		"health": health_component,
 		"resources": resource_component,
 		"energy": energy_component,
+		"objective": objective_component,
 		"friendly_units": int(own["units"]),
 		"enemy_units": int(enemies["units"]),
 		"friendly_health": int(own["health"]),
