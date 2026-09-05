@@ -46,12 +46,14 @@ static func get_candidate_plans(
 	units.sort_custom(func(a, b): return int(a.get("unit_id", -1)) < int(b.get("unit_id", -1)))
 
 	var choices_by_unit: Array = []
+	var living_unit_count := 0
 	for unit_variant in units:
 		if not (unit_variant is Dictionary):
 			continue
 		var unit: Dictionary = unit_variant
 		if int(unit.get("health", 0)) <= 0:
 			continue
+		living_unit_count += 1
 		var unit_id := int(unit.get("unit_id", -1))
 		var legal: Array = PureStateLegalActions.get_legal_actions(game_state, unit_id)
 		if legal.is_empty():
@@ -82,6 +84,11 @@ static func get_candidate_plans(
 			choices_by_unit.append(kept)
 
 	if choices_by_unit.is_empty():
+		# A living group whose units are all temporarily unable to act (for example,
+		# all stunned) has one legal forced plan: submit no actions. Treating this as
+		# no plan makes otherwise valid rollouts fail instead of advancing the turn.
+		if living_unit_count > 0:
+			return [{"actions": [], "proposal_score": 0.0}]
 		return []
 
 	var beam: Array = [{"actions": [], "proposal_score": 0.0}]

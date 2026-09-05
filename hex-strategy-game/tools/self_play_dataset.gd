@@ -44,6 +44,7 @@ func _run_dataset() -> void:
 		push_warning("Self-play dataset has no rules git SHA; pass --rules-version or use run_self_play_dataset.sh")
 
 	var all_examples: Array = []
+	var all_traces: Array = []
 	var game_summaries: Array = []
 	var labeled_games := 0
 	var unlabeled_games := 0
@@ -74,14 +75,19 @@ func _run_dataset() -> void:
 			int(job.get("max_actions_per_unit", 1)),
 			int(job.get("own_max_plans", 1)),
 			int(job.get("opponent_max_plans", 1)),
-			source_metadata
+			source_metadata,
+			str(job.get("turn_limit_winner", ""))
 		)
 
 		var valid := bool(result.get("valid", false))
 		var labeled := bool(result.get("labeled", false))
 		var status := str(result.get("status", ""))
 		var winner := str(result.get("winner", ""))
+		var termination_reason := str(result.get("termination_reason", ""))
 		var example_count := int(result.get("example_count", 0))
+		var trace = result.get("trace", null)
+		if trace is Dictionary:
+			all_traces.append((trace as Dictionary).duplicate(true))
 		if not valid:
 			failed_games += 1
 		elif labeled:
@@ -101,12 +107,14 @@ func _run_dataset() -> void:
 			"rotation_steps": int(job.get("rotation_steps", 0)),
 			"variation_seed": int(job.get("variation_seed", 0)),
 			"max_turns": int(job.get("max_turns", 0)),
+			"turn_limit_winner": str(job.get("turn_limit_winner", "")),
 			"own_max_plans": int(job.get("own_max_plans", 0)),
 			"opponent_max_plans": int(job.get("opponent_max_plans", 0)),
 			"valid": valid,
 			"labeled": labeled,
 			"status": status,
 			"winner": winner,
+			"termination_reason": termination_reason,
 			"turns_played": int(result.get("turns_played", 0)),
 			"example_count": example_count,
 		}
@@ -125,6 +133,7 @@ func _run_dataset() -> void:
 	var manifest := {
 		"manifest_schema_version": DATASET_MANIFEST_SCHEMA_VERSION,
 		"training_example_schema_version": PureStateTrainingData.SCHEMA_VERSION,
+		"trace_schema_version": PureStateTrainingData.TRACE_SCHEMA_VERSION,
 		"self_play_suite_version": PureStateSelfPlaySuite.SUITE_VERSION,
 		"preset": preset,
 		"rules_version": rules_version,
@@ -134,15 +143,20 @@ func _run_dataset() -> void:
 		"games_unlabeled": unlabeled_games,
 		"games_failed": failed_games,
 		"example_count": all_examples.size(),
+		"trace_count": all_traces.size(),
+		"trace_file": "traces.jsonl",
 		"outcomes": outcomes,
 		"games": game_summaries,
 	}
 
 	var examples_path := out_dir.path_join("examples.jsonl")
+	var traces_path := out_dir.path_join("traces.jsonl")
 	var manifest_path := out_dir.path_join("manifest.json")
 	var write_ok := _write_text(examples_path, PureStateTrainingData.to_jsonl(all_examples))
+	write_ok = _write_text(traces_path, PureStateTrainingData.to_jsonl(all_traces)) and write_ok
 	write_ok = _write_json(manifest_path, manifest) and write_ok
 	print("[self-play] wrote %s" % ProjectSettings.globalize_path(examples_path))
+	print("[self-play] wrote %s" % ProjectSettings.globalize_path(traces_path))
 	print("[self-play] wrote %s" % ProjectSettings.globalize_path(manifest_path))
 	print("[self-play] summary games=%d labeled=%d unlabeled=%d failed=%d examples=%d outcomes=%s" % [
 		jobs.size(),

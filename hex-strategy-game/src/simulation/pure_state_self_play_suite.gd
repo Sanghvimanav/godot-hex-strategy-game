@@ -8,7 +8,7 @@ class_name PureStateSelfPlaySuite
 
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
-const SUITE_VERSION := 2
+const SUITE_VERSION := 5
 const DEFAULT_MAX_ACTIONS_PER_UNIT := 8
 
 const BUDGET_PROFILES := {
@@ -47,8 +47,8 @@ static func get_preset(preset_name: String) -> Array:
 				_make_job("baneling-finish-fast-r1", "baneling_finish", "fast", 1, 3),
 				_make_job("baneling-finish-balanced-r3", "baneling_finish", "balanced", 3, 3),
 				_make_job("baneling-finish-broad-r5", "baneling_finish", "broad", 5, 3),
-				_make_job("marine-spread-balanced-r0", "marine_spread", "balanced", 0, 4),
-				_make_job("marine-spread-balanced-r3", "marine_spread", "balanced", 3, 4),
+				_make_job("marine-spread-balanced-r0", "marine_spread", "balanced", 0, 1, "zerg"),
+				_make_job("marine-spread-balanced-r3", "marine_spread", "balanced", 3, 1, "zerg"),
 				_make_job("mixed-force-fast-r0", "mixed_force", "fast", 0, 6),
 				_make_job("mixed-force-fast-r3", "mixed_force", "fast", 3, 6),
 			]
@@ -73,6 +73,11 @@ static func get_preset(preset_name: String) -> Array:
 				_make_varied_job("baneling-flank-balanced-s52", "baneling_flank", "balanced", 3, 7, 52),
 				_make_varied_job("attrition-fast-s61", "attrition", "fast", 1, 9, 61),
 				_make_varied_job("attrition-balanced-s62", "attrition", "balanced", 4, 9, 62),
+				# The town stays at the rotation-invariant origin. These intentionally
+				# run longer so delay, repeated consumption, and spawning can affect
+				# the elimination result instead of being cut off as a short skirmish.
+				_make_job("fester-siege-fast-r0", "fester_siege", "fast", 0, 14),
+				_make_job("fester-siege-balanced-r3", "fester_siege", "balanced", 3, 14),
 			])
 			return jobs
 	return []
@@ -100,6 +105,8 @@ static func build_state(scenario_id: String) -> Dictionary:
 			return _baneling_flank_state()
 		"attrition":
 			return _attrition_state()
+		"fester_siege":
+			return _fester_siege_state()
 	return {}
 
 
@@ -167,9 +174,10 @@ static func _make_job(
 	scenario_id: String,
 	budget_profile: String,
 	rotation_steps: int,
-	max_turns: int
+	max_turns: int,
+	turn_limit_winner: String = ""
 ) -> Dictionary:
-	return _make_varied_job(game_id, scenario_id, budget_profile, rotation_steps, max_turns, 0)
+	return _make_varied_job(game_id, scenario_id, budget_profile, rotation_steps, max_turns, 0, turn_limit_winner)
 
 
 static func _make_varied_job(
@@ -178,7 +186,8 @@ static func _make_varied_job(
 	budget_profile: String,
 	rotation_steps: int,
 	max_turns: int,
-	variation_seed: int
+	variation_seed: int,
+	turn_limit_winner: String = ""
 ) -> Dictionary:
 	var profile: Dictionary = BUDGET_PROFILES.get(budget_profile, {})
 	var base_state := build_state(scenario_id)
@@ -194,6 +203,7 @@ static func _make_varied_job(
 		"group_a": "terran",
 		"group_b": "zerg",
 		"max_turns": max_turns,
+		"turn_limit_winner": turn_limit_winner,
 		"max_actions_per_unit": DEFAULT_MAX_ACTIONS_PER_UNIT,
 		"own_max_plans": int(profile.get("own_max_plans", 1)),
 		"opponent_max_plans": int(profile.get("opponent_max_plans", 1)),
@@ -262,9 +272,13 @@ static func _marine_spread_state() -> Dictionary:
 		"hex_radius": 4,
 		"groups": [
 			{"name": "terran", "resources": {}, "units": [
+				# Two Marine/Scout stacks create a coordinated interception puzzle:
+				# Marines can cover the three q=0 cells while Scouts reach the
+				# two distance-two escape cells on the left.
 				_make_unit(1, "res://src/unit/definitions/marine.tres", Vector2i(1, 0)),
 				_make_unit(2, "res://src/unit/definitions/marine.tres", Vector2i(1, -1)),
-				_make_unit(3, "res://src/unit/definitions/marine.tres", Vector2i(2, -2)),
+				_make_unit(5, "res://src/unit/definitions/scout.tres", Vector2i(1, 0)),
+				_make_unit(6, "res://src/unit/definitions/scout.tres", Vector2i(1, -1)),
 			]},
 			{"name": "zerg", "resources": {}, "units": [
 				_make_unit(4, "res://src/unit/definitions/zergling.tres", Vector2i(0, 0), 1),
@@ -415,6 +429,38 @@ static func _attrition_state() -> Dictionary:
 			]},
 		],
 		"tile_resources": {},
+	}
+
+
+static func _fester_siege_state() -> Dictionary:
+	# Elimination remains the only victory condition. Zerg begins one people
+	# short of spawning, so the Fester must consume from the town before the
+	# first reinforcement. The initial Zerglings screen the producer while the
+	# nearby Marines have a narrow window to break through before production
+	# compounds. Twelve people supports several consume/heal cycles without
+	# making the producer immortal.
+	return {
+		"scenario_id": "training_fester_siege",
+		"hex_radius": 5,
+		"groups": [
+			{"name": "terran", "resources": {}, "units": [
+				_make_unit(1, "res://src/unit/definitions/marine.tres", Vector2i(3, -1)),
+				_make_unit(2, "res://src/unit/definitions/marine.tres", Vector2i(3, 0)),
+				_make_unit(3, "res://src/unit/definitions/marine.tres", Vector2i(2, 1)),
+			]},
+			{"name": "zerg", "resources": {"people": 2}, "units": [
+				_make_unit(4, "res://src/unit/definitions/fester.tres", Vector2i(0, 0)),
+				_make_unit(5, "res://src/unit/definitions/zergling.tres", Vector2i(1, 0)),
+				_make_unit(6, "res://src/unit/definitions/zergling.tres", Vector2i(1, -1)),
+			]},
+		],
+		"tile_resources": {
+			HexGrid.get_cell_key(0, 0): {
+				"amount": 12,
+				"max_amount": 12,
+				"resource_type": "people",
+			},
+		},
 	}
 
 

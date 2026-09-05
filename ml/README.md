@@ -46,9 +46,9 @@ Presets:
 
 - `smoke` — one cheap terminal pipeline check
 - `starter` — the original 10-job / four-family benchmark retained for historical comparison
-- `diverse` — 24 jobs across 10 tactical families, including Hydralisk range/stun, Medic sustain, Scout kiting, worker/economy screens, Baneling flanks, and mixed attrition
+- `diverse` — 26 jobs across 11 tactical families, including Hydralisk range/stun, Medic sustain, Scout kiting, worker/economy screens, Baneling flanks, mixed attrition, and a long-horizon Fester siege
 
-The 14 added `diverse` jobs use fixed variation seeds. Each seed can perturb unit positions by at most one legal hex and vary HP, energy, and resource context. The same rules commit + suite version + seed reproduces the same starting state.
+Fourteen added `diverse` jobs use fixed variation seeds. Each seed can perturb unit positions by at most one legal hex and vary HP, energy, and resource context. Two additional Fester siege jobs keep the producer and its people town at the rotation-invariant origin and allow 14 turns: Zerg starts one people short of spawning, so its screen must buy time to consume and reinforce while Terran must attack before production compounds. The same rules commit + suite version + seed reproduces the same starting state.
 
 Campaign scenarios are intentionally excluded for now. The pure rollout currently ends on unit elimination, while some campaigns have scenario-specific objectives; those should become first-class value-model inputs before campaign self-play is used for training.
 
@@ -79,6 +79,50 @@ This holds out entire tactical scenario families rather than allowing rotations/
 
 The printed report includes model MSE/sign accuracy, train/validation split groups, and the current `PureStateEvaluator` sign accuracy on the same held-out nonterminal evaluation states.
 
+### Decision-quality metrics
+
+Winner-sign accuracy is a coarse state metric: it asks only whether an evaluator predicts the eventual winner's side of zero. Search needs a stricter benchmark because it uses values to choose among candidate plans at the same decision.
+
+`candidate_ranking_metrics` compares every candidate pair with different target values inside a shared `decision_id`. Correct ordering earns one point, a predicted tie earns half credit, and target ties are omitted.
+
+`top_plan_regret_metrics` measures the target value lost by executing the highest-predicted candidate instead of the benchmark-best candidate:
+
+```text
+regret = max(candidate target values) - target value of argmax(predicted values)
+```
+
+Zero regret means the evaluator selected an actually optimal candidate. Mean regret measures typical decision loss, maximum regret catches catastrophic choices, and the optimal-selection rate reports how often regret is zero.
+
+The counterfactual benchmark exporter now emits alternative candidates sharing a stable `decision_id`. From the Godot project directory:
+
+```bash
+bash tools/run_counterfactual_benchmark.sh \
+  --preset=starter \
+  --out=user://counterfactual_benchmark
+```
+
+It writes `candidates.jsonl` plus a `manifest.json`. A candidate target is the weighted terminal return under two explicit assumptions:
+
+- an opponent-plan proposal mixture for the simultaneous first turn
+- a continuation-search-budget mixture for play after that joint turn
+
+This is a policy-conditional counterfactual estimate, not an objectively correct or oracle value. The rules SHA, suite version, opponent-mixture version, continuation-mixture version, individual sample weights, and plan signatures are exported so a target can be reproduced and compared only under the assumptions that produced it.
+
+Turn-limit and failed rollouts stay unlabeled. Each candidate therefore reports `labeled_weight_fraction` as coverage rather than treating missing outcomes as draws. `return_stddev` and `estimated_standard_error` summarize disagreement among the weighted policy samples; they are descriptive sensitivity heuristics, not calibrated confidence intervals. Pairwise comparisons use that spread to leave close candidates `uncertain`, and `estimated_best_candidate_ids` may contain more than one candidate.
+
+The `starter` suite currently covers three tactical decisions from both faction perspectives. It is deliberately small: its immediate purpose is to validate the target definition and exercise candidate-ranking/top-plan-regret metrics before scaling the scenario set.
+
+After training a checkpoint, score the same candidate rows with the neural value model, handwritten state evaluator, and planner proposal score:
+
+```bash
+python -m ml.value_model.evaluate_counterfactual \
+  --candidates artifacts/counterfactual/candidates.jsonl \
+  --checkpoint artifacts/value_model.pt \
+  --output artifacts/counterfactual_metrics.json
+```
+
+Candidate predictions are weighted over the same labeled opponent/continuation samples as their targets. This keeps unlabeled turn limits out of both sides of the comparison.
+
 ## Generalization experiment
 
 `.github/workflows/value-model-experiment.yml` is an on-demand experiment runner and runs when experiment-related files change in a pull request. Its default preset is now `diverse`.
@@ -90,7 +134,10 @@ It performs the complete pipeline:
 3. train `HexValueNet` on CPU
 4. hold out whole `source.base_scenario_id` families
 5. compare neural and handwritten evaluator sign accuracy on the held-out states
-6. upload `examples.jsonl`, `manifest.json`, `metrics.json`, `summary.md`, and the PyTorch checkpoint as a 14-day workflow artifact
+6. generate same-commit counterfactual candidates and report candidate ranking plus top-plan regret for the neural, handwritten, and planner proposal evaluators
+7. upload datasets, manifests, metrics, summary, and the PyTorch checkpoint as a 14-day workflow artifact
+
+The standalone Counterfactual Benchmark workflow remains the correctness and scenario-validation gate. The Value Model Experiment uses the separate `curated` decision suite by default and generates same-commit inputs instead of triggering or downloading another workflow's artifacts, so every model result is reproducible from one commit and one run.
 
 These experiments are still directional, not production-quality benchmarks. The eventual strength benchmark is direct gameplay: identical search driven by the neural evaluator versus identical search driven by the handwritten evaluator. Opponent interestingness should be tracked separately from strength.
 

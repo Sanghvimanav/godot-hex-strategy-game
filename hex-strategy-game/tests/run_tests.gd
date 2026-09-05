@@ -24,9 +24,11 @@ func _ready() -> void:
 	var TestOpponentConditionedCounters = load("res://tests/test_opponent_conditioned_counters.gd") as GDScript
 	var TestOpponentResponseRetreat = load("res://tests/test_opponent_response_retreat.gd") as GDScript
 	var TestPureStateGameRollout = load("res://tests/test_pure_state_game_rollout.gd") as GDScript
+	var TestPureStateCommandHexRules = load("res://tests/test_pure_state_command_hex_rules.gd") as GDScript
 	var TestPureStateGameRolloutBudgetMatrix = load("res://tests/test_pure_state_game_rollout_budget_matrix.gd") as GDScript
 	var TestPureStateTrainingData = load("res://tests/test_pure_state_training_data.gd") as GDScript
 	var TestPureStateSelfPlaySuite = load("res://tests/test_pure_state_self_play_suite.gd") as GDScript
+	var TestPureStateCounterfactualBenchmark = load("res://tests/test_pure_state_counterfactual_benchmark.gd") as GDScript
 	var TestServerTurnExecutor = load("res://tests/test_server_turn_executor.gd") as GDScript
 	var TestUnifiedPipeline = load("res://tests/test_unified_pipeline.gd") as GDScript
 	var TestStunEffects = load("res://tests/test_stun_effects.gd") as GDScript
@@ -105,6 +107,10 @@ func _ready() -> void:
 		_fail_count += 1
 	else:
 		_pass_count += 1
+	if not TestPureStateCommandHexRules.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
 	if not TestPureStateGameRolloutBudgetMatrix.run_all(self):
 		_fail_count += 1
 	else:
@@ -114,6 +120,10 @@ func _ready() -> void:
 	else:
 		_pass_count += 1
 	if not TestPureStateSelfPlaySuite.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestPureStateCounterfactualBenchmark.run_all(self):
 		_fail_count += 1
 	else:
 		_pass_count += 1

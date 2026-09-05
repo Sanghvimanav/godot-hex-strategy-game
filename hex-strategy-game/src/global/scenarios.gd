@@ -623,20 +623,21 @@ func _build_scenarios() -> void:
 			]},
 		]
 	})
-	# Eval 11: Baneling tactical check. When stacked with low-health Marines, the
-	# Baneling should choose explode to secure immediate multi-kill value.
+	# Eval 11: decisive Baneling sacrifice. Explode kills both 2-HP Marines,
+	# while a surviving Zergling prevents the self-sacrifice from producing a draw.
 	available_scenarios.append({
-		"id": "eval_baneling_explode_vs_2marines_hp3",
-		"display_name": "Eval: Baneling Explode vs 2 Marines (HP 3)",
+		"id": "eval_baneling_explode_vs_2marines_hp2",
+		"display_name": "Eval: Baneling Explode vs 2 Marines (HP 2)",
 		"category": "drill",
-		"description": "AI controls a Baneling stacked with two 3-HP Marines on [0,0]. Goal: choose explode.",
+		"description": "AI controls a Baneling stacked with two 2-HP Marines on [0,0] plus a safe Zergling. Goal: explode for an immediate Zerg win.",
 		"groups": [
 			{"name": "terran", "units": [
-				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(0, 0), "health": 3},
-				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(0, 0), "health": 3},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(0, 0), "health": 2},
+				{"def_path": "res://src/unit/definitions/marine.tres", "cell": Vector2i(0, 0), "health": 2},
 			]},
 			{"name": "zerg", "ai": true, "units": [
 				{"def_path": "res://src/unit/definitions/baneling.tres", "cell": Vector2i(0, 0)},
+				{"def_path": _ZERGLING_DEF_PATH, "cell": Vector2i(4, 0)},
 			]},
 		]
 	})

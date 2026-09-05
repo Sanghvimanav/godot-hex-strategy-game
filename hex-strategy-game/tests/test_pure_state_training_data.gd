@@ -67,8 +67,19 @@ static func _test_terminal_game_emits_paired_value_examples(tests: Node) -> bool
 	if int(terminal_zerg.get("turn_index", -1)) != 1:
 		tests._fail("one-turn game terminal state should use turn_index 1")
 		return false
-	if initial_zerg.get("state", {}) != before:
-		tests._fail("first exported state should exactly match the source state")
+	# Rollout normalization derives command objectives on its private state copy.
+	# Training examples must include those objectives so learned evaluators see the
+	# same rules the planner used, while the caller's source dictionary stays pure.
+	var expected_initial_state := before.duplicate(true)
+	expected_initial_state["command_hexes"] = {
+		"zerg": [-5, 0],
+		"terran": [5, 0],
+	}
+	if initial_zerg.get("state", {}) != expected_initial_state:
+		tests._fail("first exported state should match the objective-normalized rollout state")
+		return false
+	if initial_terran.get("state", {}) != expected_initial_state:
+		tests._fail("both perspective examples should share the same objective-aware initial state")
 		return false
 	var source: Dictionary = initial_zerg.get("source", {})
 	if int(source.get("own_max_plans", 0)) != 2 or int(source.get("opponent_max_plans", 0)) != 2:
@@ -91,7 +102,7 @@ static func _test_terminal_game_emits_paired_value_examples(tests: Node) -> bool
 		examples.size(),
 		lines.size(),
 	])
-	tests._pass("terminal self-play emits deterministic paired value targets and JSONL")
+	tests._pass("terminal self-play emits deterministic paired objective-aware value targets and JSONL")
 	return true
 
 

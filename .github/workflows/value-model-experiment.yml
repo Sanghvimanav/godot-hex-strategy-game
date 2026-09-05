@@ -12,6 +12,15 @@ on:
           - diverse
           - starter
           - smoke
+      counterfactual_preset:
+        description: Counterfactual suite used for decision-quality evaluation
+        required: true
+        default: curated
+        type: choice
+        options:
+          - curated
+          - starter
+          - smoke
       epochs:
         description: Training epochs
         required: true
@@ -27,6 +36,9 @@ on:
       - "hex-strategy-game/tools/run_self_play_dataset.sh"
       - "hex-strategy-game/src/simulation/pure_state_self_play_suite.gd"
       - "hex-strategy-game/src/simulation/pure_state_training_data.gd"
+      - "hex-strategy-game/src/simulation/pure_state_counterfactual_*.gd"
+      - "hex-strategy-game/tools/counterfactual_benchmark.*"
+      - "hex-strategy-game/tools/run_counterfactual_benchmark.sh"
 
 permissions:
   contents: read
@@ -39,9 +51,10 @@ jobs:
   experiment:
     name: Generate, train, compare
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       EXPERIMENT_PRESET: ${{ github.event_name == 'workflow_dispatch' && inputs.preset || 'diverse' }}
+      COUNTERFACTUAL_PRESET: ${{ github.event_name == 'workflow_dispatch' && inputs.counterfactual_preset || 'curated' }}
       EXPERIMENT_EPOCHS: ${{ github.event_name == 'workflow_dispatch' && inputs.epochs || '60' }}
 
     steps:
@@ -71,6 +84,15 @@ jobs:
             --preset="${EXPERIMENT_PRESET}" \
             --out="${GITHUB_WORKSPACE}/artifacts/self_play"
 
+      - name: Generate same-commit counterfactual candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd hex-strategy-game
+          bash tools/run_counterfactual_benchmark.sh \
+            --preset="${COUNTERFACTUAL_PRESET}" \
+            --out="${GITHUB_WORKSPACE}/artifacts/counterfactual"
+
       - name: Audit generated dataset
         run: |
           python - <<'PY'
@@ -85,8 +107,19 @@ jobs:
           labeled = int(manifest["games_labeled"])
           failed = int(manifest["games_failed"])
           examples = int(manifest["example_count"])
+          trace_count = int(manifest["trace_count"])
+          traces_path = Path("artifacts/self_play/traces.jsonl")
           if requested <= 0:
               raise SystemExit("self-play preset produced no requested games")
+          if trace_count != requested or not traces_path.exists():
+              raise SystemExit(
+                  f"expected one diagnostic trace per game; got {trace_count}/{requested}"
+              )
+          trace_lines = [line for line in traces_path.read_text().splitlines() if line.strip()]
+          if len(trace_lines) != trace_count:
+              raise SystemExit(
+                  f"trace manifest/file mismatch: manifest={trace_count} file={len(trace_lines)}"
+              )
 
           failure_rate = failed / requested
           labeled_rate = labeled / requested
@@ -132,6 +165,9 @@ jobs:
       - name: Install CPU PyTorch
         run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
+      - name: Run value-model tests
+        run: python -m unittest discover -s ml/tests -v
+
       - name: Train with held-out scenario families
         shell: bash
         run: |
@@ -144,6 +180,15 @@ jobs:
             --split-key source.base_scenario_id \
             | tee artifacts/metrics.json
 
+      - name: Evaluate candidate ranking and regret
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m ml.value_model.evaluate_counterfactual \
+            --candidates artifacts/counterfactual/candidates.jsonl \
+            --checkpoint artifacts/value_model.pt \
+            --output artifacts/counterfactual_metrics.json
+
       - name: Write experiment summary
         run: |
           python - <<'PY'
@@ -153,9 +198,13 @@ jobs:
 
           manifest = json.loads(Path("artifacts/self_play/manifest.json").read_text())
           metrics = json.loads(Path("artifacts/metrics.json").read_text())
-          neural = float(metrics["eval_sign_accuracy"])
+          decision_quality = json.loads(Path("artifacts/counterfactual_metrics.json").read_text())
+          neural_decision = decision_quality["evaluators"]["neural_value_model"]
+          handwritten_decision = decision_quality["evaluators"]["handwritten_state_evaluator"]
+          proposal_decision = decision_quality["evaluators"]["planner_proposal_score"]
+          neural = float(metrics["neural_eval_sign_accuracy_nonterminal"])
           handwritten = float(metrics["handwritten_eval_sign_accuracy_nonterminal"])
-          delta = neural - handwritten
+          delta = float(metrics["neural_minus_handwritten_sign_accuracy_nonterminal"])
           direction = "ahead" if delta > 0 else "behind" if delta < 0 else "tied"
           labeled_families = sorted({
               game["scenario_id"]
@@ -182,9 +231,17 @@ jobs:
           | Failed games | {manifest['games_failed']} ({failure_rate:.1%}) |
           | Training examples | {metrics['train_examples']} |
           | Held-out examples | {metrics['validation_examples']} |
-          | Neural held-out winner-prediction accuracy | {neural:.1%} |
-          | Handwritten held-out winner-prediction accuracy | {handwritten:.1%} |
+          | Held-out nonterminal comparison examples | {metrics['eval_nonterminal_examples']} |
+          | Neural nonterminal winner-prediction accuracy | {neural:.1%} |
+          | Handwritten nonterminal winner-prediction accuracy | {handwritten:.1%} |
           | Neural minus handwritten | {delta:+.1%} |
+          | Counterfactual decisions / candidates | {decision_quality['evaluated_decisions']} / {decision_quality['evaluated_candidates']} |
+          | Neural candidate-ranking accuracy | {neural_decision['candidate_ranking_accuracy']:.1%} |
+          | Neural mean / max regret; optimal-choice rate | {neural_decision['top_plan_mean_regret']:.3f} / {neural_decision['top_plan_max_regret']:.3f}; {neural_decision['top_plan_optimal_rate']:.1%} |
+          | Handwritten candidate-ranking accuracy | {handwritten_decision['candidate_ranking_accuracy']:.1%} |
+          | Handwritten mean / max regret; optimal-choice rate | {handwritten_decision['top_plan_mean_regret']:.3f} / {handwritten_decision['top_plan_max_regret']:.3f}; {handwritten_decision['top_plan_optimal_rate']:.1%} |
+          | Planner proposal candidate-ranking accuracy | {proposal_decision['candidate_ranking_accuracy']:.1%} |
+          | Planner proposal mean / max regret; optimal-choice rate | {proposal_decision['top_plan_mean_regret']:.3f} / {proposal_decision['top_plan_max_regret']:.3f}; {proposal_decision['top_plan_optimal_rate']:.1%} |
 
           **Split key:** `{metrics['split_key']}`  
           **Training scenario families:** {', '.join(metrics['train_split_groups']) or 'none'}  
@@ -193,7 +250,7 @@ jobs:
           **Failed games excluded from training:** {', '.join(failed_games) or 'none'}  
           **Game outcomes:** `{manifest['outcomes']}`
 
-          On this held-out sample, the neural evaluator is **{direction}** the handwritten evaluator. Strength claims should still be based on broader data and eventually direct gameplay arenas.
+          Both winner-prediction accuracies use the exact same held-out nonterminal states. Candidate ranking and regret use a same-commit \`{os.environ['COUNTERFACTUAL_PRESET']}\` counterfactual suite and the same labeled policy samples for each evaluator. On the winner-prediction sample, the neural evaluator is **{direction}** the handwritten evaluator. Strength claims should still be based on broader data and eventually direct gameplay arenas.
           """
           Path("artifacts/summary.md").write_text(summary, encoding="utf-8")
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:

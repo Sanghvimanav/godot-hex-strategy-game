@@ -1,0 +1,115 @@
+<div id="marine-interception-viz">
+  <style>
+    #marine-interception-viz { width: 100%; color: var(--foreground); }
+    #marine-interception-viz h3 { margin: 0 0 8px; font-weight: 500; }
+    #marine-interception-viz .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 8px; }
+    #marine-interception-viz .legend-item { display: inline-flex; align-items: center; gap: 7px; }
+    #marine-interception-viz .swatch { width: 14px; height: 14px; border-radius: 50%; }
+    #marine-interception-viz .marine { background: var(--viz-series-1); }
+    #marine-interception-viz .scout { background: var(--viz-series-3); }
+    #marine-interception-viz .zerg { background: var(--viz-series-2); }
+    #marine-interception-viz .marine-fire { background: color-mix(in srgb, var(--viz-series-1) 20%, transparent); border: 2px solid var(--viz-series-1); border-radius: 2px; }
+    #marine-interception-viz .scout-fire { background: color-mix(in srgb, var(--viz-series-3) 18%, transparent); border: 2px dashed var(--viz-series-3); border-radius: 2px; }
+    #marine-interception-viz .board-wrap { width: 100%; max-width: 620px; margin-inline: auto; }
+    #marine-interception-viz svg { display: block; width: 100%; height: auto; }
+    #marine-interception-viz .hex { fill: color-mix(in srgb, var(--muted) 28%, transparent); stroke: var(--border); stroke-width: 1.5; }
+    #marine-interception-viz .marine-target { fill: color-mix(in srgb, var(--viz-series-1) 16%, transparent); stroke: var(--viz-series-1); stroke-width: 3; }
+    #marine-interception-viz .scout-target { fill: color-mix(in srgb, var(--viz-series-3) 14%, transparent); stroke: var(--viz-series-3); stroke-width: 3; stroke-dasharray: 6 4; }
+    #marine-interception-viz .marine-token { fill: var(--viz-series-1); }
+    #marine-interception-viz .scout-token { fill: var(--viz-series-3); }
+    #marine-interception-viz .zerg-token { fill: var(--viz-series-2); }
+    #marine-interception-viz .token-text { fill: var(--background); font-weight: 500; text-anchor: middle; dominant-baseline: middle; }
+    #marine-interception-viz .cell-label { fill: var(--muted-foreground); text-anchor: middle; }
+    #marine-interception-viz .target-label { fill: var(--foreground); text-anchor: middle; font-weight: 500; }
+  </style>
+
+  <h3>Marine-spread fast-move interception coverage</h3>
+  <div class="legend" aria-label="Legend">
+    <span class="legend-item"><span class="swatch marine"></span>Marine</span>
+    <span class="legend-item"><span class="swatch scout"></span>Scout</span>
+    <span class="legend-item"><span class="swatch zerg"></span>Zergling</span>
+    <span class="legend-item"><span class="swatch marine-fire"></span>Marine fire</span>
+    <span class="legend-item"><span class="swatch scout-fire"></span>Scout fire</span>
+  </div>
+  <div class="board-wrap">
+    <svg id="marine-interception-board" viewBox="0 0 620 500" role="img" aria-labelledby="marine-interception-title marine-interception-desc">
+      <title id="marine-interception-title">Marine and Scout interception plan</title>
+      <desc id="marine-interception-desc">A Zergling starts at zero zero. A Marine and Scout share one zero, and another Marine and Scout share one negative one. Marine fire covers zero negative one, zero zero, and zero one. Scout fire targets negative one zero and negative one one.</desc>
+    </svg>
+  </div>
+
+  <script>
+    (() => {
+      const root = document.getElementById('marine-interception-viz');
+      const svg = root.querySelector('#marine-interception-board');
+      const ns = 'http://www.w3.org/2000/svg';
+      const size = 58;
+      const origin = { x: 270, y: 245 };
+      const stacks = new Map([
+        ['1,0', [{ kind: 'marine', label: 'M1' }, { kind: 'scout', label: 'S1' }]],
+        ['1,-1', [{ kind: 'marine', label: 'M2' }, { kind: 'scout', label: 'S2' }]]
+      ]);
+      const marineTargets = new Set(['0,-1', '0,0', '0,1']);
+      const scoutTargets = new Set(['-1,0', '-1,1']);
+
+      function center(q, r) {
+        return { x: origin.x + size * Math.sqrt(3) * (q + r / 2), y: origin.y + size * 1.5 * r };
+      }
+      function points(cx, cy) {
+        const out = [];
+        for (let i = 0; i < 6; i += 1) {
+          const angle = Math.PI / 180 * (60 * i - 30);
+          out.push(`${cx + size * Math.cos(angle)},${cy + size * Math.sin(angle)}`);
+        }
+        return out.join(' ');
+      }
+      function el(name, attrs, text) {
+        const node = document.createElementNS(ns, name);
+        Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
+        if (text !== undefined) node.textContent = text;
+        return node;
+      }
+
+      const cells = [];
+      for (let q = -2; q <= 2; q += 1) {
+        for (let r = -2; r <= 2; r += 1) {
+          if (Math.max(Math.abs(q), Math.abs(r), Math.abs(-q-r)) <= 2) cells.push([q, r]);
+        }
+      }
+      cells.forEach(([q, r]) => {
+        const c = center(q, r);
+        const key = `${q},${r}`;
+        let hexClass = 'hex';
+        if (marineTargets.has(key)) hexClass += ' marine-target';
+        if (scoutTargets.has(key)) hexClass += ' scout-target';
+        svg.appendChild(el('polygon', { points: points(c.x, c.y), class: hexClass }));
+        svg.appendChild(el('text', { x: c.x, y: c.y + 43, class: 'cell-label text-small' }, `(${key})`));
+      });
+
+      marineTargets.forEach((key) => {
+        const [q, r] = key.split(',').map(Number);
+        const c = center(q, r);
+        svg.appendChild(el('text', { x: c.x, y: c.y - 27, class: 'target-label' }, 'Marine target'));
+      });
+      scoutTargets.forEach((key) => {
+        const [q, r] = key.split(',').map(Number);
+        const c = center(q, r);
+        svg.appendChild(el('text', { x: c.x, y: c.y + 4, class: 'target-label' }, 'Scout target'));
+      });
+
+      const z = center(0, 0);
+      svg.appendChild(el('circle', { cx: z.x, cy: z.y, r: 24, class: 'zerg-token' }));
+      svg.appendChild(el('text', { x: z.x, y: z.y, class: 'token-text' }, 'Z'));
+
+      stacks.forEach((units, key) => {
+        const [q, r] = key.split(',').map(Number);
+        const c = center(q, r);
+        units.forEach((unit, index) => {
+          const x = c.x + (index === 0 ? -20 : 20);
+          svg.appendChild(el('circle', { cx: x, cy: c.y, r: 21, class: unit.kind === 'marine' ? 'marine-token' : 'scout-token' }));
+          svg.appendChild(el('text', { x, y: c.y, class: 'token-text' }, unit.label));
+        });
+      });
+    })();
+  </script>
+</div>

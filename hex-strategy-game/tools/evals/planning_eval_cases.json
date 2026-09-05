@@ -310,12 +310,12 @@
       }
     },
     {
-      "case_id": "baneling_explode_vs_2marines_hp3_t0",
-      "scenario_id": "eval_baneling_explode_vs_2marines_hp3",
+      "case_id": "baneling_explode_vs_2marines_hp2_t0",
+      "scenario_id": "eval_baneling_explode_vs_2marines_hp2",
       "perspective_group": "zerg",
       "unit_name": "Baneling",
       "turn": 1,
-      "intent": "Baneling stacked with two 3-HP Marines should choose explode for immediate lethal value.",
+      "intent": "Baneling stacked with two 2-HP Marines should explode to kill both while the surviving Zergling makes the result an immediate Zerg win.",
       "checks": {
         "required_action_key": "explode",
         "forbid_action_keys": [
