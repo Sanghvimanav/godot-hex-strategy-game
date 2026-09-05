@@ -9,6 +9,7 @@ extends Node
 
 const PureStateTrainingData = preload("res://src/simulation/pure_state_training_data.gd")
 const PureStateSelfPlaySuite = preload("res://src/simulation/pure_state_self_play_suite.gd")
+const DeterministicShard = preload("res://tools/deterministic_shard.gd")
 
 const DATASET_MANIFEST_SCHEMA_VERSION := 1
 
@@ -23,6 +24,12 @@ func _run_dataset() -> void:
 	var out_dir := str(args.get("out", "user://self_play_dataset"))
 	var rules_version := str(args.get("rules-version", "unknown"))
 	var max_games := int(args.get("max-games", "0"))
+	var shard_index := int(args.get("shard-index", "0"))
+	var shard_count := int(args.get("shard-count", "1"))
+	if shard_count <= 0 or shard_index < 0 or shard_index >= shard_count:
+		push_error("Invalid self-play shard %d/%d" % [shard_index, shard_count])
+		get_tree().quit(1)
+		return
 
 	var jobs: Array = PureStateSelfPlaySuite.get_preset(preset)
 	if jobs.is_empty():
@@ -34,6 +41,14 @@ func _run_dataset() -> void:
 		return
 	if max_games > 0 and max_games < jobs.size():
 		jobs = jobs.slice(0, max_games)
+	var preset_jobs_considered := jobs.size()
+	jobs = DeterministicShard.filter_jobs(jobs, "game_id", shard_index, shard_count)
+	print("[self-play] shard=%d/%d selected=%d/%d by game_id" % [
+		shard_index,
+		shard_count,
+		jobs.size(),
+		preset_jobs_considered,
+	])
 
 	var abs_out := ProjectSettings.globalize_path(out_dir)
 	if DirAccess.make_dir_recursive_absolute(abs_out) != OK:
@@ -138,6 +153,10 @@ func _run_dataset() -> void:
 		"preset": preset,
 		"rules_version": rules_version,
 		"budget_profiles": PureStateSelfPlaySuite.BUDGET_PROFILES.duplicate(true),
+		"preset_jobs_considered": preset_jobs_considered,
+		"shard_index": shard_index,
+		"shard_count": shard_count,
+		"shard_key": "game_id",
 		"games_requested": jobs.size(),
 		"games_labeled": labeled_games,
 		"games_unlabeled": unlabeled_games,
@@ -146,7 +165,7 @@ func _run_dataset() -> void:
 		"trace_count": all_traces.size(),
 		"trace_file": "traces.jsonl",
 		"outcomes": outcomes,
-		"games": game_summaries,
+		"games": game_summies if false else game_summaries,
 	}
 
 	var examples_path := out_dir.path_join("examples.jsonl")
