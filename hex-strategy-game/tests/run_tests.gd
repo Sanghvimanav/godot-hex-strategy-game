@@ -28,6 +28,7 @@ func _ready() -> void:
 	var TestPureStateGameRolloutBudgetMatrix = load("res://tests/test_pure_state_game_rollout_budget_matrix.gd") as GDScript
 	var TestPureStateTrainingData = load("res://tests/test_pure_state_training_data.gd") as GDScript
 	var TestPureStateSelfPlaySuite = load("res://tests/test_pure_state_self_play_suite.gd") as GDScript
+	var TestPureStateArena = load("res://tests/test_pure_state_arena.gd") as GDScript
 	var TestDeterministicShard = load("res://tests/test_deterministic_shard.gd") as GDScript
 	var TestPureStateCounterfactualBenchmark = load("res://tests/test_pure_state_counterfactual_benchmark.gd") as GDScript
 	var TestServerTurnExecutor = load("res://tests/test_server_turn_executor.gd") as GDScript
@@ -40,134 +41,46 @@ func _ready() -> void:
 	var TestLlmPostGame = load("res://tests/test_llm_post_game.gd") as GDScript
 	var TestHeadlessPlanningHarness = load("res://tests/test_headless_planning_harness.gd") as GDScript
 
-	if not TestActions.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestHexGrid.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestTurnExecutor.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestEventBus.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestTurnExecutionCore.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestPureStateSimulator.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestPureStateLegalActions.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestPureStatePlans.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestPureStatePlanIntents.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestPureStateEvaluator.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestPureStateOneTurnSearch.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestOneTurnSearchBaselines.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestPureStateOpponentResponseSearch.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestGameplayAI.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestOpponentConditionedCounters.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestOpponentResponseRetreat.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestPureStateGameRollout.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestPureStateCommandHexRules.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestPureStateGameRolloutBudgetMatrix.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestPureStateTrainingData.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestPureStateSelfPlaySuite.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestDeterministicShard.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestPureStateCounterfactualBenchmark.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestServerTurnExecutor.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestUnifiedPipeline.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestStunEffects.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestReplayRestore.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestLlmPlanning.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestLlmLearningsIngest.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestLlmPlanningRecentTurns.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestLlmPostGame.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestHeadlessPlanningHarness.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
+	var suites := [
+		TestActions,
+		TestHexGrid,
+		TestTurnExecutor,
+		TestEventBus,
+		TestTurnExecutionCore,
+		TestPureStateSimulator,
+		TestPureStateLegalActions,
+		TestPureStatePlans,
+		TestPureStatePlanIntents,
+		TestPureStateEvaluator,
+		TestPureStateOneTurnSearch,
+		TestOneTurnSearchBaselines,
+		TestPureStateOpponentResponseSearch,
+		TestGameplayAI,
+		TestOpponentConditionedCounters,
+		TestOpponentResponseRetreat,
+		TestPureStateGameRollout,
+		TestPureStateCommandHexRules,
+		TestPureStateGameRolloutBudgetMatrix,
+		TestPureStateTrainingData,
+		TestPureStateSelfPlaySuite,
+		TestPureStateArena,
+		TestDeterministicShard,
+		TestPureStateCounterfactualBenchmark,
+		TestServerTurnExecutor,
+		TestUnifiedPipeline,
+		TestStunEffects,
+		TestReplayRestore,
+		TestLlmPlanning,
+		TestLlmLearningsIngest,
+		TestLlmPlanningRecentTurns,
+		TestLlmPostGame,
+		TestHeadlessPlanningHarness,
+	]
+	for suite in suites:
+		if not suite.run_all(self):
+			_fail_count += 1
+		else:
+			_pass_count += 1
 
 	print("")
 	print("Result: %d passed, %d failed" % [_pass_count, _fail_count])
