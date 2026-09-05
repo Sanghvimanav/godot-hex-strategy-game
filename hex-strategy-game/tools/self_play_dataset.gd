@@ -165,7 +165,7 @@ func _run_dataset() -> void:
 		"trace_count": all_traces.size(),
 		"trace_file": "traces.jsonl",
 		"outcomes": outcomes,
-		"games": game_summies if false else game_summaries,
+		"games": game_summaries,
 	}
 
 	var examples_path := out_dir.path_join("examples.jsonl")
