@@ -10,6 +10,8 @@ const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_evaluation_is_symmetric_and_monotonic(tests) and ok
+	ok = _test_nonterminal_terms_are_bounded(tests) and ok
+	ok = _test_production_capacity_is_valued(tests) and ok
 	ok = _test_terminal_outcome_dominates(tests) and ok
 	ok = _test_collapse_scenario_scores_winning_result(tests) and ok
 	ok = _test_retreat_scenario_prefers_survival_after_simulation(tests) and ok
@@ -46,6 +48,71 @@ static func _test_evaluation_is_symmetric_and_monotonic(tests: Node) -> bool:
 		tests._fail("gaining group resources should improve evaluation; killed=%.2f richer=%.2f" % [killed_score, richer_score])
 		return false
 	tests._pass("evaluation is symmetric and increases with damage, kills, and resources")
+	return true
+
+
+static func _test_nonterminal_terms_are_bounded(tests: Node) -> bool:
+	tests._log("test_pure_state_evaluator: nonterminal components remain bounded")
+	var state := _balanced_fixture()
+	state["groups"][0]["resources"] = {"crystal": 1000000, "people": 1000000}
+	state["groups"][0]["units"][0]["energy"] = 1000000
+	var score := PureStateEvaluator.evaluate_breakdown(state, "terran")
+	if absf(float(score.get("resources", 0.0))) > PureStateEvaluator.RESOURCE_WEIGHT + 0.001:
+		tests._fail("resource component exceeded configured bound: %s" % score)
+		return false
+	if absf(float(score.get("energy", 0.0))) > PureStateEvaluator.ENERGY_WEIGHT + 0.001:
+		tests._fail("energy component exceeded configured bound: %s" % score)
+		return false
+	if absf(float(score.get("unit_count", 0.0))) > PureStateEvaluator.UNIT_COUNT_WEIGHT + 0.001:
+		tests._fail("unit component exceeded configured bound: %s" % score)
+		return false
+	if absf(float(score.get("health", 0.0))) > PureStateEvaluator.HEALTH_WEIGHT + 0.001:
+		tests._fail("health component exceeded configured bound: %s" % score)
+		return false
+	if absf(float(score.get("objective", 0.0))) >= PureStateEvaluator.OBJECTIVE_WEIGHT + 0.001:
+		tests._fail("objective component should saturate below configured bound: %s" % score)
+		return false
+	tests._pass("extreme raw state scales cannot make one positional category unbounded")
+	return true
+
+
+static func _test_production_capacity_is_valued(tests: Node) -> bool:
+	tests._log("test_pure_state_evaluator: living spawn-capable units add production value")
+	var producer := _make_unit(1, "res://src/unit/definitions/infantry_camp.tres", Vector2i(0, 0))
+	var fighter := _make_unit(2, "res://src/unit/definitions/zergling.tres", Vector2i(2, 0))
+	# Isolate production from HP/energy so the assertion measures the intended term.
+	producer["health"] = 2
+	producer["max_health"] = 2
+	producer["energy"] = 0
+	producer["max_energy"] = 0
+	fighter["health"] = 2
+	fighter["max_health"] = 2
+	fighter["energy"] = 0
+	fighter["max_energy"] = 0
+	var state := {
+		"groups": [
+			{"name": "terran", "resources": {}, "units": [producer]},
+			{"name": "zerg", "resources": {}, "units": [fighter]},
+		],
+	}
+	var terran := PureStateEvaluator.evaluate_breakdown(state, "terran")
+	var zerg := PureStateEvaluator.evaluate_breakdown(state, "zerg")
+	if int(terran.get("friendly_production", 0)) <= 0 or int(terran.get("enemy_production", -1)) != 0:
+		tests._fail("spawn-capable camp should expose positive production capacity: %s" % terran)
+		return false
+	if float(terran.get("production", 0.0)) <= 0.0:
+		tests._fail("producer should receive positive production component: %s" % terran)
+		return false
+	if not is_equal_approx(float(terran.get("total", 0.0)), -float(zerg.get("total", 0.0))):
+		tests._fail("production value must remain symmetric: terran=%s zerg=%s" % [terran, zerg])
+		return false
+	var destroyed := state.duplicate(true)
+	destroyed["groups"][0]["units"][0]["health"] = 0
+	var destroyed_breakdown := PureStateEvaluator.evaluate_breakdown(destroyed, "terran")
+	if int(destroyed_breakdown.get("friendly_production", -1)) != 0:
+		tests._fail("destroyed producer must not retain production capacity: %s" % destroyed_breakdown)
+		return false
+	tests._pass("generic spawn abilities contribute bounded future-force value only while alive")
 	return true
 
 
@@ -267,10 +334,12 @@ static func _cell_from_variant(value: Variant) -> Vector2i:
 
 
 static func _compact_breakdown(breakdown: Dictionary) -> String:
-	return "terminal=%.0f units=%.0f hp=%.0f resources=%.0f energy=%.0f" % [
+	return "terminal=%.0f units=%.0f hp=%.0f resources=%.0f energy=%.0f production=%.0f objective=%.0f" % [
 		float(breakdown.get("terminal", 0.0)),
 		float(breakdown.get("unit_count", 0.0)),
 		float(breakdown.get("health", 0.0)),
 		float(breakdown.get("resources", 0.0)),
 		float(breakdown.get("energy", 0.0)),
+		float(breakdown.get("production", 0.0)),
+		float(breakdown.get("objective", 0.0)),
 	]
