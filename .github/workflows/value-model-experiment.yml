@@ -185,7 +185,7 @@ jobs:
 
       - name: Merge and sort generator shards
         run: |
-          python -m ml.value_model.merge_generation_shards \
+          python ml/value_model/merge_generation_shards.py \
             --self-play-root artifacts/self_play_shards \
             --counterfactual-root artifacts/counterfactual_shards \
             --self-play-output artifacts/self_play \
@@ -303,6 +303,7 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("artifacts/self_play/manifest.json").read_text())
+          counterfactual = json.loads(Path("artifacts/counterfactual/manifest.json").read_text())
           metrics = json.loads(Path("artifacts/metrics.json").read_text())
           decision_quality = json.loads(Path("artifacts/counterfactual_metrics.json").read_text())
           neural_decision = decision_quality["evaluators"]["neural_value_model"]
@@ -331,7 +332,7 @@ jobs:
           | Metric | Result |
           | --- | ---: |
           | Preset | {manifest['preset']} |
-          | Generation shards | {manifest['generation_shards']} self-play / {decision_quality.get('generation_shards', 4) if isinstance(decision_quality, dict) else 4} counterfactual |
+          | Generation shards | {manifest['generation_shards']} self-play / {counterfactual['generation_shards']} counterfactual |
           | Labeled games | {manifest['games_labeled']} / {manifest['games_requested']} |
           | Labeled tactical families | {len(labeled_families)} |
           | Unlabeled turn-limit games | {manifest['games_unlabeled']} |
