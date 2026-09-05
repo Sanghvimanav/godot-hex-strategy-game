@@ -17,6 +17,7 @@ const DEFAULT_OWN_MAX_PLANS := 4
 const DEFAULT_OPPONENT_MAX_PLANS := 4
 
 
+## Backward-compatible symmetric rollout used by self-play/training callers.
 static func play_game(
 	game_state: Dictionary,
 	group_a: String,
@@ -28,10 +29,44 @@ static func play_game(
 	record_states: bool = false,
 	turn_limit_winner: String = ""
 ) -> Dictionary:
+	if max_actions_per_unit <= 0 or own_max_plans <= 0 or opponent_max_plans <= 0:
+		return _empty_result(game_state, group_a, group_b)
+	var settings := GameplayAI.handwritten_settings(
+		max_actions_per_unit,
+		own_max_plans,
+		max_actions_per_unit,
+		opponent_max_plans
+	)
+	return play_game_with_settings(
+		game_state,
+		group_a,
+		group_b,
+		settings,
+		settings,
+		max_turns,
+		record_states,
+		turn_limit_winner
+	)
+
+
+## Arena entry point. Each side receives an independent GameplayAI settings
+## dictionary while both still plan from the exact same simultaneous pre-turn
+## state. This lets us compare search/evaluator/model configurations head-to-head
+## without duplicating rollout or game-rule logic.
+static func play_game_with_settings(
+	game_state: Dictionary,
+	group_a: String,
+	group_b: String,
+	settings_a: Dictionary,
+	settings_b: Dictionary,
+	max_turns: int = DEFAULT_MAX_TURNS,
+	record_states: bool = false,
+	turn_limit_winner: String = ""
+) -> Dictionary:
 	var invalid := _empty_result(game_state, group_a, group_b)
 	if group_a.is_empty() or group_b.is_empty() or group_a == group_b:
 		return invalid
-	if max_turns <= 0 or max_actions_per_unit <= 0 or own_max_plans <= 0 or opponent_max_plans <= 0:
+	if max_turns <= 0:
 		return invalid
 	if not _has_group(game_state, group_a) or not _has_group(game_state, group_b):
 		return invalid
@@ -50,32 +85,30 @@ static func play_game(
 	for turn_index in range(max_turns):
 		# Both searches intentionally read the same pre-turn state. Neither side gets
 		# privileged knowledge of the other side's selected simultaneous action.
-		var policy_settings := GameplayAI.handwritten_settings(
-			max_actions_per_unit,
-			own_max_plans,
-			max_actions_per_unit,
-			opponent_max_plans
-		)
 		var decision_a := GameplayAI.choose_actions(
 			state,
 			group_a,
 			group_b,
-			policy_settings
+			settings_a
 		)
 		var decision_b := GameplayAI.choose_actions(
 			state,
 			group_b,
 			group_a,
-			policy_settings
+			settings_b
 		)
 
 		if not bool(decision_a.get("valid", false)) or not bool(decision_b.get("valid", false)):
 			var failed_history := history.duplicate(true)
+			var failed_diagnostics_a: Dictionary = decision_a.get("diagnostics", {})
+			var failed_diagnostics_b: Dictionary = decision_b.get("diagnostics", {})
 			var failed_record := {
 				"turn": turn_index + 1,
 				"search_a_valid": bool(decision_a.get("valid", false)),
 				"search_b_valid": bool(decision_b.get("valid", false)),
 			}
+			_add_search_metrics(failed_record, group_a, failed_diagnostics_a)
+			_add_search_metrics(failed_record, group_b, failed_diagnostics_b)
 			if record_states:
 				failed_record["state_before"] = state.duplicate(true)
 			failed_history.append(failed_record)
@@ -132,6 +165,8 @@ static func play_game(
 		turn_record[group_b + "_actions"] = actions_b
 		turn_record[group_a + "_worst_case_score"] = float(diagnostics_a.get("best_worst_case_score", 0.0))
 		turn_record[group_b + "_worst_case_score"] = float(diagnostics_b.get("best_worst_case_score", 0.0))
+		_add_search_metrics(turn_record, group_a, diagnostics_a)
+		_add_search_metrics(turn_record, group_b, diagnostics_b)
 		if record_states:
 			turn_record["state_before"] = state.duplicate(true)
 			turn_record["state_after"] = next_state.duplicate(true)
@@ -206,6 +241,11 @@ static func play_game(
 			"turn_limit_adjudication"
 		)
 	return _build_result(true, "turn_limit", "", max_turns, state, history, group_a, group_b, "turn_limit")
+
+
+static func _add_search_metrics(record: Dictionary, group_name: String, diagnostics: Dictionary) -> void:
+	record[group_name + "_search_elapsed_ms"] = float(diagnostics.get("elapsed_ms", 0.0))
+	record[group_name + "_search_simulations"] = int(diagnostics.get("simulations_run", 0))
 
 
 static func _outcome(state: Dictionary, group_a: String, group_b: String) -> Dictionary:
@@ -289,6 +329,33 @@ static func _max_non_progress_streak(history: Array) -> int:
 	return best
 
 
+static func _search_metrics(history: Array, group_a: String, group_b: String) -> Dictionary:
+	var result := {
+		group_a: {"decisions": 0, "elapsed_ms": 0.0, "max_elapsed_ms": 0.0, "simulations": 0},
+		group_b: {"decisions": 0, "elapsed_ms": 0.0, "max_elapsed_ms": 0.0, "simulations": 0},
+	}
+	for turn_variant in history:
+		if not (turn_variant is Dictionary):
+			continue
+		var turn: Dictionary = turn_variant
+		for group_name in [group_a, group_b]:
+			var elapsed_key := group_name + "_search_elapsed_ms"
+			var simulations_key := group_name + "_search_simulations"
+			if not turn.has(elapsed_key):
+				continue
+			var metrics: Dictionary = result[group_name]
+			var elapsed := float(turn.get(elapsed_key, 0.0))
+			metrics["decisions"] = int(metrics.get("decisions", 0)) + 1
+			metrics["elapsed_ms"] = float(metrics.get("elapsed_ms", 0.0)) + elapsed
+			metrics["max_elapsed_ms"] = maxf(float(metrics.get("max_elapsed_ms", 0.0)), elapsed)
+			metrics["simulations"] = int(metrics.get("simulations", 0)) + int(turn.get(simulations_key, 0))
+	for group_name in [group_a, group_b]:
+		var metrics: Dictionary = result[group_name]
+		var decisions := int(metrics.get("decisions", 0))
+		metrics["mean_elapsed_ms"] = float(metrics.get("elapsed_ms", 0.0)) / float(decisions) if decisions > 0 else 0.0
+	return result
+
+
 static func _cell_from_variant(value: Variant) -> Vector2i:
 	if value is Vector2i:
 		return value
@@ -350,6 +417,7 @@ static func _build_result(
 		"final_alive_counts": _alive_counts(state, group_a, group_b),
 		"command_hexes": command_hexes.duplicate(true),
 		"max_non_progress_streak": _max_non_progress_streak(history),
+		"search_metrics": _search_metrics(history, group_a, group_b),
 	}
 
 
