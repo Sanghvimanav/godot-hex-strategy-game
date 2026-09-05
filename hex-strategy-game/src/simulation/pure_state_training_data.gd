@@ -7,6 +7,8 @@ class_name PureStateTrainingData
 ## a winner at its objective horizon. Each visited state is emitted once per perspective.
 
 const PureStateGameRollout = preload("res://src/simulation/pure_state_game_rollout.gd")
+const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
+const PureStatePolicyExploration = preload("res://src/simulation/pure_state_policy_exploration.gd")
 
 const SCHEMA_VERSION := 1
 const TRACE_SCHEMA_VERSION := 1
@@ -22,25 +24,56 @@ static func generate_game_examples(
 	own_max_plans: int = PureStateGameRollout.DEFAULT_OWN_MAX_PLANS,
 	opponent_max_plans: int = PureStateGameRollout.DEFAULT_OPPONENT_MAX_PLANS,
 	extra_source_metadata: Dictionary = {},
-	turn_limit_winner: String = ""
+	turn_limit_winner: String = "",
+	policy_exploration: Dictionary = {}
 ) -> Dictionary:
-	var rollout := PureStateGameRollout.play_game(
-		game_state,
-		group_a,
-		group_b,
-		max_turns,
-		max_actions_per_unit,
-		own_max_plans,
-		opponent_max_plans,
-		true,
-		turn_limit_winner
-	)
+	var exploration_profile := str(policy_exploration.get("profile", PureStatePolicyExploration.PROFILE_GREEDY))
+	var exploration_seed := int(policy_exploration.get("seed", 0))
+	var rollout: Dictionary
+	if exploration_profile == PureStatePolicyExploration.PROFILE_GREEDY:
+		# Preserve the historical deterministic path exactly for curated baselines,
+		# arena-adjacent fixtures, and any caller that does not explicitly opt in.
+		rollout = PureStateGameRollout.play_game(
+			game_state,
+			group_a,
+			group_b,
+			max_turns,
+			max_actions_per_unit,
+			own_max_plans,
+			opponent_max_plans,
+			true,
+			turn_limit_winner
+		)
+	else:
+		var settings_a := GameplayAI.handwritten_settings(
+			max_actions_per_unit,
+			own_max_plans,
+			max_actions_per_unit,
+			opponent_max_plans
+		)
+		var settings_b := settings_a.duplicate(true)
+		settings_a["exploration_profile"] = exploration_profile
+		settings_a["exploration_seed"] = exploration_seed
+		settings_b["exploration_profile"] = exploration_profile
+		settings_b["exploration_seed"] = exploration_seed
+		rollout = PureStateGameRollout.play_game_with_settings(
+			game_state,
+			group_a,
+			group_b,
+			settings_a,
+			settings_b,
+			max_turns,
+			true,
+			turn_limit_winner
+		)
 	var source_metadata := {
 		"max_turns": max_turns,
 		"max_actions_per_unit": max_actions_per_unit,
 		"own_max_plans": own_max_plans,
 		"opponent_max_plans": opponent_max_plans,
 		"turn_limit_winner": turn_limit_winner,
+		"policy_exploration_profile": exploration_profile,
+		"policy_exploration_seed": exploration_seed,
 	}
 	# Batch generators can attach immutable provenance (rules commit, suite version,
 	# preset, rotation, etc.) without changing the stable top-level example schema.
