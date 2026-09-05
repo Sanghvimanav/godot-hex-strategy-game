@@ -9,6 +9,7 @@ extends Node
 
 const PureStateTrainingData = preload("res://src/simulation/pure_state_training_data.gd")
 const PureStateSelfPlaySuite = preload("res://src/simulation/pure_state_self_play_suite.gd")
+const PureStateSelfPlayDiversity = preload("res://src/simulation/pure_state_self_play_diversity.gd")
 const DeterministicShard = preload("res://tools/deterministic_shard.gd")
 
 const DATASET_MANIFEST_SCHEMA_VERSION := 1
@@ -31,7 +32,10 @@ func _run_dataset() -> void:
 		get_tree().quit(1)
 		return
 
-	var jobs: Array = PureStateSelfPlaySuite.get_preset(preset)
+	var jobs: Array = PureStateSelfPlayDiversity.expand_jobs(
+		PureStateSelfPlaySuite.get_preset(preset),
+		preset
+	)
 	if jobs.is_empty():
 		push_error("Unknown or empty self-play preset '%s'. Available: %s" % [
 			preset,
@@ -75,10 +79,12 @@ func _run_dataset() -> void:
 		var source_metadata := {
 			"rules_version": rules_version,
 			"self_play_suite_version": PureStateSelfPlaySuite.SUITE_VERSION,
+			"self_play_diversity_version": PureStateSelfPlayDiversity.VERSION,
 			"dataset_preset": preset,
 			"budget_profile": str(job.get("budget_profile", "")),
 			"rotation_steps": int(job.get("rotation_steps", 0)),
 			"variation_seed": int(job.get("variation_seed", 0)),
+			"training_variant": bool(job.get("training_variant", false)),
 			"base_scenario_id": str(job.get("scenario_id", "")),
 		}
 		var result := PureStateTrainingData.generate_game_examples(
@@ -122,6 +128,8 @@ func _run_dataset() -> void:
 			"budget_profile": str(job.get("budget_profile", "")),
 			"rotation_steps": int(job.get("rotation_steps", 0)),
 			"variation_seed": int(job.get("variation_seed", 0)),
+			"training_variant": bool(job.get("training_variant", false)),
+			"diversity_version": int(job.get("diversity_version", 0)),
 			"max_turns": int(job.get("max_turns", 0)),
 			"turn_limit_winner": str(job.get("turn_limit_winner", "")),
 			"own_max_plans": int(job.get("own_max_plans", 0)),
@@ -136,11 +144,12 @@ func _run_dataset() -> void:
 			"example_count": example_count,
 		}
 		game_summaries.append(summary)
-		print("[self-play] %s profile=%s rotation=%d seed=%d status=%s winner=%s turns=%d non_progress=%d examples=%d" % [
+		print("[self-play] %s profile=%s rotation=%d seed=%d variant=%s status=%s winner=%s turns=%d non_progress=%d examples=%d" % [
 			game_id,
 			str(job.get("budget_profile", "")),
 			int(job.get("rotation_steps", 0)),
 			int(job.get("variation_seed", 0)),
+			str(bool(job.get("training_variant", false))),
 			status,
 			winner,
 			int(result.get("turns_played", 0)),
@@ -153,6 +162,7 @@ func _run_dataset() -> void:
 		"training_example_schema_version": PureStateTrainingData.SCHEMA_VERSION,
 		"trace_schema_version": PureStateTrainingData.TRACE_SCHEMA_VERSION,
 		"self_play_suite_version": PureStateSelfPlaySuite.SUITE_VERSION,
+		"self_play_diversity_version": PureStateSelfPlayDiversity.VERSION,
 		"preset": preset,
 		"rules_version": rules_version,
 		"budget_profiles": PureStateSelfPlaySuite.BUDGET_PROFILES.duplicate(true),
