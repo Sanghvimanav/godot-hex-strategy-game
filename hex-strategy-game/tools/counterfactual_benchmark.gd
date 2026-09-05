@@ -6,6 +6,7 @@ extends Node
 
 const PureStateCounterfactualBenchmark = preload("res://src/simulation/pure_state_counterfactual_benchmark.gd")
 const PureStateCounterfactualSuite = preload("res://src/simulation/pure_state_counterfactual_suite.gd")
+const DeterministicShard = preload("res://tools/deterministic_shard.gd")
 
 const MANIFEST_SCHEMA_VERSION := 1
 
@@ -21,6 +22,13 @@ func _run_benchmark() -> void:
 	var rules_version := str(args.get("rules-version", "unknown"))
 	var max_decisions := int(args.get("max-decisions", "0"))
 	var decision_id_filter := str(args.get("decision-id", ""))
+	var shard_index := int(args.get("shard-index", "0"))
+	var shard_count := int(args.get("shard-count", "1"))
+	if shard_count <= 0 or shard_index < 0 or shard_index >= shard_count:
+		push_error("Invalid counterfactual shard %d/%d" % [shard_index, shard_count])
+		get_tree().quit(1)
+		return
+
 	var jobs: Array = PureStateCounterfactualSuite.get_preset(preset, rules_version)
 	if not decision_id_filter.is_empty():
 		jobs = jobs.filter(func(job):
@@ -35,6 +43,18 @@ func _run_benchmark() -> void:
 		return
 	if max_decisions > 0 and max_decisions < jobs.size():
 		jobs = jobs.slice(0, max_decisions)
+
+	var preset_decisions_considered := jobs.size()
+	var benchmark_config: Dictionary = {}
+	if not jobs.is_empty() and jobs[0] is Dictionary:
+		benchmark_config = ((jobs[0] as Dictionary).get("config", {}) as Dictionary).duplicate(true)
+	jobs = DeterministicShard.filter_jobs(jobs, "decision_id", shard_index, shard_count)
+	print("[counterfactual] shard=%d/%d selected=%d/%d by decision_id" % [
+		shard_index,
+		shard_count,
+		jobs.size(),
+		preset_decisions_considered,
+	])
 
 	var abs_out := ProjectSettings.globalize_path(out_dir)
 	if DirAccess.make_dir_recursive_absolute(abs_out) != OK:
@@ -111,9 +131,6 @@ func _run_benchmark() -> void:
 			str(result.get("estimated_best_candidate_ids", [])),
 		])
 
-	var benchmark_config: Dictionary = {}
-	if not jobs.is_empty() and jobs[0] is Dictionary:
-		benchmark_config = (jobs[0] as Dictionary).get("config", {})
 	var manifest := {
 		"manifest_schema_version": MANIFEST_SCHEMA_VERSION,
 		"candidate_schema_version": PureStateCounterfactualBenchmark.SCHEMA_VERSION,
@@ -126,6 +143,10 @@ func _run_benchmark() -> void:
 		"opponent_mixture_version": str(benchmark_config.get("opponent_mixture_version", "")),
 		"continuation_mixture_version": str(benchmark_config.get("continuation_mixture_version", "")),
 		"turn_limit_is_unlabeled": true,
+		"preset_decisions_considered": preset_decisions_considered,
+		"shard_index": shard_index,
+		"shard_count": shard_count,
+		"shard_key": "decision_id",
 		"decisions_requested": jobs.size(),
 		"decisions_failed": failed_decisions,
 		"candidate_count": all_rows.size(),
