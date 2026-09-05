@@ -358,6 +358,23 @@ static func _search_metrics(history: Array, group_a: String, group_b: String) ->
 	return result
 
 
+static func _deterministic_history(history: Array) -> Array:
+	# Wall-clock timing is useful arena telemetry but cannot be part of the
+	# reproducible game record. Keep deterministic simulation counts in history,
+	# while elapsed milliseconds remain available through result.search_metrics.
+	var clean: Array = history.duplicate(true)
+	for turn_variant in clean:
+		if not (turn_variant is Dictionary):
+			continue
+		var turn: Dictionary = turn_variant
+		var keys := turn.keys()
+		for key_variant in keys:
+			var key := str(key_variant)
+			if key.ends_with("_search_elapsed_ms"):
+				turn.erase(key_variant)
+	return clean
+
+
 static func _cell_from_variant(value: Variant) -> Vector2i:
 	if value is Vector2i:
 		return value
@@ -415,7 +432,7 @@ static func _build_result(
 		"termination_reason": termination_reason,
 		"turns_played": turns_played,
 		"final_state": state.duplicate(true),
-		"history": history.duplicate(true),
+		"history": _deterministic_history(history),
 		"final_alive_counts": _alive_counts(state, group_a, group_b),
 		"command_hexes": command_hexes.duplicate(true),
 		"max_non_progress_streak": _max_non_progress_streak(history),
