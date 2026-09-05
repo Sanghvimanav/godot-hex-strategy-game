@@ -9,6 +9,14 @@ class_name PureStateCommandHexRules
 const DEFAULT_HEX_RADIUS := 5
 const OBJECTIVE_DISTANCE_WEIGHT := 12.0
 const OBJECTIVE_OCCUPANCY_WEIGHT := 1000.0
+const EDGE_DIRECTIONS := [
+	Vector2i(1, 0),
+	Vector2i(0, 1),
+	Vector2i(-1, 1),
+	Vector2i(-1, 0),
+	Vector2i(0, -1),
+	Vector2i(1, -1),
+]
 
 
 static func ensure_command_hexes(game_state: Dictionary, group_a: String, group_b: String) -> Dictionary:
@@ -23,15 +31,16 @@ static func ensure_command_hexes(game_state: Dictionary, group_a: String, group_
 			return normalized
 
 	var radius := maxi(1, int(game_state.get("hex_radius", DEFAULT_HEX_RADIUS)))
-	var average_q_a := _average_living_q(game_state, group_a)
-	var average_q_b := _average_living_q(game_state, group_b)
-	# The side that starts farther right owns the +q back edge. Ties are resolved
-	# deterministically in favor of group_a so fixtures with centered deployments
-	# still receive opposite objectives.
-	var a_owns_positive_edge := average_q_a >= average_q_b
+	var average_a := _average_living_cell(game_state, group_a)
+	var average_b := _average_living_cell(game_state, group_b)
+	# Derive the back-edge axis from the actual deployment instead of assuming the
+	# q-axis. This keeps command objectives aligned with scenarios after any of the
+	# six 60-degree board rotations. The chosen edge direction points from group_b
+	# toward group_a, so each side owns the edge behind its own starting army.
+	var edge_direction := _deployment_edge_direction(average_a, average_b)
 	var command_hexes: Dictionary = {}
-	command_hexes[group_a] = [radius, 0] if a_owns_positive_edge else [-radius, 0]
-	command_hexes[group_b] = [-radius, 0] if a_owns_positive_edge else [radius, 0]
+	command_hexes[group_a] = [edge_direction.x * radius, edge_direction.y * radius]
+	command_hexes[group_b] = [-edge_direction.x * radius, -edge_direction.y * radius]
 	game_state["command_hexes"] = command_hexes.duplicate(true)
 	return command_hexes
 
@@ -144,8 +153,37 @@ static func _shares_unit(before: Array, after: Array) -> bool:
 	return false
 
 
-static func _average_living_q(game_state: Dictionary, group_name: String) -> float:
-	var total := 0.0
+static func _deployment_edge_direction(average_a: Vector2, average_b: Vector2) -> Vector2i:
+	var delta := average_a - average_b
+	if delta.is_zero_approx():
+		return EDGE_DIRECTIONS[0]
+	var best: Vector2i = EDGE_DIRECTIONS[0]
+	var best_score := -1.0e30
+	for direction_variant in EDGE_DIRECTIONS:
+		var direction: Vector2i = direction_variant
+		var score := _axial_alignment_score(delta, direction)
+		if score > best_score:
+			best_score = score
+			best = direction
+	return best
+
+
+## Dot-product ordering under the standard axial-hex Cartesian embedding, with
+## the common positive scale factor removed. Only relative scores matter here.
+static func _axial_alignment_score(delta: Vector2, direction: Vector2i) -> float:
+	var q := float(direction.x)
+	var r := float(direction.y)
+	return (
+		2.0 * q * delta.x
+		+ q * delta.y
+		+ r * delta.x
+		+ 2.0 * r * delta.y
+	)
+
+
+static func _average_living_cell(game_state: Dictionary, group_name: String) -> Vector2:
+	var total_q := 0.0
+	var total_r := 0.0
 	var count := 0
 	for group_variant in game_state.get("groups", []):
 		if not (group_variant is Dictionary):
@@ -159,10 +197,14 @@ static func _average_living_q(game_state: Dictionary, group_name: String) -> flo
 			var unit: Dictionary = unit_variant
 			if int(unit.get("health", 0)) <= 0:
 				continue
-			total += float(_cell_from_variant(unit.get("cell", [0, 0])).x)
+			var cell := _cell_from_variant(unit.get("cell", [0, 0]))
+			total_q += float(cell.x)
+			total_r += float(cell.y)
 			count += 1
 		break
-	return total / float(count) if count > 0 else 0.0
+	if count <= 0:
+		return Vector2.ZERO
+	return Vector2(total_q / float(count), total_r / float(count))
 
 
 static func _nearest_living_distance(game_state: Dictionary, group_name: String, target: Vector2i) -> int:
