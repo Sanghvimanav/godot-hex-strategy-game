@@ -24,6 +24,7 @@ func _ready() -> void:
 	var TestOpponentConditionedCounters = load("res://tests/test_opponent_conditioned_counters.gd") as GDScript
 	var TestOpponentResponseRetreat = load("res://tests/test_opponent_response_retreat.gd") as GDScript
 	var TestPureStateGameRollout = load("res://tests/test_pure_state_game_rollout.gd") as GDScript
+	var TestPureStateCommandHexRules = load("res://tests/test_pure_state_command_hex_rules.gd") as GDScript
 	var TestPureStateGameRolloutBudgetMatrix = load("res://tests/test_pure_state_game_rollout_budget_matrix.gd") as GDScript
 	var TestPureStateTrainingData = load("res://tests/test_pure_state_training_data.gd") as GDScript
 	var TestPureStateSelfPlaySuite = load("res://tests/test_pure_state_self_play_suite.gd") as GDScript
@@ -103,6 +104,10 @@ func _ready() -> void:
 	else:
 		_pass_count += 1
 	if not TestPureStateGameRollout.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestPureStateCommandHexRules.run_all(self):
 		_fail_count += 1
 	else:
 		_pass_count += 1
