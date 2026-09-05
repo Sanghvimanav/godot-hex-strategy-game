@@ -10,10 +10,61 @@ class_name PureStateArenaSuite
 const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
 const PureStateSelfPlaySuite = preload("res://src/simulation/pure_state_self_play_suite.gd")
 
-const SUITE_VERSION := 2
+const SUITE_VERSION := 3
 const DEFAULT_SEED_BASE := 1701
 const FAST_PAIR_COUNT := 8
 const FULL_PAIR_COUNT := 32
+const ARENA_TURN_ALLOWANCE := 2
+
+# Official benchmark seeds are explicit rather than regenerated from an editable
+# base. This makes fast/full arena results comparable across commits and over time.
+# The fast set is a strict subset of the full set so PR results can be reproduced
+# inside the larger manual tournament.
+const FAST_SEEDS := [
+	1701,
+	9620,
+	17539,
+	25458,
+	33377,
+	41296,
+	49215,
+	57134,
+]
+
+const FULL_SEEDS := [
+	1701,
+	9620,
+	17539,
+	25458,
+	33377,
+	41296,
+	49215,
+	57134,
+	65053,
+	72972,
+	80891,
+	88810,
+	96729,
+	104648,
+	112567,
+	120486,
+	128405,
+	136324,
+	144243,
+	152162,
+	160081,
+	168000,
+	175919,
+	183838,
+	191757,
+	199676,
+	207595,
+	215514,
+	223433,
+	231352,
+	239271,
+	247190,
+]
 
 const SCENARIO_FAMILIES := [
 	"mixed_force",
@@ -63,24 +114,22 @@ static func agent_settings(profile_name: String) -> Dictionary:
 
 
 static func get_preset(preset_name: String, seed_base: int = DEFAULT_SEED_BASE) -> Array:
-	var pair_count := 0
+	var scenario_seeds: Array = []
 	match preset_name:
 		"smoke":
-			pair_count = 2
+			# Smoke remains intentionally movable for cheap local/debug checks.
+			for pair_index in range(2):
+				scenario_seeds.append(seed_base + pair_index * 7919)
 		"fast":
-			pair_count = FAST_PAIR_COUNT
+			scenario_seeds = FAST_SEEDS.duplicate()
 		"full":
-			pair_count = FULL_PAIR_COUNT
+			scenario_seeds = FULL_SEEDS.duplicate()
 		_:
 			return []
 
 	var jobs: Array = []
-	for pair_index in range(pair_count):
-		# 7919 is odd and 7919 mod 8 == 7, so an eight-pair block visits every
-		# family residue exactly once before repeating. That gives the PR tier
-		# stratified mechanic coverage while the seed still randomizes geometry,
-		# health/resources, and rotation inside each family.
-		var scenario_seed := seed_base + pair_index * 7919
+	for scenario_seed_variant in scenario_seeds:
+		var scenario_seed := int(scenario_seed_variant)
 		jobs.append_array(_make_pair_jobs(scenario_seed, preset_name))
 	return jobs
 
@@ -89,8 +138,8 @@ static func build_generated_state(scenario_seed: int, preset_name: String = "fas
 	var rng := RandomNumberGenerator.new()
 	rng.seed = scenario_seed
 	# Family choice is stratified by seed residue instead of sampled with
-	# replacement. This prevents a small fast run from accidentally spending most
-	# of its budget on one family while keeping the rest of the state procedural.
+	# replacement. Each official eight-seed block visits all eight families once,
+	# while the seed still randomizes geometry, health/resources, and rotation.
 	var family_index := scenario_seed % SCENARIO_FAMILIES.size()
 	if family_index < 0:
 		family_index += SCENARIO_FAMILIES.size()
@@ -124,7 +173,10 @@ static func _make_pair_jobs(scenario_seed: int, preset_name: String) -> Array:
 	var state := build_generated_state(scenario_seed, preset_name)
 	var metadata: Dictionary = state.get("arena_metadata", {})
 	var family := str(metadata.get("base_scenario_id", ""))
-	var max_turns := int(FAMILY_MAX_TURNS.get(family, 10))
+	# Generated variants can move objectives/fights far enough that the original
+	# handcrafted cap ends one or two turns before a real resolution. Give every
+	# arena variant two additional turns while keeping the cap a hard safety bound.
+	var max_turns := int(FAMILY_MAX_TURNS.get(family, 10)) + ARENA_TURN_ALLOWANCE
 	var pair_id := "%s-s%d" % [family, scenario_seed]
 	return [
 		_make_job(pair_id, scenario_seed, state, max_turns, "terran"),
