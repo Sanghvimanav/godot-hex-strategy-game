@@ -81,6 +81,12 @@ jobs:
           use-dotnet: false
           include-templates: false
 
+      - name: Cache imported game assets
+        uses: actions/cache@v4
+        with:
+          path: hex-strategy-game/.godot/imported
+          key: godot-arena-imports-${{ runner.os }}-${{ hashFiles('hex-strategy-game/**/*.png', 'hex-strategy-game/**/*.jpg', 'hex-strategy-game/**/*.jpeg', 'hex-strategy-game/**/*.svg', 'hex-strategy-game/**/*.wav', 'hex-strategy-game/**/*.ogg') }}
+
       - name: Import Godot project
         working-directory: hex-strategy-game
         run: godot --headless --import
@@ -170,6 +176,12 @@ jobs:
           version: 4.6.0
           use-dotnet: false
           include-templates: false
+
+      - name: Cache imported game assets
+        uses: actions/cache@v4
+        with:
+          path: hex-strategy-game/.godot/imported
+          key: godot-arena-imports-${{ runner.os }}-${{ hashFiles('hex-strategy-game/**/*.png', 'hex-strategy-game/**/*.jpg', 'hex-strategy-game/**/*.jpeg', 'hex-strategy-game/**/*.svg', 'hex-strategy-game/**/*.wav', 'hex-strategy-game/**/*.ogg') }}
 
       - name: Import Godot project
         working-directory: hex-strategy-game
