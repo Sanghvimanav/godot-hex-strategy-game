@@ -338,9 +338,10 @@ static func _search_metrics(history: Array, group_a: String, group_b: String) ->
 		if not (turn_variant is Dictionary):
 			continue
 		var turn: Dictionary = turn_variant
-		for group_name in [group_a, group_b]:
-			var elapsed_key := group_name + "_search_elapsed_ms"
-			var simulations_key := group_name + "_search_simulations"
+		for group_name_variant in [group_a, group_b]:
+			var group_name: String = str(group_name_variant)
+			var elapsed_key: String = group_name + "_search_elapsed_ms"
+			var simulations_key: String = group_name + "_search_simulations"
 			if not turn.has(elapsed_key):
 				continue
 			var metrics: Dictionary = result[group_name]
@@ -349,7 +350,8 @@ static func _search_metrics(history: Array, group_a: String, group_b: String) ->
 			metrics["elapsed_ms"] = float(metrics.get("elapsed_ms", 0.0)) + elapsed
 			metrics["max_elapsed_ms"] = maxf(float(metrics.get("max_elapsed_ms", 0.0)), elapsed)
 			metrics["simulations"] = int(metrics.get("simulations", 0)) + int(turn.get(simulations_key, 0))
-	for group_name in [group_a, group_b]:
+	for group_name_variant in [group_a, group_b]:
+		var group_name: String = str(group_name_variant)
 		var metrics: Dictionary = result[group_name]
 		var decisions := int(metrics.get("decisions", 0))
 		metrics["mean_elapsed_ms"] = float(metrics.get("elapsed_ms", 0.0)) / float(decisions) if decisions > 0 else 0.0
