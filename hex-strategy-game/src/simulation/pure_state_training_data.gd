@@ -65,6 +65,7 @@ static func build_examples_from_rollout(
 	var winner := str(rollout.get("winner", ""))
 	var turns_played := int(rollout.get("turns_played", 0))
 	var termination_reason := str(rollout.get("termination_reason", ""))
+	var max_non_progress_streak := int(rollout.get("max_non_progress_streak", 0))
 	var result := {
 		"valid": bool(rollout.get("valid", false)),
 		"labeled": false,
@@ -72,6 +73,7 @@ static func build_examples_from_rollout(
 		"winner": winner,
 		"termination_reason": termination_reason,
 		"turns_played": turns_played,
+		"max_non_progress_streak": max_non_progress_streak,
 		"game_id": game_id,
 		"examples": [],
 		"example_count": 0,
@@ -84,6 +86,7 @@ static func build_examples_from_rollout(
 			"winner": winner,
 			"termination_reason": termination_reason,
 			"turns_played": turns_played,
+			"max_non_progress_streak": max_non_progress_streak,
 			"groups": [group_a, group_b],
 			"source": source_metadata.duplicate(true),
 			"turns": (rollout.get("history", []) as Array).duplicate(true),
