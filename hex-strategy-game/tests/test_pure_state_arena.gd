@@ -9,6 +9,8 @@ static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_generated_states_are_seeded_and_reproducible(tests) and ok
 	ok = _test_fast_preset_covers_each_family_once(tests) and ok
+	ok = _test_official_seed_sets_are_frozen_and_nested(tests) and ok
+	ok = _test_generated_jobs_receive_turn_allowance(tests) and ok
 	ok = _test_arena_pairs_swap_agent_factions_on_identical_state(tests) and ok
 	ok = _test_asymmetric_rollout_records_per_side_search_cost(tests) and ok
 	return ok
@@ -35,7 +37,7 @@ static func _test_generated_states_are_seeded_and_reproducible(tests: Node) -> b
 
 static func _test_fast_preset_covers_each_family_once(tests: Node) -> bool:
 	tests._log("test_pure_state_arena: fast preset stratifies tactical families")
-	var jobs := PureStateArenaSuite.get_preset("fast", PureStateArenaSuite.DEFAULT_SEED_BASE)
+	var jobs := PureStateArenaSuite.get_preset("fast", 999999)
 	if jobs.size() != PureStateArenaSuite.FAST_PAIR_COUNT * 2:
 		tests._fail("fast arena should contain %d mirrored games, got %d" % [PureStateArenaSuite.FAST_PAIR_COUNT * 2, jobs.size()])
 		return false
@@ -56,6 +58,43 @@ static func _test_fast_preset_covers_each_family_once(tests: Node) -> bool:
 			tests._fail("fast arena should contain each tactical family exactly once: %s" % counts)
 			return false
 	tests._pass("eight-pair fast arena covers all tactical families once while keeping seeded variation")
+	return true
+
+
+static func _test_official_seed_sets_are_frozen_and_nested(tests: Node) -> bool:
+	tests._log("test_pure_state_arena: official fast/full seeds are stable")
+	if PureStateArenaSuite.FAST_SEEDS.size() != PureStateArenaSuite.FAST_PAIR_COUNT:
+		tests._fail("fast seed set size must match fast pair count")
+		return false
+	if PureStateArenaSuite.FULL_SEEDS.size() != PureStateArenaSuite.FULL_PAIR_COUNT:
+		tests._fail("full seed set size must match full pair count")
+		return false
+	for index in range(PureStateArenaSuite.FAST_SEEDS.size()):
+		if int(PureStateArenaSuite.FAST_SEEDS[index]) != int(PureStateArenaSuite.FULL_SEEDS[index]):
+			tests._fail("fast seeds must be the first stable block of the full set")
+			return false
+	var normal := PureStateArenaSuite.get_preset("fast", PureStateArenaSuite.DEFAULT_SEED_BASE)
+	var ignored_override := PureStateArenaSuite.get_preset("fast", 999999)
+	if normal != ignored_override:
+		tests._fail("official fast preset must not change when a legacy seed-base argument changes")
+		return false
+	tests._pass("official arena seeds are explicit, stable, and fast is nested inside full")
+	return true
+
+
+static func _test_generated_jobs_receive_turn_allowance(tests: Node) -> bool:
+	tests._log("test_pure_state_arena: procedural variants receive two extra turns")
+	var jobs := PureStateArenaSuite.get_preset("fast")
+	for job_variant in jobs:
+		if not (job_variant is Dictionary):
+			continue
+		var job: Dictionary = job_variant
+		var family := str(job.get("base_scenario_id", ""))
+		var expected := int(PureStateArenaSuite.FAMILY_MAX_TURNS.get(family, 10)) + PureStateArenaSuite.ARENA_TURN_ALLOWANCE
+		if int(job.get("max_turns", -1)) != expected:
+			tests._fail("arena job %s should use family cap + allowance, expected %d got %d" % [str(job.get("game_id", "")), expected, int(job.get("max_turns", -1))])
+			return false
+	tests._pass("procedural arena jobs get a fixed two-turn resolution allowance")
 	return true
 
 
