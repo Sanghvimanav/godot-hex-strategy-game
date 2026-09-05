@@ -20,6 +20,7 @@ on:
         options:
           - fast
           - balanced
+          - wide
           - broad
       challenger_profile:
         description: Challenger agent configuration
@@ -29,6 +30,7 @@ on:
         options:
           - fast
           - balanced
+          - wide
           - broad
   pull_request:
     paths:
@@ -51,7 +53,7 @@ jobs:
     if: github.event_name == 'pull_request'
     name: Fast arena shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -60,7 +62,10 @@ jobs:
       SHARD_COUNT: 4
       ARENA_PRESET: fast
       CHAMPION_PROFILE: fast
-      CHALLENGER_PROFILE: balanced
+      # This PR intentionally measures the intermediate 6x6 search budget once.
+      # Remove the branch override after the result is captured so normal PRs stay
+      # on the cheaper 2x2-vs-4x4 regression comparison.
+      CHALLENGER_PROFILE: ${{ github.head_ref == 'ai/search-width-6x6-check' && 'wide' || 'balanced' }}
 
     steps:
       - name: Checkout repository
