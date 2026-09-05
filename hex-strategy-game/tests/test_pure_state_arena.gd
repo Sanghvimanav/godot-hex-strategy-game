@@ -8,6 +8,7 @@ const PureStateSelfPlaySuite = preload("res://src/simulation/pure_state_self_pla
 static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_generated_states_are_seeded_and_reproducible(tests) and ok
+	ok = _test_fast_preset_covers_each_family_once(tests) and ok
 	ok = _test_arena_pairs_swap_agent_factions_on_identical_state(tests) and ok
 	ok = _test_asymmetric_rollout_records_per_side_search_cost(tests) and ok
 	return ok
@@ -29,6 +30,32 @@ static func _test_generated_states_are_seeded_and_reproducible(tests: Node) -> b
 		tests._fail("generated arena state should retain seed/family provenance: %s" % metadata)
 		return false
 	tests._pass("arena randomness is reproducible and records exact scenario provenance")
+	return true
+
+
+static func _test_fast_preset_covers_each_family_once(tests: Node) -> bool:
+	tests._log("test_pure_state_arena: fast preset stratifies tactical families")
+	var jobs := PureStateArenaSuite.get_preset("fast", PureStateArenaSuite.DEFAULT_SEED_BASE)
+	if jobs.size() != PureStateArenaSuite.FAST_PAIR_COUNT * 2:
+		tests._fail("fast arena should contain %d mirrored games, got %d" % [PureStateArenaSuite.FAST_PAIR_COUNT * 2, jobs.size()])
+		return false
+	var pair_families: Dictionary = {}
+	for job_variant in jobs:
+		if not (job_variant is Dictionary):
+			continue
+		var job: Dictionary = job_variant
+		var pair_id := str(job.get("pair_id", ""))
+		if not pair_families.has(pair_id):
+			pair_families[pair_id] = str(job.get("base_scenario_id", ""))
+	var counts: Dictionary = {}
+	for family_variant in pair_families.values():
+		var family := str(family_variant)
+		counts[family] = int(counts.get(family, 0)) + 1
+	for family in PureStateArenaSuite.SCENARIO_FAMILIES:
+		if int(counts.get(str(family), 0)) != 1:
+			tests._fail("fast arena should contain each tactical family exactly once: %s" % counts)
+			return false
+	tests._pass("eight-pair fast arena covers all tactical families once while keeping seeded variation")
 	return true
 
 
