@@ -82,7 +82,6 @@ def sign_accuracy(scores: Sequence[float] | torch.Tensor, targets: Sequence[floa
     return float((torch.sign(score_tensor) == torch.sign(target_tensor)).float().mean().item())
 
 
-
 def _group_candidate_indices(
     predictions: Sequence[float] | torch.Tensor,
     targets: Sequence[float] | torch.Tensor,
@@ -140,6 +139,62 @@ def candidate_ranking_metrics(
         "candidate_ranking_accuracy": accuracy,
         "candidate_ranking_pairs": comparable_pairs,
         "candidate_ranking_decisions": decisions_with_pairs,
+    }
+
+
+def uncertainty_aware_candidate_ranking_metrics(
+    predictions: Sequence[float] | torch.Tensor,
+    targets: Sequence[float] | torch.Tensor,
+    target_standard_errors: Sequence[float] | torch.Tensor,
+    decision_ids: Sequence[Hashable],
+    separation_z: float = 1.96,
+    tie_tolerance: float = 1e-8,
+) -> dict[str, float | int]:
+    """Rank only candidate pairs the counterfactual samples meaningfully separate.
+
+    This mirrors the benchmark's descriptive separation rule. The standard errors
+    summarize spread across a small, versioned policy mixture; they are not a
+    claim of classical statistical significance or independent random sampling.
+    """
+    prediction_tensor, target_tensor, grouped = _group_candidate_indices(
+        predictions, targets, decision_ids
+    )
+    error_tensor = torch.as_tensor(target_standard_errors, dtype=torch.float32).flatten()
+    if error_tensor.numel() != target_tensor.numel():
+        raise ValueError("target_standard_errors must contain one value per candidate")
+
+    correct_credit = 0.0
+    comparable_pairs = 0
+    decisions_with_pairs = 0
+    safe_z = max(0.0, float(separation_z))
+    for indices in grouped.values():
+        decision_pairs = 0
+        for left_offset, left in enumerate(indices):
+            for right in indices[left_offset + 1 :]:
+                target_delta = float(target_tensor[left] - target_tensor[right])
+                if abs(target_delta) <= tie_tolerance:
+                    continue
+                combined_error = (
+                    float(error_tensor[left]) ** 2 + float(error_tensor[right]) ** 2
+                ) ** 0.5
+                if abs(target_delta) <= safe_z * combined_error:
+                    continue
+                prediction_delta = float(prediction_tensor[left] - prediction_tensor[right])
+                comparable_pairs += 1
+                decision_pairs += 1
+                if abs(prediction_delta) <= tie_tolerance:
+                    correct_credit += 0.5
+                elif (prediction_delta > 0.0) == (target_delta > 0.0):
+                    correct_credit += 1.0
+        if decision_pairs > 0:
+            decisions_with_pairs += 1
+
+    accuracy = correct_credit / comparable_pairs if comparable_pairs else float("nan")
+    return {
+        "uncertainty_aware_candidate_ranking_accuracy": accuracy,
+        "uncertainty_aware_candidate_ranking_pairs": comparable_pairs,
+        "uncertainty_aware_candidate_ranking_decisions": decisions_with_pairs,
+        "uncertainty_aware_separation_z": safe_z,
     }
 
 
