@@ -9,6 +9,7 @@ const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_command_hexes_use_opposite_back_edges(tests) and ok
+	ok = _test_command_hexes_follow_rotated_deployment(tests) and ok
 	ok = _test_capture_requires_one_complete_turn_and_same_unit(tests) and ok
 	ok = _test_simultaneous_capture_is_a_draw(tests) and ok
 	ok = _test_objective_advance_survives_proposal_pruning(tests) and ok
@@ -32,6 +33,35 @@ static func _test_command_hexes_use_opposite_back_edges(tests: Node) -> bool:
 		tests._fail("Zerg should own the centered -q back-edge command hex: %s" % command_hexes)
 		return false
 	tests._pass("command hexes are centered on opposite back edges using the state hex radius")
+	return true
+
+
+static func _test_command_hexes_follow_rotated_deployment(tests: Node) -> bool:
+	tests._log("test_pure_state_command_hex_rules: rotated deployments rotate command edges")
+	var vertical := {
+		"hex_radius": 5,
+		"groups": [
+			{"name": "terran", "units": [_make_unit(1, Vector2i(0, 4))]},
+			{"name": "zerg", "units": [_make_unit(2, Vector2i(0, -4))]},
+		]
+	}
+	var vertical_hexes := PureStateCommandHexRules.ensure_command_hexes(vertical, "terran", "zerg")
+	if vertical_hexes.get("terran", []) != [0, 5] or vertical_hexes.get("zerg", []) != [0, -5]:
+		tests._fail("r-axis deployment should use opposite r-axis back edges: %s" % vertical_hexes)
+		return false
+
+	var diagonal := {
+		"hex_radius": 5,
+		"groups": [
+			{"name": "terran", "units": [_make_unit(3, Vector2i(-4, 4))]},
+			{"name": "zerg", "units": [_make_unit(4, Vector2i(4, -4))]},
+		]
+	}
+	var diagonal_hexes := PureStateCommandHexRules.ensure_command_hexes(diagonal, "terran", "zerg")
+	if diagonal_hexes.get("terran", []) != [-5, 5] or diagonal_hexes.get("zerg", []) != [5, -5]:
+		tests._fail("diagonal deployment should use opposite diagonal back edges: %s" % diagonal_hexes)
+		return false
+	tests._pass("command objectives follow the deployment axis across rotated hex scenarios")
 	return true
 
 
