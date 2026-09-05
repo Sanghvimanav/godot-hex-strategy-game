@@ -29,6 +29,7 @@ from ml.value_model.metrics import (
     handwritten_evaluator_score,
     sign_accuracy,
     top_plan_regret_metrics,
+    uncertainty_aware_candidate_ranking_metrics,
 )
 from ml.value_model.model import HexValueNet
 from ml.value_model.train import train
@@ -106,8 +107,8 @@ class ValueModelTests(unittest.TestCase):
         for game in range(5):
             examples.append(_example("zerg", 1.0, f"g{game}"))
             examples.append(_example("terran", -1.0, f"g{game}"))
-        train, validation = split_examples_by_game(examples, validation_fraction=0.4, seed=7)
-        train_ids = {item["game_id"] for item in train}
+        train_examples, validation = split_examples_by_game(examples, validation_fraction=0.4, seed=7)
+        train_ids = {item["game_id"] for item in train_examples}
         validation_ids = {item["game_id"] for item in validation}
         self.assertTrue(train_ids)
         self.assertTrue(validation_ids)
@@ -120,13 +121,13 @@ class ValueModelTests(unittest.TestCase):
                 game_id = f"{family}-r{rotation}"
                 examples.append(_example("zerg", 1.0, game_id, family))
                 examples.append(_example("terran", -1.0, game_id, family))
-        train, validation = split_examples_by_group(
+        train_examples, validation = split_examples_by_group(
             examples,
             validation_fraction=0.25,
             seed=0,
             group_key="source.base_scenario_id",
         )
-        train_families = {item["source"]["base_scenario_id"] for item in train}
+        train_families = {item["source"]["base_scenario_id"] for item in train_examples}
         validation_families = {item["source"]["base_scenario_id"] for item in validation}
         self.assertEqual(len(validation_families), 1)
         self.assertTrue(train_families.isdisjoint(validation_families))
@@ -134,8 +135,6 @@ class ValueModelTests(unittest.TestCase):
         self.assertTrue(all(item["source"]["base_scenario_id"] == held_out for item in validation))
 
     def test_jsonl_loader(self) -> None:
-        import json
-
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "examples.jsonl"
             path.write_text(json.dumps(_example()) + "\n\n", encoding="utf-8")
@@ -167,11 +166,33 @@ class ValueModelTests(unittest.TestCase):
         self.assertAlmostEqual(float(regret["top_plan_max_regret"]), 0.9)
         self.assertEqual(float(regret["top_plan_optimal_rate"]), 0.0)
 
+    def test_uncertainty_aware_ranking_skips_unseparated_pairs(self) -> None:
+        predictions = [0.8, 0.9, -0.5]
+        targets = [0.6, 0.5, -1.0]
+        standard_errors = [0.5, 0.5, 0.1]
+        decision_ids = ["turn-a", "turn-a", "turn-a"]
+        raw = candidate_ranking_metrics(predictions, targets, decision_ids)
+        aware = uncertainty_aware_candidate_ranking_metrics(
+            predictions,
+            targets,
+            standard_errors,
+            decision_ids,
+            separation_z=1.96,
+        )
+        self.assertEqual(raw["candidate_ranking_pairs"], 3)
+        # 0.6 vs 0.5 is well inside the policy-sample uncertainty band, while
+        # both candidates remain clearly separated from -1.0.
+        self.assertEqual(aware["uncertainty_aware_candidate_ranking_pairs"], 2)
+        self.assertEqual(aware["uncertainty_aware_candidate_ranking_decisions"], 1)
+        self.assertAlmostEqual(float(aware["uncertainty_aware_candidate_ranking_accuracy"]), 1.0)
+
     def test_candidate_metrics_validate_parallel_inputs(self) -> None:
         with self.assertRaises(ValueError):
             candidate_ranking_metrics([0.1], [1.0, -1.0], ["turn-a"])
         with self.assertRaises(ValueError):
             top_plan_regret_metrics([0.1], [1.0], [])
+        with self.assertRaises(ValueError):
+            uncertainty_aware_candidate_ranking_metrics([0.1], [1.0], [], ["turn-a"])
 
     def test_counterfactual_evaluation_scores_real_candidate_rows(self) -> None:
         weak_state = _example()["state"]
@@ -182,12 +203,16 @@ class ValueModelTests(unittest.TestCase):
             return {
                 "decision_id": "decision-a",
                 "candidate_id": candidate_id,
+                "candidate_label": candidate_id.title(),
+                "candidate_description": f"Synthetic {candidate_id} candidate",
                 "perspective_group": "zerg",
                 "opponent_group": "terran",
                 "proposal_score": proposal,
+                "assumptions": {"separation_z": 1.96},
                 "target_estimate": {
                     "return_count": 1,
                     "mean_return": target,
+                    "estimated_standard_error": 0.0,
                     "labeled_weight_fraction": 1.0,
                 },
                 "samples": [
@@ -232,10 +257,14 @@ class ValueModelTests(unittest.TestCase):
 
         self.assertEqual(result["evaluated_candidates"], 2)
         self.assertEqual(result["evaluated_decisions"], 1)
+        self.assertEqual(len(result["candidate_details"]), 2)
+        self.assertIn("neural_score", result["candidate_details"][0])
+        self.assertIn("target_standard_error", result["candidate_details"][0])
         neural = result["evaluators"]["neural_value_model"]
         handwritten = result["evaluators"]["handwritten_state_evaluator"]
         proposal = result["evaluators"]["planner_proposal_score"]
         self.assertAlmostEqual(float(neural["candidate_ranking_accuracy"]), 0.5)
+        self.assertAlmostEqual(float(neural["uncertainty_aware_candidate_ranking_accuracy"]), 0.5)
         self.assertAlmostEqual(float(neural["top_plan_mean_regret"]), 2.0)
         self.assertAlmostEqual(float(handwritten["candidate_ranking_accuracy"]), 1.0)
         self.assertAlmostEqual(float(handwritten["top_plan_mean_regret"]), 0.0)
@@ -286,6 +315,39 @@ class ValueModelTests(unittest.TestCase):
             float(result["neural_minus_handwritten_sign_accuracy_nonterminal"]),
             expected_delta,
         )
+
+    def test_trainer_reports_conflicting_identical_model_inputs(self) -> None:
+        positive = _example("zerg", 1.0, "g-positive", "same-family")
+        negative = json.loads(json.dumps(positive))
+        negative["game_id"] = "g-negative"
+        negative["outcome"] = -1.0
+        negative["winner"] = "terran"
+        with tempfile.TemporaryDirectory() as directory:
+            data_path = Path(directory) / "examples.jsonl"
+            output_path = Path(directory) / "model.pt"
+            data_path.write_text(
+                json.dumps(positive) + "\n" + json.dumps(negative) + "\n",
+                encoding="utf-8",
+            )
+            result = train(
+                argparse.Namespace(
+                    data=str(data_path),
+                    output=str(output_path),
+                    epochs=1,
+                    batch_size=2,
+                    learning_rate=3e-4,
+                    weight_decay=1e-4,
+                    validation_fraction=0.0,
+                    split_key="source.base_scenario_id",
+                    hidden_channels=4,
+                    residual_blocks=0,
+                    seed=0,
+                    device="cpu",
+                )
+            )
+        self.assertEqual(result["train_conflicting_input_groups"], 1)
+        self.assertEqual(result["train_conflicting_input_examples"], 2)
+        self.assertEqual(result["all_conflicting_input_groups"], 1)
 
     def test_tiny_network_can_reduce_loss(self) -> None:
         torch.manual_seed(0)
