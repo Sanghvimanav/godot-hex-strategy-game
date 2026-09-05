@@ -13,6 +13,7 @@ from .metrics import (
     candidate_ranking_metrics,
     handwritten_evaluator_score,
     top_plan_regret_metrics,
+    uncertainty_aware_candidate_ranking_metrics,
 )
 from .model import HexValueNet
 
@@ -98,10 +99,21 @@ def _neural_scores(
 
 
 def _metric_set(
-    predictions: Sequence[float], targets: Sequence[float], decision_ids: Sequence[str]
+    predictions: Sequence[float],
+    targets: Sequence[float],
+    target_standard_errors: Sequence[float],
+    decision_ids: Sequence[str],
+    separation_z: float,
 ) -> dict[str, float | int]:
     return {
         **candidate_ranking_metrics(predictions, targets, decision_ids),
+        **uncertainty_aware_candidate_ranking_metrics(
+            predictions,
+            targets,
+            target_standard_errors,
+            decision_ids,
+            separation_z=separation_z,
+        ),
         **top_plan_regret_metrics(predictions, targets, decision_ids),
     }
 
@@ -129,6 +141,9 @@ def evaluate_counterfactual_rows(
         estimate = row.get("target_estimate", {})
         if not isinstance(estimate, dict) or int(estimate.get("return_count", 0)) <= 0:
             continue
+        assumptions = row.get("assumptions", {})
+        if not isinstance(assumptions, dict):
+            assumptions = {}
         start = len(examples)
         for sample in row.get("samples", []):
             if not isinstance(sample, dict):
@@ -152,16 +167,25 @@ def evaluate_counterfactual_rows(
             {
                 "decision_id": str(row.get("decision_id", "")),
                 "candidate_id": str(row.get("candidate_id", "")),
+                "candidate_label": str(row.get("candidate_label", row.get("candidate_id", ""))),
+                "candidate_description": str(row.get("candidate_description", "")),
                 "target": float(estimate.get("mean_return", 0.0)),
+                "target_standard_error": max(0.0, float(estimate.get("estimated_standard_error", 0.0))),
                 "proposal_score": float(row.get("proposal_score", 0.0)),
                 "sample_start": start,
                 "sample_stop": stop,
                 "coverage": float(estimate.get("labeled_weight_fraction", 0.0)),
+                "separation_z": max(0.0, float(assumptions.get("separation_z", 1.96))),
             }
         )
 
     if not candidates:
         raise ValueError("counterfactual data contains no labeled candidates with first-turn states")
+
+    separation_values = {float(candidate["separation_z"]) for candidate in candidates}
+    if len(separation_values) != 1:
+        raise ValueError(f"counterfactual candidates disagree on separation_z: {sorted(separation_values)}")
+    separation_z = next(iter(separation_values))
 
     device = torch.device(device_name)
     model = _load_model(checkpoint_path, device)
@@ -185,6 +209,7 @@ def evaluate_counterfactual_rows(
         )
 
     targets = [float(candidate["target"]) for candidate in candidates]
+    target_standard_errors = [float(candidate["target_standard_error"]) for candidate in candidates]
     decision_ids = [str(candidate["decision_id"]) for candidate in candidates]
     proposal_scores = [float(candidate["proposal_score"]) for candidate in candidates]
     decision_counts: dict[str, int] = {}
@@ -193,6 +218,25 @@ def evaluate_counterfactual_rows(
     evaluated_decisions = sum(count >= 2 for count in decision_counts.values())
     if evaluated_decisions == 0:
         raise ValueError("counterfactual data contains no decision with at least two labeled candidates")
+
+    candidate_details = []
+    for candidate, neural_score, handwritten_score in zip(
+        candidates, neural_candidates, handwritten_candidates
+    ):
+        candidate_details.append(
+            {
+                "decision_id": candidate["decision_id"],
+                "candidate_id": candidate["candidate_id"],
+                "candidate_label": candidate["candidate_label"],
+                "candidate_description": candidate["candidate_description"],
+                "target_return": candidate["target"],
+                "target_standard_error": candidate["target_standard_error"],
+                "target_coverage": candidate["coverage"],
+                "neural_score": neural_score,
+                "handwritten_score": handwritten_score,
+                "planner_proposal_score": candidate["proposal_score"],
+            }
+        )
 
     return {
         "candidate_rows": len(rows),
@@ -203,10 +247,19 @@ def evaluate_counterfactual_rows(
         "mean_target_coverage": sum(float(candidate["coverage"]) for candidate in candidates) / len(candidates),
         "target_semantics": "policy_conditional_terminal_return_estimate",
         "candidate_score_semantics": "weighted_first_turn_state_value_over_labeled_policy_samples",
+        "uncertainty_semantics": "descriptive_between_policy_sample_spread_not_statistical_confidence",
+        "separation_z": separation_z,
+        "candidate_details": candidate_details,
         "evaluators": {
-            "neural_value_model": _metric_set(neural_candidates, targets, decision_ids),
-            "handwritten_state_evaluator": _metric_set(handwritten_candidates, targets, decision_ids),
-            "planner_proposal_score": _metric_set(proposal_scores, targets, decision_ids),
+            "neural_value_model": _metric_set(
+                neural_candidates, targets, target_standard_errors, decision_ids, separation_z
+            ),
+            "handwritten_state_evaluator": _metric_set(
+                handwritten_candidates, targets, target_standard_errors, decision_ids, separation_z
+            ),
+            "planner_proposal_score": _metric_set(
+                proposal_scores, targets, target_standard_errors, decision_ids, separation_z
+            ),
         },
     }
 
