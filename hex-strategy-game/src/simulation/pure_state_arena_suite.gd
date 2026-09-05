@@ -10,7 +10,7 @@ class_name PureStateArenaSuite
 const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
 const PureStateSelfPlaySuite = preload("res://src/simulation/pure_state_self_play_suite.gd")
 
-const SUITE_VERSION := 1
+const SUITE_VERSION := 2
 const DEFAULT_SEED_BASE := 1701
 const FAST_PAIR_COUNT := 8
 const FULL_PAIR_COUNT := 32
@@ -76,8 +76,10 @@ static func get_preset(preset_name: String, seed_base: int = DEFAULT_SEED_BASE) 
 
 	var jobs: Array = []
 	for pair_index in range(pair_count):
-		# A large odd stride prevents neighboring arena positions from consuming
-		# nearly identical PRNG streams while remaining simple and reproducible.
+		# 7919 is odd and 7919 mod 8 == 7, so an eight-pair block visits every
+		# family residue exactly once before repeating. That gives the PR tier
+		# stratified mechanic coverage while the seed still randomizes geometry,
+		# health/resources, and rotation inside each family.
 		var scenario_seed := seed_base + pair_index * 7919
 		jobs.append_array(_make_pair_jobs(scenario_seed, preset_name))
 	return jobs
@@ -86,7 +88,13 @@ static func get_preset(preset_name: String, seed_base: int = DEFAULT_SEED_BASE) 
 static func build_generated_state(scenario_seed: int, preset_name: String = "fast") -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = scenario_seed
-	var family := str(SCENARIO_FAMILIES[rng.randi_range(0, SCENARIO_FAMILIES.size() - 1)])
+	# Family choice is stratified by seed residue instead of sampled with
+	# replacement. This prevents a small fast run from accidentally spending most
+	# of its budget on one family while keeping the rest of the state procedural.
+	var family_index := scenario_seed % SCENARIO_FAMILIES.size()
+	if family_index < 0:
+		family_index += SCENARIO_FAMILIES.size()
+	var family := str(SCENARIO_FAMILIES[family_index])
 	var rotation_steps := rng.randi_range(0, 5)
 	var variation_seed := int(rng.randi())
 	var state := PureStateSelfPlaySuite.build_state(family)
