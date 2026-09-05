@@ -93,6 +93,9 @@ const AGENT_PROFILES := {
 	# while preserving the same action enumeration used by existing self-play.
 	"fast": {"max_actions_per_unit": 8, "own_max_plans": 2, "opponent_max_plans": 2},
 	"balanced": {"max_actions_per_unit": 8, "own_max_plans": 4, "opponent_max_plans": 4},
+	# Intermediate diagnostic profile: if 6x6 cannot justify its extra compute on
+	# the frozen arena, there is little reason to spend full-run budget on 8x8.
+	"wide": {"max_actions_per_unit": 8, "own_max_plans": 6, "opponent_max_plans": 6},
 	"broad": {"max_actions_per_unit": 8, "own_max_plans": 8, "opponent_max_plans": 8},
 }
 
