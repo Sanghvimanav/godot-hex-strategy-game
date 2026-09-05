@@ -58,8 +58,11 @@ def _input_conflict_metrics(
     for example in examples:
         encoded = encoder.encode(example)
         digest = hashlib.sha256()
-        digest.update(encoded.board.contiguous().numpy().tobytes())
-        digest.update(encoded.global_features.contiguous().numpy().tobytes())
+        # Keep the standalone test workflow dependency-light: PyTorch is present,
+        # but NumPy is intentionally not required. Tensor tolist() is stable for
+        # these small float32 state encodings and hashes the exact model inputs.
+        digest.update(json.dumps(encoded.board.flatten().tolist(), separators=(",", ":")).encode("utf-8"))
+        digest.update(json.dumps(encoded.global_features.tolist(), separators=(",", ":")).encode("utf-8"))
         grouped.setdefault(digest.hexdigest(), []).append(float(encoded.target.item()))
 
     duplicate_groups = 0
