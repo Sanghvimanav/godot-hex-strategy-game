@@ -53,7 +53,7 @@ jobs:
     if: github.event_name == 'pull_request'
     name: Fast arena shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -62,10 +62,7 @@ jobs:
       SHARD_COUNT: 4
       ARENA_PRESET: fast
       CHAMPION_PROFILE: fast
-      # This PR intentionally measures the intermediate 6x6 search budget once.
-      # Remove the branch override after the result is captured so normal PRs stay
-      # on the cheaper 2x2-vs-4x4 regression comparison.
-      CHALLENGER_PROFILE: ${{ github.head_ref == 'ai/search-width-6x6-check' && 'wide' || 'balanced' }}
+      CHALLENGER_PROFILE: balanced
 
     steps:
       - name: Checkout repository
