@@ -100,6 +100,7 @@ func _run_dataset() -> void:
 		var winner := str(result.get("winner", ""))
 		var termination_reason := str(result.get("termination_reason", ""))
 		var example_count := int(result.get("example_count", 0))
+		var max_non_progress_streak := int(result.get("max_non_progress_streak", 0))
 		var trace = result.get("trace", null)
 		if trace is Dictionary:
 			all_traces.append((trace as Dictionary).duplicate(true))
@@ -131,10 +132,11 @@ func _run_dataset() -> void:
 			"winner": winner,
 			"termination_reason": termination_reason,
 			"turns_played": int(result.get("turns_played", 0)),
+			"max_non_progress_streak": max_non_progress_streak,
 			"example_count": example_count,
 		}
 		game_summaries.append(summary)
-		print("[self-play] %s profile=%s rotation=%d seed=%d status=%s winner=%s turns=%d examples=%d" % [
+		print("[self-play] %s profile=%s rotation=%d seed=%d status=%s winner=%s turns=%d non_progress=%d examples=%d" % [
 			game_id,
 			str(job.get("budget_profile", "")),
 			int(job.get("rotation_steps", 0)),
@@ -142,6 +144,7 @@ func _run_dataset() -> void:
 			status,
 			winner,
 			int(result.get("turns_played", 0)),
+			max_non_progress_streak,
 			example_count,
 		])
 
