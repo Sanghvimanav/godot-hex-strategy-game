@@ -1,0 +1,233 @@
+name: AI Arena
+
+on:
+  workflow_dispatch:
+    inputs:
+      preset:
+        description: Arena size
+        required: true
+        default: full
+        type: choice
+        options:
+          - smoke
+          - fast
+          - full
+      champion_profile:
+        description: Baseline agent configuration
+        required: true
+        default: fast
+        type: choice
+        options:
+          - fast
+          - balanced
+          - broad
+      challenger_profile:
+        description: Challenger agent configuration
+        required: true
+        default: balanced
+        type: choice
+        options:
+          - fast
+          - balanced
+          - broad
+      seed_base:
+        description: Deterministic scenario seed base
+        required: true
+        default: 1701
+        type: number
+  pull_request:
+    paths:
+      - ".github/workflows/ai-arena.yml"
+      - "hex-strategy-game/src/battle/ai/**"
+      - "hex-strategy-game/src/simulation/pure_state_*.gd"
+      - "hex-strategy-game/tools/ai_arena.*"
+      - "hex-strategy-game/tools/merge_ai_arena.py"
+      - "hex-strategy-game/tools/deterministic_shard.gd"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-arena-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast-arena:
+    if: github.event_name == 'pull_request'
+    name: Fast arena shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      SHARD_COUNT: 4
+      ARENA_PRESET: fast
+      CHAMPION_PROFILE: fast
+      CHALLENGER_PROFILE: balanced
+      SEED_BASE: 1701
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Run paired arena shard
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/arena
+          cd hex-strategy-game
+          godot --headless --path . res://tools/ai_arena.tscn -- \
+            --preset="${ARENA_PRESET}" \
+            --champion-profile="${CHAMPION_PROFILE}" \
+            --challenger-profile="${CHALLENGER_PROFILE}" \
+            --seed-base="${SEED_BASE}" \
+            --rules-version="${GITHUB_SHA}" \
+            --out="${GITHUB_WORKSPACE}/artifacts/arena" \
+            --shard-index="${{ matrix.shard }}" \
+            --shard-count="${SHARD_COUNT}"
+
+      - name: Upload fast arena shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-arena-fast-shard-${{ matrix.shard }}
+          path: artifacts/arena/
+          if-no-files-found: error
+          retention-days: 3
+
+  merge-fast:
+    if: github.event_name == 'pull_request'
+    name: Merge fast arena
+    needs: fast-arena
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download fast arena shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ai-arena-fast-shard-*
+          path: artifacts/arena_shards
+          merge-multiple: false
+
+      - name: Audit and summarize tournament
+        run: |
+          python3 hex-strategy-game/tools/merge_ai_arena.py \
+            --input-root artifacts/arena_shards \
+            --out artifacts/arena_merged
+          cat artifacts/arena_merged/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload merged fast arena
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-arena-fast-${{ github.run_number }}
+          path: artifacts/arena_merged/
+          if-no-files-found: error
+          retention-days: 14
+
+  full-arena:
+    if: github.event_name == 'workflow_dispatch'
+    name: Full arena shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    env:
+      SHARD_COUNT: 8
+      ARENA_PRESET: ${{ inputs.preset }}
+      CHAMPION_PROFILE: ${{ inputs.champion_profile }}
+      CHALLENGER_PROFILE: ${{ inputs.challenger_profile }}
+      SEED_BASE: ${{ inputs.seed_base }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Run paired arena shard
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/arena
+          cd hex-strategy-game
+          godot --headless --path . res://tools/ai_arena.tscn -- \
+            --preset="${ARENA_PRESET}" \
+            --champion-profile="${CHAMPION_PROFILE}" \
+            --challenger-profile="${CHALLENGER_PROFILE}" \
+            --seed-base="${SEED_BASE}" \
+            --rules-version="${GITHUB_SHA}" \
+            --out="${GITHUB_WORKSPACE}/artifacts/arena" \
+            --shard-index="${{ matrix.shard }}" \
+            --shard-count="${SHARD_COUNT}"
+
+      - name: Upload full arena shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-arena-full-shard-${{ matrix.shard }}
+          path: artifacts/arena/
+          if-no-files-found: error
+          retention-days: 3
+
+  merge-full:
+    if: github.event_name == 'workflow_dispatch'
+    name: Merge full arena
+    needs: full-arena
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download full arena shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ai-arena-full-shard-*
+          path: artifacts/arena_shards
+          merge-multiple: false
+
+      - name: Audit and summarize tournament
+        run: |
+          python3 hex-strategy-game/tools/merge_ai_arena.py \
+            --input-root artifacts/arena_shards \
+            --out artifacts/arena_merged
+          cat artifacts/arena_merged/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload merged full arena
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-arena-full-${{ github.run_number }}
+          path: artifacts/arena_merged/
+          if-no-files-found: error
+          retention-days: 14
