@@ -12,6 +12,7 @@ const PureStatePlanIntents = preload("res://src/simulation/pure_state_plan_inten
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
 const REST_ACTION_KEYS := ["reload", "recharge", "rest_no_energy"]
+const OBJECTIVE_PROGRESS_PROPOSAL_WEIGHT := 1.25
 
 
 ## Returns up to max_plans candidate plans for one group.
@@ -28,7 +29,9 @@ const REST_ACTION_KEYS := ["reload", "recharge", "rest_no_energy"]
 ## When preserve_intent_diversity is true, per-unit action pruning and each beam
 ## truncation preserve representatives of commit/hold/reposition/disengage. This
 ## is intended for adversarial search pools where recall matters more than a
-## perfectly score-sorted proposal beam.
+## perfectly score-sorted proposal beam. When command hexes are present, one
+## objective-advancing action/plan is also retained whenever the budget has at
+## least two slots, so the evaluator can actually consider the alternate win.
 static func get_candidate_plans(
 	game_state: Dictionary,
 	group_name: String,
@@ -63,9 +66,14 @@ static func get_candidate_plans(
 			if not (action_variant is Dictionary):
 				continue
 			var action: Dictionary = action_variant
+			var objective_progress := _objective_progress_for_action(game_state, group_name, unit, action)
+			var proposal_score := _score_action(game_state, group_name, unit, action)
+			if objective_progress > 0:
+				proposal_score += float(objective_progress) * OBJECTIVE_PROGRESS_PROPOSAL_WEIGHT
 			ranked.append({
 				"action": action.duplicate(true),
-				"score": _score_action(game_state, group_name, unit, action),
+				"score": proposal_score,
+				"objective_progress": objective_progress,
 			})
 		ranked.sort_custom(_ranked_action_before)
 		var kept: Array = []
@@ -80,6 +88,7 @@ static func get_candidate_plans(
 		else:
 			for i in range(mini(max_actions_per_unit, ranked.size())):
 				kept.append(ranked[i])
+		kept = _preserve_objective_action(ranked, kept, max_actions_per_unit)
 		if not kept.is_empty():
 			choices_by_unit.append(kept)
 
@@ -88,10 +97,10 @@ static func get_candidate_plans(
 		# all stunned) has one legal forced plan: submit no actions. Treating this as
 		# no plan makes otherwise valid rollouts fail instead of advancing the turn.
 		if living_unit_count > 0:
-			return [{"actions": [], "proposal_score": 0.0}]
+			return [{"actions": [], "proposal_score": 0.0, "objective_progress": 0}]
 		return []
 
-	var beam: Array = [{"actions": [], "proposal_score": 0.0}]
+	var beam: Array = [{"actions": [], "proposal_score": 0.0, "objective_progress": 0}]
 	for choices_variant in choices_by_unit:
 		var choices: Array = choices_variant
 		var expanded: Array = []
@@ -104,6 +113,7 @@ static func get_candidate_plans(
 				expanded.append({
 					"actions": actions,
 					"proposal_score": float(partial.get("proposal_score", 0.0)) + float(choice.get("score", 0.0)),
+					"objective_progress": int(partial.get("objective_progress", 0)) + int(choice.get("objective_progress", 0)),
 				})
 		expanded.sort_custom(_plan_before)
 		beam.clear()
@@ -112,6 +122,7 @@ static func get_candidate_plans(
 		else:
 			for i in range(mini(max_plans, expanded.size())):
 				beam.append(expanded[i])
+		beam = _preserve_objective_plan(expanded, beam, max_plans)
 
 	return beam
 
@@ -120,6 +131,115 @@ static func _find_group(game_state: Dictionary, group_name: String) -> Dictionar
 	for group_variant in game_state.get("groups", []):
 		if group_variant is Dictionary and str(group_variant.get("name", "")) == group_name:
 			return group_variant
+	return {}
+
+
+## Keep one command-hex advance in the per-unit action set when there is enough
+## capacity to preserve an alternative without making a one-slot search objective-only.
+static func _preserve_objective_action(ranked: Array, kept: Array, max_actions: int) -> Array:
+	if max_actions < 2 or ranked.is_empty() or kept.is_empty():
+		return kept
+	for entry_variant in kept:
+		if entry_variant is Dictionary and int((entry_variant as Dictionary).get("objective_progress", 0)) > 0:
+			return kept
+
+	var best: Dictionary = {}
+	for entry_variant in ranked:
+		if not (entry_variant is Dictionary):
+			continue
+		var entry: Dictionary = entry_variant
+		var progress := int(entry.get("objective_progress", 0))
+		if progress <= 0:
+			continue
+		if best.is_empty():
+			best = entry
+			continue
+		var best_progress := int(best.get("objective_progress", 0))
+		if progress > best_progress or (progress == best_progress and float(entry.get("score", 0.0)) > float(best.get("score", 0.0))):
+			best = entry
+	if best.is_empty():
+		return kept
+
+	var result := kept.duplicate(true)
+	if result.size() < max_actions:
+		result.append(best.duplicate(true))
+	else:
+		result[result.size() - 1] = best.duplicate(true)
+	result.sort_custom(_ranked_action_before)
+	return result
+
+
+## Beam pruning can otherwise erase every objective plan even after per-unit
+## preservation. Keep the strongest advancing partial/complete plan when at least
+## two plan slots are available.
+static func _preserve_objective_plan(expanded: Array, selected: Array, max_plans: int) -> Array:
+	if max_plans < 2 or expanded.is_empty() or selected.is_empty():
+		return selected
+	for plan_variant in selected:
+		if plan_variant is Dictionary and int((plan_variant as Dictionary).get("objective_progress", 0)) > 0:
+			return selected
+
+	var best: Dictionary = {}
+	for plan_variant in expanded:
+		if not (plan_variant is Dictionary):
+			continue
+		var plan: Dictionary = plan_variant
+		var progress := int(plan.get("objective_progress", 0))
+		if progress <= 0:
+			continue
+		if best.is_empty():
+			best = plan
+			continue
+		var best_progress := int(best.get("objective_progress", 0))
+		if progress > best_progress or (progress == best_progress and float(plan.get("proposal_score", 0.0)) > float(best.get("proposal_score", 0.0))):
+			best = plan
+	if best.is_empty():
+		return selected
+
+	var result := selected.duplicate(true)
+	if result.size() < max_plans:
+		result.append(best.duplicate(true))
+	else:
+		result[result.size() - 1] = best.duplicate(true)
+	result.sort_custom(_plan_before)
+	return result
+
+
+static func _objective_progress_for_action(
+	game_state: Dictionary,
+	group_name: String,
+	unit: Dictionary,
+	action: Dictionary
+) -> int:
+	var config: Dictionary = Actions.get_action_config(str(action.get("action_key", "")))
+	if str(config.get("type", "")) not in TurnExecutionCore.MOVE_TYPES:
+		return 0
+	var target_info := _enemy_command_hex(game_state, group_name)
+	if not bool(target_info.get("found", false)):
+		return 0
+	var from_cell := _cell_from_variant(unit.get("cell", [0, 0]), Vector2i.ZERO)
+	var to_cell := _cell_from_variant(action.get("end_point", [from_cell.x, from_cell.y]), from_cell)
+	var target: Vector2i = target_info.get("cell", Vector2i.ZERO)
+	var before := HexGrid.hex_distance(from_cell.x, from_cell.y, target.x, target.y)
+	var after := HexGrid.hex_distance(to_cell.x, to_cell.y, target.x, target.y)
+	return before - after
+
+
+static func _enemy_command_hex(game_state: Dictionary, group_name: String) -> Dictionary:
+	var command_hexes_variant = game_state.get("command_hexes", {})
+	if not (command_hexes_variant is Dictionary):
+		return {}
+	var command_hexes: Dictionary = command_hexes_variant
+	for group_variant in game_state.get("groups", []):
+		if not (group_variant is Dictionary):
+			continue
+		var other_name := str((group_variant as Dictionary).get("name", ""))
+		if other_name.is_empty() or other_name == group_name or not command_hexes.has(other_name):
+			continue
+		return {
+			"found": true,
+			"cell": _cell_from_variant(command_hexes.get(other_name, [0, 0]), Vector2i.ZERO),
+		}
 	return {}
 
 

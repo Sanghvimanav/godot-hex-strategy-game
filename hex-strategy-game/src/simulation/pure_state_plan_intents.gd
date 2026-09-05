@@ -11,7 +11,9 @@ class_name PureStatePlanIntents
 ## Opponent selection uses stronger diversity quotas because its job is recall:
 ## do not miss a qualitatively different counter. Own-plan selection remains
 ## score-first but preserves a diversity floor so search still sees creative
-## alternatives.
+## alternatives. Command-objective recall is orthogonal to these four buckets:
+## when at least two slots exist, final selection also retains one objective-
+## advancing plan without adding a fifth tactical intent.
 
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
@@ -137,7 +139,9 @@ static func select_pool_candidates(
 
 ## Own-plan policy: start score-first, then replace the lowest redundant picks
 ## until every available intent has one representative. This keeps most of the
-## strongest raw proposals while preventing total tunnel vision.
+## strongest raw proposals while preventing total tunnel vision. Objective recall
+## is applied afterward as an orthogonal floor, preferentially replacing another
+## plan from the same tactical bucket so four-way intent coverage stays intact.
 static func select_own_candidates(
 	game_state: Dictionary,
 	group_name: String,
@@ -150,7 +154,7 @@ static func select_own_candidates(
 	if annotated.size() <= max_plans:
 		return annotated
 	if max_plans < BUCKET_ORDER.size():
-		return annotated.slice(0, max_plans)
+		return _preserve_objective_candidate(annotated, annotated.slice(0, max_plans), max_plans)
 
 	var selected: Array = annotated.slice(0, max_plans)
 	for bucket in BUCKET_ORDER:
@@ -164,12 +168,13 @@ static func select_own_candidates(
 			break
 		selected[replace_index] = replacement
 	selected.sort_custom(_candidate_before)
-	return selected
+	return _preserve_objective_candidate(annotated, selected, max_plans)
 
 
 ## Opponent policy: coverage-heavy. With eight slots this yields the intended
 ## 2 commit / 1 hold / 2 reposition / 2 disengage floor, then one wildcard slot
-## filled by the strongest remaining proposal.
+## filled by the strongest remaining proposal. Objective recall is still kept as
+## an independent floor so a small opponent set cannot omit the alternate win.
 static func select_opponent_candidates(
 	game_state: Dictionary,
 	group_name: String,
@@ -182,7 +187,7 @@ static func select_opponent_candidates(
 	if annotated.size() <= max_plans:
 		return annotated
 	if max_plans < BUCKET_ORDER.size():
-		return annotated.slice(0, max_plans)
+		return _preserve_objective_candidate(annotated, annotated.slice(0, max_plans), max_plans)
 
 	var quotas := _one_each_quotas()
 	if max_plans >= 5:
@@ -191,7 +196,8 @@ static func select_opponent_candidates(
 		quotas[REPOSITION] = 2
 	if max_plans >= 7:
 		quotas[DISENGAGE] = 2
-	return _select_with_quotas(annotated, max_plans, quotas)
+	var selected := _select_with_quotas(annotated, max_plans, quotas)
+	return _preserve_objective_candidate(annotated, selected, max_plans)
 
 
 static func count_intents(candidates: Array) -> Dictionary:
@@ -251,6 +257,54 @@ static func _select_with_quotas(annotated: Array, max_items: int, quotas: Dictio
 	return selected
 
 
+static func _preserve_objective_candidate(annotated: Array, selected: Array, max_items: int) -> Array:
+	if max_items < 2 or annotated.is_empty() or selected.is_empty():
+		return selected
+	for candidate_variant in selected:
+		if candidate_variant is Dictionary and int((candidate_variant as Dictionary).get("objective_progress", 0)) > 0:
+			return selected
+
+	var best := _best_objective_candidate(annotated)
+	if best.is_empty():
+		return selected
+
+	var result := selected.duplicate(true)
+	if result.size() < max_items:
+		result.append(best.duplicate(true))
+	else:
+		# Replacing a candidate from the objective plan's own intent bucket preserves
+		# the existing tactical coverage whenever that bucket is already represented.
+		var objective_intent := str(best.get("intent", ""))
+		var replace_index := _lowest_intent_index(result, objective_intent)
+		if replace_index < 0:
+			replace_index = _lowest_redundant_index(result)
+		if replace_index < 0:
+			replace_index = result.size() - 1
+		result[replace_index] = best.duplicate(true)
+	result.sort_custom(_candidate_before)
+	return result
+
+
+static func _best_objective_candidate(annotated: Array) -> Dictionary:
+	var best: Dictionary = {}
+	for candidate_variant in annotated:
+		if not (candidate_variant is Dictionary):
+			continue
+		var candidate: Dictionary = candidate_variant
+		var progress := int(candidate.get("objective_progress", 0))
+		if progress <= 0:
+			continue
+		if best.is_empty():
+			best = candidate
+			continue
+		var best_progress := int(best.get("objective_progress", 0))
+		var score := float(candidate.get("proposal_score", candidate.get("score", 0.0)))
+		var best_score := float(best.get("proposal_score", best.get("score", 0.0)))
+		if progress > best_progress or (progress == best_progress and score > best_score):
+			best = candidate
+	return best.duplicate(true) if not best.is_empty() else {}
+
+
 static func _one_each_quotas() -> Dictionary:
 	return {
 		COMMIT: 1,
@@ -276,6 +330,16 @@ static func _first_with_intent(annotated: Array, intent: String, selected: Array
 		if str(candidate.get("intent", "")) == intent and not _contains_candidate(selected, candidate):
 			return candidate.duplicate(true)
 	return {}
+
+
+static func _lowest_intent_index(selected: Array, intent: String) -> int:
+	if intent.is_empty():
+		return -1
+	for i in range(selected.size() - 1, -1, -1):
+		var candidate: Dictionary = selected[i]
+		if str(candidate.get("intent", "")) == intent:
+			return i
+	return -1
 
 
 static func _lowest_redundant_index(selected: Array) -> int:

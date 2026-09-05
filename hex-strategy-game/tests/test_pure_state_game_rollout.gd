@@ -8,6 +8,7 @@ static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_rollout_reaches_terminal_collapse_without_mutation(tests) and ok
 	ok = _test_rollout_reports_turn_limit_deterministically(tests) and ok
+	ok = _test_non_progress_streak_is_recorded(tests) and ok
 	ok = _test_five_turn_mixed_force_game(tests) and ok
 	return ok
 
@@ -85,6 +86,40 @@ static func _test_rollout_reports_turn_limit_deterministically(tests: Node) -> b
 		str(counts),
 	])
 	tests._pass("full-game rollout iterates across turns deterministically and reports capped games explicitly")
+	return true
+
+
+static func _test_non_progress_streak_is_recorded(tests: Node) -> bool:
+	tests._log("test_pure_state_game_rollout: non-progress streak diagnostic")
+	var terran := _make_unit(1, "res://src/unit/definitions/marine.tres", Vector2i(2, 0))
+	var zerg := _make_unit(2, "res://src/unit/definitions/zergling.tres", Vector2i(-2, 0))
+	terran["effects"] = [{"kind": "Stun", "duration": 1, "params": {}, "pending_first_tick": false}]
+	zerg["effects"] = [{"kind": "Stun", "duration": 1, "params": {}, "pending_first_tick": false}]
+	var state := {
+		"scenario_id": "rollout_non_progress",
+		"hex_radius": 5,
+		"groups": [
+			{"name": "terran", "resources": {}, "units": [terran]},
+			{"name": "zerg", "resources": {}, "units": [zerg]},
+		],
+		"tile_resources": {},
+	}
+	var result := PureStateGameRollout.play_game(state, "terran", "zerg", 1, 8, 1, 1)
+	if not bool(result.get("valid", false)):
+		tests._fail("forced-hold non-progress rollout should remain valid: %s" % result)
+		return false
+	var history: Array = result.get("history", [])
+	if history.size() != 1:
+		tests._fail("one-turn forced hold should record one diagnostic turn: %s" % history)
+		return false
+	var turn: Dictionary = history[0]
+	if bool(turn.get("made_strategic_progress", true)):
+		tests._fail("stun-only effect ticking should not count as strategic progress: %s" % turn)
+		return false
+	if int(turn.get("non_progress_streak", 0)) != 1 or int(result.get("max_non_progress_streak", 0)) != 1:
+		tests._fail("non-progress turn should expose streak=1 in history and result: %s" % result)
+		return false
+	tests._pass("rollout diagnostics distinguish effect ticking from real movement/combat/resource/objective progress")
 	return true
 
 
