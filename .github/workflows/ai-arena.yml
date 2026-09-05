@@ -20,6 +20,7 @@ on:
         options:
           - fast
           - balanced
+          - wide
           - broad
       challenger_profile:
         description: Challenger agent configuration
@@ -29,6 +30,7 @@ on:
         options:
           - fast
           - balanced
+          - wide
           - broad
   pull_request:
     paths:
