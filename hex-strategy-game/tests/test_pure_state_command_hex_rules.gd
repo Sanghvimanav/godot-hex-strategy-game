@@ -2,6 +2,7 @@ extends RefCounted
 
 const PureStateCommandHexRules = preload("res://src/simulation/pure_state_command_hex_rules.gd")
 const PureStateGameRollout = preload("res://src/simulation/pure_state_game_rollout.gd")
+const PureStatePlans = preload("res://src/simulation/pure_state_plans.gd")
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
 
@@ -10,6 +11,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_command_hexes_use_opposite_back_edges(tests) and ok
 	ok = _test_capture_requires_one_complete_turn_and_same_unit(tests) and ok
 	ok = _test_simultaneous_capture_is_a_draw(tests) and ok
+	ok = _test_objective_advance_survives_proposal_pruning(tests) and ok
 	return ok
 
 
@@ -134,8 +136,68 @@ static func _test_simultaneous_capture_is_a_draw(tests: Node) -> bool:
 	return true
 
 
-static func _make_unit(unit_id: int, cell: Vector2i) -> Dictionary:
-	var def_path := "res://src/unit/definitions/zergling.tres"
+static func _test_objective_advance_survives_proposal_pruning(tests: Node) -> bool:
+	tests._log("test_pure_state_command_hex_rules: objective advance survives proposal pruning")
+	var state := {
+		"scenario_id": "objective_proposal_recall",
+		"hex_radius": 5,
+		"command_hexes": {
+			"terran": [-5, 0],
+			"zerg": [5, 0],
+		},
+		"groups": [
+			{"name": "terran", "resources": {}, "units": [
+				_make_unit(1, Vector2i(0, 0), "res://src/unit/definitions/scout.tres"),
+			]},
+			{"name": "zerg", "resources": {}, "units": [
+				_make_unit(2, Vector2i(2, 0)),
+			]},
+		],
+		"tile_resources": {},
+	}
+	var original := state.duplicate(true)
+	var plans := PureStatePlans.get_candidate_plans(state, "terran", 2, 4, true)
+	if state != original:
+		tests._fail("objective-aware proposal generation must not mutate the source state")
+		return false
+	if plans.is_empty():
+		tests._fail("objective-aware proposal generation should return candidate plans")
+		return false
+
+	var found_advance := false
+	for plan_variant in plans:
+		if not (plan_variant is Dictionary):
+			continue
+		var plan: Dictionary = plan_variant
+		if int(plan.get("objective_progress", 0)) <= 0:
+			continue
+		for action_variant in plan.get("actions", []):
+			if not (action_variant is Dictionary):
+				continue
+			var action: Dictionary = action_variant
+			var config: Dictionary = Actions.get_action_config(str(action.get("action_key", "")))
+			if str(config.get("type", "")) not in TurnExecutionCore.MOVE_TYPES:
+				continue
+			var destination := _cell_from_variant(action.get("end_point", [0, 0]))
+			var before := HexGrid.hex_distance(0, 0, 5, 0)
+			var after := HexGrid.hex_distance(destination.x, destination.y, 5, 0)
+			if after < before:
+				found_advance = true
+				break
+		if found_advance:
+			break
+	if not found_advance:
+		tests._fail("a move toward the enemy command hex should survive a 2-action / 4-plan proposal budget: %s" % plans)
+		return false
+	tests._pass("command-hex progress remains available to search after bounded proposal pruning")
+	return true
+
+
+static func _make_unit(
+	unit_id: int,
+	cell: Vector2i,
+	def_path: String = "res://src/unit/definitions/zergling.tres"
+) -> Dictionary:
 	var def_dict := TurnExecutionCore.get_unit_def(def_path)
 	var max_health := int(def_dict.get("max_health", 2))
 	var max_energy := int(def_dict.get("max_energy", 0))
@@ -151,3 +213,13 @@ static func _make_unit(unit_id: int, cell: Vector2i) -> Dictionary:
 		"effects": [],
 		"is_active": true,
 	}
+
+
+static func _cell_from_variant(value: Variant) -> Vector2i:
+	if value is Vector2i:
+		return value
+	if value is Vector2:
+		return Vector2i(int(value.x), int(value.y))
+	if value is Array and value.size() >= 2:
+		return Vector2i(int(value[0]), int(value[1]))
+	return Vector2i.ZERO
