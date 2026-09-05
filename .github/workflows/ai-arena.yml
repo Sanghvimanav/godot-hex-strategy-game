@@ -142,9 +142,7 @@ jobs:
           retention-days: 14
 
   full-arena:
-    # Normal full runs are manual. This branch exception launches the requested
-    # 64-game validation once; it is removed after the result is captured.
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.head_ref == 'ai/arena-stable-seeds-and-horizon')
+    if: github.event_name == 'workflow_dispatch'
     name: Full arena shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -154,9 +152,9 @@ jobs:
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       SHARD_COUNT: 8
-      ARENA_PRESET: ${{ github.event_name == 'workflow_dispatch' && inputs.preset || 'full' }}
-      CHAMPION_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.champion_profile || 'fast' }}
-      CHALLENGER_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.challenger_profile || 'balanced' }}
+      ARENA_PRESET: ${{ inputs.preset }}
+      CHAMPION_PROFILE: ${{ inputs.champion_profile }}
+      CHALLENGER_PROFILE: ${{ inputs.challenger_profile }}
 
     steps:
       - name: Checkout repository
@@ -205,7 +203,7 @@ jobs:
           retention-days: 3
 
   merge-full:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.head_ref == 'ai/arena-stable-seeds-and-horizon')
+    if: github.event_name == 'workflow_dispatch'
     name: Merge full arena
     needs: full-arena
     runs-on: ubuntu-latest
