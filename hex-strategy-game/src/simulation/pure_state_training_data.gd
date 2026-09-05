@@ -29,6 +29,7 @@ static func generate_game_examples(
 ) -> Dictionary:
 	var exploration_profile := str(policy_exploration.get("profile", PureStatePolicyExploration.PROFILE_GREEDY))
 	var exploration_seed := int(policy_exploration.get("seed", 0))
+	var training_start_turn := 0
 	var rollout: Dictionary
 	if exploration_profile == PureStatePolicyExploration.PROFILE_GREEDY:
 		# Preserve the historical deterministic path exactly for curated baselines,
@@ -66,6 +67,21 @@ static func generate_game_examples(
 			true,
 			turn_limit_winner
 		)
+		# A state-only value model cannot learn two different outcomes for the exact
+		# same pre-divergence state. Compare against the deterministic greedy rollout
+		# and export only states after exploration actually changes the trajectory.
+		var greedy_rollout := PureStateGameRollout.play_game(
+			game_state,
+			group_a,
+			group_b,
+			max_turns,
+			max_actions_per_unit,
+			own_max_plans,
+			opponent_max_plans,
+			true,
+			turn_limit_winner
+		)
+		training_start_turn = first_divergent_state_index(rollout, greedy_rollout)
 	var source_metadata := {
 		"max_turns": max_turns,
 		"max_actions_per_unit": max_actions_per_unit,
@@ -74,6 +90,7 @@ static func generate_game_examples(
 		"turn_limit_winner": turn_limit_winner,
 		"policy_exploration_profile": exploration_profile,
 		"policy_exploration_seed": exploration_seed,
+		"training_start_turn": training_start_turn,
 	}
 	# Batch generators can attach immutable provenance (rules commit, suite version,
 	# preset, rotation, etc.) without changing the stable top-level example schema.
@@ -140,8 +157,16 @@ static func build_examples_from_rollout(
 		result["valid"] = false
 		return result
 
+	result["labeled"] = true
+	var training_start_turn := int(source_metadata.get("training_start_turn", 0))
+	if training_start_turn < 0 or training_start_turn >= states.size():
+		# An exploration replay that never diverged from greedy contains no new
+		# state-value information. Keep its terminal trace, but add no duplicate
+		# supervised examples.
+		return result
+
 	var examples: Array = []
-	for turn_index in range(states.size()):
+	for turn_index in range(training_start_turn, states.size()):
 		var state_variant = states[turn_index]
 		if not (state_variant is Dictionary):
 			result["valid"] = false
@@ -173,10 +198,25 @@ static func build_examples_from_rollout(
 			source_metadata
 		))
 
-	result["labeled"] = true
 	result["examples"] = examples
 	result["example_count"] = examples.size()
 	return result
+
+
+static func first_divergent_state_index(exploration_rollout: Dictionary, greedy_rollout: Dictionary) -> int:
+	var exploration_states := _visited_states_from_rollout(exploration_rollout)
+	var greedy_states := _visited_states_from_rollout(greedy_rollout)
+	if exploration_states.is_empty() or greedy_states.is_empty():
+		return -1
+	var shared_count := mini(exploration_states.size(), greedy_states.size())
+	for index in range(shared_count):
+		if exploration_states[index] != greedy_states[index]:
+			return index
+	# If the exploratory path extends a shared greedy prefix, only the extra states
+	# are novel. If it is identical or shorter, it contributes no new state inputs.
+	if exploration_states.size() > greedy_states.size():
+		return shared_count
+	return -1
 
 
 static func to_jsonl(examples: Array) -> String:
