@@ -4,11 +4,12 @@ class_name PureStateGameRollout
 ##
 ## Each turn both groups plan from the same pre-turn state through the canonical
 ## GameplayAI entry point. Their selected plans are then resolved simultaneously
-## by the pure-state simulator. The rollout stops on elimination, search failure,
-## or a caller-provided turn cap.
+## by the pure-state simulator. The rollout stops on elimination, command-hex
+## capture, search failure, or a caller-provided safety turn cap.
 
 const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
 const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd")
+const PureStateCommandHexRules = preload("res://src/simulation/pure_state_command_hex_rules.gd")
 
 const DEFAULT_MAX_TURNS := 12
 const DEFAULT_MAX_ACTIONS_PER_UNIT := 8
@@ -38,6 +39,8 @@ static func play_game(
 		return invalid
 
 	var state := game_state.duplicate(true)
+	var command_hexes := PureStateCommandHexRules.ensure_command_hexes(state, group_a, group_b)
+	var command_occupants := PureStateCommandHexRules.initial_occupants(state, group_a, group_b, command_hexes)
 	var history: Array = []
 	var initial_outcome := _outcome(state, group_a, group_b)
 	if bool(initial_outcome.get("terminal", false)):
@@ -86,12 +89,31 @@ static func play_game(
 		var next_state: Dictionary = simulation.get("next_state", {})
 		if next_state.is_empty():
 			return _build_result(false, "simulation_failed", "", turn_index, state, history, group_a, group_b)
+		next_state["command_hexes"] = command_hexes.duplicate(true)
+
+		# Objective capture is evaluated only after the full simultaneous turn has
+		# resolved. Requiring the same unit id at consecutive boundaries enforces a
+		# complete-turn hold instead of awarding capture on entry.
+		var capture := PureStateCommandHexRules.capture_after_complete_turn(
+			next_state,
+			group_a,
+			group_b,
+			command_hexes,
+			command_occupants
+		)
+		var capture_completed: Dictionary = capture.get("completed", {})
+		var next_command_occupants: Dictionary = capture.get("occupants", {})
+		var captured_by_a := bool(capture_completed.get(group_a, false))
+		var captured_by_b := bool(capture_completed.get(group_b, false))
 
 		var counts := _alive_counts(next_state, group_a, group_b)
 		var turn_record := {
 			"turn": turn_index + 1,
 			"alive_after": counts,
 			"execution": (simulation.get("recording", {}) as Dictionary).duplicate(true),
+			"command_hexes": command_hexes.duplicate(true),
+			"command_hex_occupants_after": next_command_occupants.duplicate(true),
+			"command_hex_capture_completed": capture_completed.duplicate(true),
 		}
 		turn_record[group_a + "_actions"] = actions_a
 		turn_record[group_b + "_actions"] = actions_b
@@ -102,6 +124,22 @@ static func play_game(
 			turn_record["state_after"] = next_state.duplicate(true)
 		history.append(turn_record)
 		state = next_state
+		command_occupants = next_command_occupants
+
+		# The simultaneous-capture draw is checked before the existing elimination
+		# rule because it is an explicit same-turn objective outcome.
+		if captured_by_a and captured_by_b:
+			return _build_result(
+				true,
+				"terminal",
+				"",
+				turn_index + 1,
+				state,
+				history,
+				group_a,
+				group_b,
+				"simultaneous_command_hex_capture"
+			)
 
 		var outcome := _outcome(state, group_a, group_b)
 		if bool(outcome.get("terminal", false)):
@@ -115,6 +153,31 @@ static func play_game(
 				group_a,
 				group_b,
 				"elimination"
+			)
+
+		if captured_by_a:
+			return _build_result(
+				true,
+				"terminal",
+				group_a,
+				turn_index + 1,
+				state,
+				history,
+				group_a,
+				group_b,
+				"command_hex_capture"
+			)
+		if captured_by_b:
+			return _build_result(
+				true,
+				"terminal",
+				group_b,
+				turn_index + 1,
+				state,
+				history,
+				group_a,
+				group_b,
+				"command_hex_capture"
 			)
 
 	if not turn_limit_winner.is_empty():
@@ -203,6 +266,10 @@ static func _build_result(
 	group_b: String,
 	termination_reason: String = ""
 ) -> Dictionary:
+	var command_hexes: Dictionary = {}
+	var command_variant = state.get("command_hexes", {})
+	if command_variant is Dictionary:
+		command_hexes = command_variant
 	return {
 		"valid": valid,
 		"status": status,
@@ -212,6 +279,7 @@ static func _build_result(
 		"final_state": state.duplicate(true),
 		"history": history.duplicate(true),
 		"final_alive_counts": _alive_counts(state, group_a, group_b),
+		"command_hexes": command_hexes.duplicate(true),
 	}
 
 
