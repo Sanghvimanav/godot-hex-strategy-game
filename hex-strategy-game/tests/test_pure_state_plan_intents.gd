@@ -11,6 +11,7 @@ static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_zergling_actions_cover_four_intents(tests) and ok
 	ok = _test_own_and_opponent_selection_policies(tests) and ok
+	ok = _test_final_selection_preserves_objective_floor(tests) and ok
 	ok = _test_response_search_uses_four_way_diversity(tests) and ok
 	return ok
 
@@ -79,6 +80,50 @@ static func _test_own_and_opponent_selection_policies(tests: Node) -> bool:
 	return true
 
 
+static func _test_final_selection_preserves_objective_floor(tests: Node) -> bool:
+	tests._log("test_pure_state_plan_intents: final 2-plan selection keeps objective recall")
+	var state := _zergling_vs_marine_state()
+	state["command_hexes"] = {
+		"zerg": [-5, 0],
+		"terran": [5, 0],
+	}
+	# The objective candidate is intentionally lower-scored than two tactical
+	# alternatives so this specifically tests the final selector rather than the
+	# upstream proposal beam. It shares the commit bucket with the top candidate,
+	# allowing the objective floor to replace within-bucket and preserve coverage.
+	var pool := [
+		{
+			"actions": [_action(2, "fast_move", Vector2i(-1, 0))],
+			"proposal_score": 10.0,
+			"objective_progress": 0,
+		},
+		{
+			"actions": [_action(2, "reload", Vector2i(-2, 1))],
+			"proposal_score": 9.0,
+			"objective_progress": 0,
+		},
+		{
+			"actions": [_action(2, "fast_move", Vector2i(-1, 1))],
+			"proposal_score": 1.0,
+			"objective_progress": 1,
+		},
+	]
+	var own := PureStatePlanIntents.select_own_candidates(state, "zerg", pool, 2)
+	var opponent := PureStatePlanIntents.select_opponent_candidates(state, "zerg", pool, 2)
+	if not _has_objective_candidate(own):
+		tests._fail("2-plan own final selection should retain an objective-advancing candidate: %s" % own)
+		return false
+	if not _has_objective_candidate(opponent):
+		tests._fail("2-plan opponent final selection should retain an objective-advancing candidate: %s" % opponent)
+		return false
+	var one_slot := PureStatePlanIntents.select_own_candidates(state, "zerg", pool, 1)
+	if one_slot.size() != 1 or _has_objective_candidate(one_slot):
+		tests._fail("1-plan selection should remain score-first rather than objective-forced: %s" % one_slot)
+		return false
+	tests._pass("objective recall survives final own/opponent pruning without changing one-slot score-first behavior")
+	return true
+
+
 static func _test_response_search_uses_four_way_diversity(tests: Node) -> bool:
 	tests._log("test_pure_state_plan_intents: response search wires diversity to both sides")
 	var result := PureStateOpponentResponseSearch.search(
@@ -109,6 +154,13 @@ static func _test_response_search_uses_four_way_diversity(tests: Node) -> bool:
 	tests._log("  response-search opponent intents: %s" % opponent_counts)
 	tests._pass("opponent-response search applies the shared four-bucket vocabulary to both candidate sets")
 	return true
+
+
+static func _has_objective_candidate(candidates: Array) -> bool:
+	for candidate_variant in candidates:
+		if candidate_variant is Dictionary and int((candidate_variant as Dictionary).get("objective_progress", 0)) > 0:
+			return true
+	return false
 
 
 static func _zergling_vs_marine_state() -> Dictionary:
