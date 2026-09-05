@@ -42,6 +42,7 @@ static func play_game(
 	var command_hexes := PureStateCommandHexRules.ensure_command_hexes(state, group_a, group_b)
 	var command_occupants := PureStateCommandHexRules.initial_occupants(state, group_a, group_b, command_hexes)
 	var history: Array = []
+	var non_progress_streak := 0
 	var initial_outcome := _outcome(state, group_a, group_b)
 	if bool(initial_outcome.get("terminal", false)):
 		return _build_result(true, "terminal", str(initial_outcome.get("winner", "")), 0, state, history, group_a, group_b, "elimination")
@@ -106,6 +107,16 @@ static func play_game(
 		var captured_by_a := bool(capture_completed.get(group_a, false))
 		var captured_by_b := bool(capture_completed.get(group_b, false))
 
+		# Track repeated turns that fail to change strategically relevant state. We
+		# deliberately ignore energy/effect ticking so an empty predictive attack is
+		# still visible as non-progress, while movement, HP/unit changes, resource
+		# changes, production, and completed objective holds reset the streak.
+		var made_strategic_progress := _strategic_state_changed(state, next_state) or captured_by_a or captured_by_b
+		if made_strategic_progress:
+			non_progress_streak = 0
+		else:
+			non_progress_streak += 1
+
 		var counts := _alive_counts(next_state, group_a, group_b)
 		var turn_record := {
 			"turn": turn_index + 1,
@@ -114,6 +125,8 @@ static func play_game(
 			"command_hexes": command_hexes.duplicate(true),
 			"command_hex_occupants_after": next_command_occupants.duplicate(true),
 			"command_hex_capture_completed": capture_completed.duplicate(true),
+			"made_strategic_progress": made_strategic_progress,
+			"non_progress_streak": non_progress_streak,
 		}
 		turn_record[group_a + "_actions"] = actions_a
 		turn_record[group_b + "_actions"] = actions_b
@@ -230,6 +243,62 @@ static func _alive_count_for_group(state: Dictionary, group_name: String) -> int
 	return 0
 
 
+static func _strategic_state_changed(before: Dictionary, after: Dictionary) -> bool:
+	return _strategic_state_signature(before) != _strategic_state_signature(after)
+
+
+static func _strategic_state_signature(state: Dictionary) -> Dictionary:
+	var groups: Dictionary = {}
+	for group_variant in state.get("groups", []):
+		if not (group_variant is Dictionary):
+			continue
+		var group: Dictionary = group_variant
+		var name := str(group.get("name", ""))
+		if name.is_empty():
+			continue
+		var units: Array = []
+		for unit_variant in group.get("units", []):
+			if not (unit_variant is Dictionary):
+				continue
+			var unit: Dictionary = unit_variant
+			if int(unit.get("health", 0)) <= 0:
+				continue
+			var cell := _cell_from_variant(unit.get("cell", [0, 0]))
+			units.append([
+				int(unit.get("unit_id", -1)),
+				int(unit.get("health", 0)),
+				cell.x,
+				cell.y,
+			])
+		units.sort_custom(func(a, b): return int(a[0]) < int(b[0]))
+		groups[name] = {
+			"units": units,
+			"resources": (group.get("resources", {}) as Dictionary).duplicate(true) if group.get("resources", {}) is Dictionary else {},
+		}
+	return {
+		"groups": groups,
+		"tile_resources": (state.get("tile_resources", {}) as Dictionary).duplicate(true) if state.get("tile_resources", {}) is Dictionary else {},
+	}
+
+
+static func _max_non_progress_streak(history: Array) -> int:
+	var best := 0
+	for turn_variant in history:
+		if turn_variant is Dictionary:
+			best = maxi(best, int((turn_variant as Dictionary).get("non_progress_streak", 0)))
+	return best
+
+
+static func _cell_from_variant(value: Variant) -> Vector2i:
+	if value is Vector2i:
+		return value
+	if value is Vector2:
+		return Vector2i(int(value.x), int(value.y))
+	if value is Array and value.size() >= 2:
+		return Vector2i(int(value[0]), int(value[1]))
+	return Vector2i.ZERO
+
+
 static func _submitted_actions(
 	state: Dictionary,
 	group_a: String,
@@ -280,6 +349,7 @@ static func _build_result(
 		"history": history.duplicate(true),
 		"final_alive_counts": _alive_counts(state, group_a, group_b),
 		"command_hexes": command_hexes.duplicate(true),
+		"max_non_progress_streak": _max_non_progress_streak(history),
 	}
 
 
