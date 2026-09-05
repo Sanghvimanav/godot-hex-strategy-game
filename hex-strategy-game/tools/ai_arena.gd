@@ -44,10 +44,17 @@ func _run_arena() -> void:
 		push_error("Unknown or empty arena preset '%s'. Available: %s" % [preset, str(PureStateArenaSuite.available_presets())])
 		get_tree().quit(1)
 		return
-	# Keep both side-swapped games for a generated state on the same shard. This
-	# makes every shard independently pair-complete and avoids cross-shard pairing.
-	var jobs := DeterministicShard.filter_jobs(all_jobs, "pair_id", shard_index, shard_count)
-	print("[arena] shard=%d/%d selected=%d/%d games by pair_id" % [shard_index, shard_count, jobs.size(), all_jobs.size()])
+	# Official arena presets have a stable source order. Assign complete mirrored
+	# pairs round-robin so every worker gets the same number of pairs when the
+	# preset divides evenly (fast: 2 pairs/worker; full: 4 pairs/worker). Hashing
+	# small frozen IDs previously left some workers idle and overloaded others.
+	var jobs := DeterministicShard.filter_grouped_jobs_round_robin(
+		all_jobs,
+		"pair_id",
+		shard_index,
+		shard_count
+	)
+	print("[arena] shard=%d/%d selected=%d/%d games by balanced pair order" % [shard_index, shard_count, jobs.size(), all_jobs.size()])
 
 	var abs_out := ProjectSettings.globalize_path(out_dir)
 	if DirAccess.make_dir_recursive_absolute(abs_out) != OK:
@@ -167,7 +174,7 @@ func _run_arena() -> void:
 		"preset_pairs": all_jobs.size() / 2,
 		"shard_index": shard_index,
 		"shard_count": shard_count,
-		"shard_key": "pair_id",
+		"shard_key": "pair_id_round_robin",
 		"games_requested": jobs.size(),
 		"pairs_requested": jobs.size() / 2,
 		"counts": counts,

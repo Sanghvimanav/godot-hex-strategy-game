@@ -30,11 +30,6 @@ on:
           - fast
           - balanced
           - broad
-      seed_base:
-        description: Deterministic scenario seed base
-        required: true
-        default: 1701
-        type: number
   pull_request:
     paths:
       - ".github/workflows/ai-arena.yml"
@@ -66,7 +61,6 @@ jobs:
       ARENA_PRESET: fast
       CHAMPION_PROFILE: fast
       CHALLENGER_PROFILE: balanced
-      SEED_BASE: 1701
 
     steps:
       - name: Checkout repository
@@ -101,7 +95,6 @@ jobs:
             --preset="${ARENA_PRESET}" \
             --champion-profile="${CHAMPION_PROFILE}" \
             --challenger-profile="${CHALLENGER_PROFILE}" \
-            --seed-base="${SEED_BASE}" \
             --rules-version="${GITHUB_SHA}" \
             --out="${GITHUB_WORKSPACE}/artifacts/arena" \
             --shard-index="${{ matrix.shard }}" \
@@ -152,7 +145,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     name: Full arena shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -162,7 +155,6 @@ jobs:
       ARENA_PRESET: ${{ inputs.preset }}
       CHAMPION_PROFILE: ${{ inputs.champion_profile }}
       CHALLENGER_PROFILE: ${{ inputs.challenger_profile }}
-      SEED_BASE: ${{ inputs.seed_base }}
 
     steps:
       - name: Checkout repository
@@ -197,7 +189,6 @@ jobs:
             --preset="${ARENA_PRESET}" \
             --champion-profile="${CHAMPION_PROFILE}" \
             --challenger-profile="${CHALLENGER_PROFILE}" \
-            --seed-base="${SEED_BASE}" \
             --rules-version="${GITHUB_SHA}" \
             --out="${GITHUB_WORKSPACE}/artifacts/arena" \
             --shard-index="${{ matrix.shard }}" \
