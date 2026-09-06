@@ -8,50 +8,123 @@ on:
         required: true
         default: full
         type: choice
-        options:
-          - smoke
-          - fast
-          - full
+        options: [smoke, fast, full]
       champion_profile:
-        description: Baseline agent configuration
+        description: Baseline search configuration
         required: true
         default: fast
         type: choice
-        options:
-          - fast
-          - balanced
-          - wide
-          - broad
+        options: [fast, balanced, wide, broad]
       challenger_profile:
-        description: Challenger agent configuration
+        description: Challenger search configuration
         required: true
-        default: balanced
+        default: fast
         type: choice
-        options:
-          - fast
-          - balanced
-          - wide
-          - broad
+        options: [fast, balanced, wide, broad]
+      champion_evaluator:
+        description: Baseline leaf evaluator
+        required: true
+        default: handwritten
+        type: choice
+        options: [handwritten, neural]
+      challenger_evaluator:
+        description: Challenger leaf evaluator
+        required: true
+        default: neural
+        type: choice
+        options: [handwritten, neural]
   pull_request:
     paths:
       - "hex-strategy-game/src/battle/ai/**"
       - "hex-strategy-game/src/simulation/pure_state_*.gd"
       - "!hex-strategy-game/src/simulation/pure_state_counterfactual_*.gd"
       - "hex-strategy-game/tools/ai_arena.*"
+      - "hex-strategy-game/tools/neural_value_runtime.py"
       - "hex-strategy-game/tools/merge_ai_arena.py"
       - "hex-strategy-game/tools/deterministic_shard.gd"
+      - "ml/value_model/**"
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ai-arena-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  prepare-neural-checkpoint:
+    name: Prepare objective-aware neural checkpoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Download experiment 73 training artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_ARTIFACT_ID: "9979426623"
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/source
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}/zip" > /tmp/value-model-source.zip
+          unzip -q /tmp/value-model-source.zip -d artifacts/source
+          test -s artifacts/source/self_play/examples.jsonl
+
+      - name: Retrain for current objective-aware encoder
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/neural_checkpoint
+          python -m ml.value_model.train \
+            --data artifacts/source/self_play/examples.jsonl \
+            --output artifacts/neural_checkpoint/objective_aware_candidate_v1.pt \
+            --epochs 60 \
+            --batch-size 64 \
+            --learning-rate 0.0003 \
+            --weight-decay 0.0001 \
+            --validation-fraction 0.25 \
+            --split-key source.base_scenario_id \
+            --seed 0 \
+            --device cpu | tee artifacts/neural_checkpoint/training_metrics.json
+
+      - name: Verify checkpoint matches current encoder
+        run: |
+          python - <<'PY'
+          import torch
+          from ml.value_model.data import HexStateEncoder
+          p = 'artifacts/neural_checkpoint/objective_aware_candidate_v1.pt'
+          c = torch.load(p, map_location='cpu', weights_only=True)
+          e = HexStateEncoder()
+          cfg = c['model_config']
+          assert cfg['board_channels'] == e.board_channels
+          assert cfg['global_features'] == e.global_features
+          assert cfg['board_size'] == e.board_size
+          assert cfg['max_radius'] == e.max_radius
+          assert cfg['unit_types'] == list(e.unit_types)
+          print(f"checkpoint compatible: {e.board_channels} board channels, {e.global_features} global features")
+          PY
+
+      - name: Upload neural checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: neural-leaf-checkpoint-${{ github.run_id }}
+          path: artifacts/neural_checkpoint/
+          if-no-files-found: error
+          retention-days: 3
+
   fast-arena:
     if: github.event_name == 'pull_request'
-    name: Fast arena shard ${{ matrix.shard }}
+    needs: prepare-neural-checkpoint
+    name: Fast 2x2 neural vs handwritten shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -62,13 +135,29 @@ jobs:
       SHARD_COUNT: 4
       ARENA_PRESET: fast
       CHAMPION_PROFILE: fast
-      CHALLENGER_PROFILE: balanced
+      CHALLENGER_PROFILE: fast
+      CHAMPION_EVALUATOR: handwritten
+      CHALLENGER_EVALUATOR: neural
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Set up Python for neural evaluator
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU PyTorch for neural evaluator
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Download neural checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: neural-leaf-checkpoint-${{ github.run_id }}
+          path: hex-strategy-game/models
 
       - name: Set up Godot 4.6
         uses: chickensoft-games/setup-godot@v2.4.1
@@ -97,6 +186,8 @@ jobs:
             --preset="${ARENA_PRESET}" \
             --champion-profile="${CHAMPION_PROFILE}" \
             --challenger-profile="${CHALLENGER_PROFILE}" \
+            --champion-evaluator="${CHAMPION_EVALUATOR}" \
+            --challenger-evaluator="${CHALLENGER_EVALUATOR}" \
             --rules-version="${GITHUB_SHA}" \
             --out="${GITHUB_WORKSPACE}/artifacts/arena" \
             --shard-index="${{ matrix.shard }}" \
@@ -112,29 +203,25 @@ jobs:
 
   merge-fast:
     if: github.event_name == 'pull_request'
-    name: Merge fast arena
+    name: Merge fast 2x2 neural vs handwritten arena
     needs: fast-arena
     runs-on: ubuntu-latest
     timeout-minutes: 5
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Download fast arena shards
         uses: actions/download-artifact@v4
         with:
           pattern: ai-arena-fast-shard-*
           path: artifacts/arena_shards
           merge-multiple: false
-
       - name: Audit and summarize tournament
         run: |
           python3 hex-strategy-game/tools/merge_ai_arena.py \
             --input-root artifacts/arena_shards \
             --out artifacts/arena_merged
           cat artifacts/arena_merged/summary.md >> "$GITHUB_STEP_SUMMARY"
-
       - name: Upload merged fast arena
         uses: actions/upload-artifact@v4
         with:
@@ -145,6 +232,7 @@ jobs:
 
   full-arena:
     if: github.event_name == 'workflow_dispatch'
+    needs: prepare-neural-checkpoint
     name: Full arena shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -157,30 +245,38 @@ jobs:
       ARENA_PRESET: ${{ inputs.preset }}
       CHAMPION_PROFILE: ${{ inputs.champion_profile }}
       CHALLENGER_PROFILE: ${{ inputs.challenger_profile }}
-
+      CHAMPION_EVALUATOR: ${{ inputs.champion_evaluator }}
+      CHALLENGER_EVALUATOR: ${{ inputs.challenger_evaluator }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
+      - name: Set up Python for neural evaluator
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU PyTorch for neural evaluator
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Download neural checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: neural-leaf-checkpoint-${{ github.run_id }}
+          path: hex-strategy-game/models
       - name: Set up Godot 4.6
         uses: chickensoft-games/setup-godot@v2.4.1
         with:
           version: 4.6.0
           use-dotnet: false
           include-templates: false
-
       - name: Cache imported game assets
         uses: actions/cache@v4
         with:
           path: hex-strategy-game/.godot/imported
           key: godot-arena-imports-${{ runner.os }}-${{ hashFiles('hex-strategy-game/**/*.png', 'hex-strategy-game/**/*.jpg', 'hex-strategy-game/**/*.jpeg', 'hex-strategy-game/**/*.svg', 'hex-strategy-game/**/*.wav', 'hex-strategy-game/**/*.ogg') }}
-
       - name: Import Godot project
         working-directory: hex-strategy-game
         run: godot --headless --import
-
       - name: Run paired arena shard
         shell: bash
         run: |
@@ -191,11 +287,12 @@ jobs:
             --preset="${ARENA_PRESET}" \
             --champion-profile="${CHAMPION_PROFILE}" \
             --challenger-profile="${CHALLENGER_PROFILE}" \
+            --champion-evaluator="${CHAMPION_EVALUATOR}" \
+            --challenger-evaluator="${CHALLENGER_EVALUATOR}" \
             --rules-version="${GITHUB_SHA}" \
             --out="${GITHUB_WORKSPACE}/artifacts/arena" \
             --shard-index="${{ matrix.shard }}" \
             --shard-count="${SHARD_COUNT}"
-
       - name: Upload full arena shard
         uses: actions/upload-artifact@v4
         with:
@@ -210,25 +307,21 @@ jobs:
     needs: full-arena
     runs-on: ubuntu-latest
     timeout-minutes: 5
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Download full arena shards
         uses: actions/download-artifact@v4
         with:
           pattern: ai-arena-full-shard-*
           path: artifacts/arena_shards
           merge-multiple: false
-
       - name: Audit and summarize tournament
         run: |
           python3 hex-strategy-game/tools/merge_ai_arena.py \
             --input-root artifacts/arena_shards \
             --out artifacts/arena_merged
           cat artifacts/arena_merged/summary.md >> "$GITHUB_STEP_SUMMARY"
-
       - name: Upload merged full arena
         uses: actions/upload-artifact@v4
         with:

@@ -2,19 +2,22 @@ extends RefCounted
 class_name GameplayAI
 ## Canonical pure-state action-selection entry point.
 ##
-## Gameplay, self-play, and future arenas should call choose_actions instead of
-## depending directly on a concrete search or evaluator. Tactical tests may still
-## call lower-level search classes when they intentionally inspect candidate sets.
+## Gameplay, self-play, and arenas should call choose_actions instead of depending
+## directly on a concrete search or evaluator. The handwritten evaluator remains
+## the default; neural leaf evaluation is an explicit, fail-closed experiment.
 
 const PureStateOpponentResponseSearch = preload("res://src/simulation/pure_state_opponent_response_search.gd")
 const PureStatePolicyExploration = preload("res://src/simulation/pure_state_policy_exploration.gd")
+const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural_evaluator.gd")
 
 const POLICY_OPPONENT_RESPONSE := "opponent_response"
 const EVALUATOR_HANDWRITTEN := "handwritten"
+const EVALUATOR_NEURAL := "neural"
 
 const DEFAULT_SETTINGS := {
 	"policy": POLICY_OPPONENT_RESPONSE,
 	"evaluator": EVALUATOR_HANDWRITTEN,
+	"evaluator_settings": {},
 	"own_max_actions_per_unit": PureStateOpponentResponseSearch.DEFAULT_OWN_MAX_ACTIONS_PER_UNIT,
 	"own_max_plans": PureStateOpponentResponseSearch.DEFAULT_OWN_MAX_PLANS,
 	"opponent_max_actions_per_unit": PureStateOpponentResponseSearch.DEFAULT_OPPONENT_MAX_ACTIONS_PER_UNIT,
@@ -39,10 +42,17 @@ static func choose_actions(
 
 	if policy != POLICY_OPPONENT_RESPONSE:
 		return _invalid_result("unsupported_policy", resolved)
-	if evaluator != EVALUATOR_HANDWRITTEN:
+	if evaluator not in [EVALUATOR_HANDWRITTEN, EVALUATOR_NEURAL]:
 		return _invalid_result("unsupported_evaluator", resolved)
 	if not PureStatePolicyExploration.is_supported_profile(exploration_profile):
 		return _invalid_result("unsupported_exploration_profile", resolved)
+
+	var evaluator_settings_variant = resolved.get("evaluator_settings", {})
+	if not (evaluator_settings_variant is Dictionary):
+		return _invalid_result("invalid_evaluator_settings", resolved)
+	var evaluator_settings: Dictionary = evaluator_settings_variant
+	if evaluator == EVALUATOR_NEURAL and str(evaluator_settings.get("checkpoint_path", "")).is_empty():
+		return _invalid_result("neural_checkpoint_required", resolved)
 
 	var fixed_actions_variant = resolved.get("fixed_other_group_actions", {})
 	if not (fixed_actions_variant is Dictionary):
@@ -57,10 +67,14 @@ static func choose_actions(
 		int(resolved.get("own_max_plans", 0)),
 		int(resolved.get("opponent_max_actions_per_unit", 0)),
 		int(resolved.get("opponent_max_plans", 0)),
-		fixed_actions
+		fixed_actions,
+		evaluator,
+		evaluator_settings
 	)
 	if not bool(search.get("valid", false)):
-		return _invalid_result("decision_failed", resolved, search)
+		var search_error := str(search.get("error", ""))
+		var decision_error := "evaluation_failed" if search_error == "evaluation_failed" else "decision_failed"
+		return _invalid_result(decision_error, resolved, search)
 
 	var selection := PureStatePolicyExploration.select_result(
 		search,
@@ -101,6 +115,29 @@ static func handwritten_settings(
 	opponent_max_plans: int
 ) -> Dictionary:
 	return resolve_settings({
+		"own_max_actions_per_unit": own_max_actions_per_unit,
+		"own_max_plans": own_max_plans,
+		"opponent_max_actions_per_unit": opponent_max_actions_per_unit,
+		"opponent_max_plans": opponent_max_plans,
+	})
+
+
+static func neural_settings(
+	own_max_actions_per_unit: int,
+	own_max_plans: int,
+	opponent_max_actions_per_unit: int,
+	opponent_max_plans: int,
+	checkpoint_path: String = PureStateNeuralEvaluator.DEFAULT_CHECKPOINT_PATH,
+	evaluator_overrides: Dictionary = {}
+) -> Dictionary:
+	var evaluator_settings := {
+		"checkpoint_path": checkpoint_path,
+	}
+	for key_variant in evaluator_overrides.keys():
+		evaluator_settings[key_variant] = evaluator_overrides[key_variant]
+	return resolve_settings({
+		"evaluator": EVALUATOR_NEURAL,
+		"evaluator_settings": evaluator_settings,
 		"own_max_actions_per_unit": own_max_actions_per_unit,
 		"own_max_plans": own_max_plans,
 		"opponent_max_actions_per_unit": opponent_max_actions_per_unit,

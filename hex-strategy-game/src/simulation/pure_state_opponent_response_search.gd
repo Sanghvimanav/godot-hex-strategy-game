@@ -5,7 +5,6 @@ class_name PureStateOpponentResponseSearch
 ## Opponent plans are generated first. Their modeled movement destinations are then
 ## fed back into own proposal generation so legal attacks covering those future
 ## cells survive even when the cells are empty in the current planning state.
-## Simulator/evaluator semantics are unchanged: conditioning only improves recall.
 ##
 ## Candidate sourcing also preserves four tactical intent buckets before final
 ## selection: commit / hold / reposition / disengage.
@@ -21,7 +20,10 @@ const PureStatePlanIntents = preload("res://src/simulation/pure_state_plan_inten
 const PureStateCounterConditioning = preload("res://src/simulation/pure_state_counter_conditioning.gd")
 const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd")
 const PureStateEvaluator = preload("res://src/simulation/pure_state_evaluator.gd")
+const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural_evaluator.gd")
 
+const EVALUATOR_HANDWRITTEN := "handwritten"
+const EVALUATOR_NEURAL := "neural"
 const DEFAULT_OWN_MAX_ACTIONS_PER_UNIT := 8
 const DEFAULT_OWN_MAX_PLANS := 12
 const DEFAULT_OPPONENT_MAX_ACTIONS_PER_UNIT := 10
@@ -37,11 +39,16 @@ static func search(
 	own_max_plans: int = DEFAULT_OWN_MAX_PLANS,
 	opponent_max_actions_per_unit: int = DEFAULT_OPPONENT_MAX_ACTIONS_PER_UNIT,
 	opponent_max_plans: int = DEFAULT_OPPONENT_MAX_PLANS,
-	fixed_other_group_actions: Dictionary = {}
+	fixed_other_group_actions: Dictionary = {},
+	evaluator_mode: String = EVALUATOR_HANDWRITTEN,
+	evaluator_settings: Dictionary = {}
 ) -> Dictionary:
 	var started_usec := Time.get_ticks_usec()
-	var invalid := _empty_result(group_name, opponent_group_name)
+	var invalid := _empty_result(group_name, opponent_group_name, evaluator_mode)
 	if group_name.is_empty() or opponent_group_name.is_empty() or group_name == opponent_group_name:
+		return invalid
+	if evaluator_mode not in [EVALUATOR_HANDWRITTEN, EVALUATOR_NEURAL]:
+		invalid["error"] = "unsupported_evaluator"
 		return invalid
 	if own_max_actions_per_unit <= 0 or own_max_plans <= 0:
 		return invalid
@@ -128,7 +135,19 @@ static func search(
 			)
 			var simulation := PureStateSimulator.simulate_turn(game_state, submitted)
 			var next_state: Dictionary = simulation.get("next_state", {})
-			var breakdown := PureStateEvaluator.evaluate_breakdown(next_state, group_name)
+			var breakdown := _evaluate_leaf(
+				next_state,
+				group_name,
+				opponent_group_name,
+				evaluator_mode,
+				evaluator_settings
+			)
+			if not bool(breakdown.get("valid", false)):
+				invalid["error"] = "evaluation_failed"
+				invalid["evaluation_error"] = str(breakdown.get("error", ""))
+				invalid["simulations_run"] = simulations_run + 1
+				invalid["elapsed_ms"] = float(Time.get_ticks_usec() - started_usec) / 1000.0
+				return invalid
 			var evaluation := float(breakdown.get("total", 0.0))
 			var response := {
 				"evaluation_score": evaluation,
@@ -190,6 +209,8 @@ static func search(
 	var elapsed_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
 	return {
 		"valid": true,
+		"error": "",
+		"evaluator": evaluator_mode,
 		"group_name": group_name,
 		"opponent_group_name": opponent_group_name,
 		"own_base_source_candidates": own_base_pool.size(),
@@ -219,6 +240,23 @@ static func search(
 		"best_worst_recording": (best_full.get("worst_recording", {}) as Dictionary).duplicate(true),
 		"ranked_results": ranked,
 	}
+
+
+static func _evaluate_leaf(
+	game_state: Dictionary,
+	group_name: String,
+	opponent_group_name: String,
+	evaluator_mode: String,
+	evaluator_settings: Dictionary
+) -> Dictionary:
+	if evaluator_mode == EVALUATOR_NEURAL:
+		return PureStateNeuralEvaluator.evaluate_breakdown(
+			game_state,
+			group_name,
+			opponent_group_name,
+			evaluator_settings
+		)
+	return PureStateEvaluator.evaluate_breakdown(game_state, group_name)
 
 
 static func _build_player_actions(
@@ -304,9 +342,16 @@ static func _plan_signature(actions: Array) -> String:
 	return ";".join(parts)
 
 
-static func _empty_result(group_name: String, opponent_group_name: String) -> Dictionary:
+static func _empty_result(
+	group_name: String,
+	opponent_group_name: String,
+	evaluator_mode: String = EVALUATOR_HANDWRITTEN
+) -> Dictionary:
 	return {
 		"valid": false,
+		"error": "",
+		"evaluation_error": "",
+		"evaluator": evaluator_mode,
 		"group_name": group_name,
 		"opponent_group_name": opponent_group_name,
 		"own_base_source_candidates": 0,

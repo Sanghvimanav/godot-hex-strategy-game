@@ -155,6 +155,13 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
       - name: Download self-play shards
         uses: actions/download-artifact@v4
         with:
@@ -215,15 +222,9 @@ jobs:
 
           failure_rate = failed / requested
           labeled_rate = labeled / requested
-          failed_games = [
-              game["game_id"]
-              for game in manifest["games"]
-              if not game.get("valid")
-          ]
+          failed_games = [game["game_id"] for game in manifest["games"] if not game.get("valid")]
           labeled_families = {
-              game["scenario_id"]
-              for game in manifest["games"]
-              if game.get("labeled")
+              game["scenario_id"] for game in manifest["games"] if game.get("labeled")
           }
           command_capture_games = [
               game["game_id"]
@@ -241,7 +242,6 @@ jobs:
               )
           if labeled < 2 or examples <= 0:
               raise SystemExit("need at least two terminal games with training examples")
-
           if os.environ["EXPERIMENT_PRESET"] == "diverse":
               if labeled_rate < 0.40:
                   raise SystemExit(
@@ -251,7 +251,6 @@ jobs:
                   raise SystemExit(
                       f"diverse preset needs at least four labeled tactical families; got {sorted(labeled_families)}"
                   )
-
           if int(counterfactual.get("decisions_requested", 0)) <= 0:
               raise SystemExit("counterfactual preset produced no decisions")
           if int(counterfactual.get("decisions_failed", 0)) != 0:
@@ -266,6 +265,25 @@ jobs:
       - name: Run value-model tests
         run: python -m unittest discover -s ml/tests -v
 
+      - name: Import Godot project for evaluator scoring
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Score held-out states with real handwritten evaluator
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m ml.value_model.export_validation_examples \
+            --data artifacts/self_play/examples.jsonl \
+            --output artifacts/heldout_nonterminal.jsonl \
+            --validation-fraction 0.25 \
+            --split-key source.base_scenario_id \
+            --seed 0
+          cd hex-strategy-game
+          godot --headless --script res://tools/export_handwritten_value_baseline.gd -- \
+            "${GITHUB_WORKSPACE}/artifacts/heldout_nonterminal.jsonl" \
+            "${GITHUB_WORKSPACE}/artifacts/handwritten_baseline.json"
+
       - name: Train with held-out scenario families
         shell: bash
         run: |
@@ -276,14 +294,24 @@ jobs:
             --epochs "${EXPERIMENT_EPOCHS}" \
             --validation-fraction 0.25 \
             --split-key source.base_scenario_id \
+            --handwritten-baseline artifacts/handwritten_baseline.json \
             | tee artifacts/metrics.json
+
+      - name: Annotate counterfactual leaves with real handwritten evaluator
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd hex-strategy-game
+          godot --headless --script res://tools/annotate_counterfactual_handwritten_scores.gd -- \
+            "${GITHUB_WORKSPACE}/artifacts/counterfactual/candidates.jsonl" \
+            "${GITHUB_WORKSPACE}/artifacts/counterfactual/candidates_with_handwritten.jsonl"
 
       - name: Evaluate candidate ranking and regret
         shell: bash
         run: |
           set -euo pipefail
           python -m ml.value_model.evaluate_counterfactual \
-            --candidates artifacts/counterfactual/candidates.jsonl \
+            --candidates artifacts/counterfactual/candidates_with_handwritten.jsonl \
             --checkpoint artifacts/value_model.pt \
             --output artifacts/counterfactual_metrics.json
 
@@ -304,17 +332,12 @@ jobs:
           neural = float(metrics["neural_eval_sign_accuracy_nonterminal"])
           handwritten = float(metrics["handwritten_eval_sign_accuracy_nonterminal"])
           delta = float(metrics["neural_minus_handwritten_sign_accuracy_nonterminal"])
+          fingerprint = str(metrics["handwritten_evaluator_fingerprint"])
           direction = "ahead" if delta > 0 else "behind" if delta < 0 else "tied"
           labeled_families = sorted({
-              game["scenario_id"]
-              for game in manifest["games"]
-              if game.get("labeled")
+              game["scenario_id"] for game in manifest["games"] if game.get("labeled")
           })
-          failed_games = [
-              game["game_id"]
-              for game in manifest["games"]
-              if not game.get("valid")
-          ]
+          failed_games = [game["game_id"] for game in manifest["games"] if not game.get("valid")]
           command_capture_games = [
               game["game_id"]
               for game in manifest["games"]
@@ -341,6 +364,7 @@ jobs:
           | Neural nonterminal winner-prediction accuracy | {neural:.1%} |
           | Handwritten nonterminal winner-prediction accuracy | {handwritten:.1%} |
           | Neural minus handwritten | {delta:+.1%} |
+          | Handwritten evaluator fingerprint | `{fingerprint[:16]}…` |
           | Counterfactual decisions / candidates | {decision_quality['evaluated_decisions']} / {decision_quality['evaluated_candidates']} |
           | Neural candidate-ranking accuracy | {neural_decision['candidate_ranking_accuracy']:.1%} |
           | Neural mean / max regret; optimal-choice rate | {neural_decision['top_plan_mean_regret']:.3f} / {neural_decision['top_plan_max_regret']:.3f}; {neural_decision['top_plan_optimal_rate']:.1%} |
@@ -357,7 +381,7 @@ jobs:
           **Failed games excluded from training:** {', '.join(failed_games) or 'none'}  
           **Game outcomes:** `{manifest['outcomes']}`
 
-          Both winner-prediction accuracies use the exact same held-out nonterminal states. Candidate ranking and regret use a same-commit \`{os.environ['COUNTERFACTUAL_PRESET']}\` counterfactual suite and the same labeled policy samples for each evaluator. On the winner-prediction sample, the neural evaluator is **{direction}** the handwritten evaluator. Strength claims should still be based on broader data and eventually direct gameplay arenas.
+          Winner-prediction and counterfactual handwritten scores are produced by the real same-commit Godot `PureStateEvaluator`; Python does not maintain an authoritative copy. On the winner-prediction sample, the neural evaluator is **{direction}** the handwritten evaluator. Strength claims should still be based on candidate ranking, regret, and direct gameplay arenas.
           """
           Path("artifacts/summary.md").write_text(summary, encoding="utf-8")
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
