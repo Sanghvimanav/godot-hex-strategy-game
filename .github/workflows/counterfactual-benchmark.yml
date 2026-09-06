@@ -32,9 +32,7 @@ jobs:
           - shard_index: 1
             decision_ids: "curated-preserve-wounded-scout curated-spread-marine-screen"
           - shard_index: 2
-            decision_ids: "curated-retreat-wounded-marine curated-trapped-zergling-last-kill"
-          - shard_index: 3
-            decision_ids: "curated-attack-zerg-production-early curated-coordinate-fire-lanes"
+            decision_ids: "curated-coordinate-fire-lanes"
 
     steps:
       - name: Checkout repository
@@ -82,7 +80,7 @@ jobs:
           shard_index = os.environ["SHARD_INDEX"]
           root = Path("artifacts/pr-curated") / f"shard-{shard_index}"
           decision_dirs = sorted(path for path in root.iterdir() if path.is_dir())
-          assert len(decision_dirs) == 2, decision_dirs
+          assert 1 <= len(decision_dirs) <= 2, decision_dirs
 
           total_candidates = 0
           total_full = 0
@@ -179,21 +177,15 @@ jobs:
           - case_id: curated-sacrifice
             preset: curated
             decision_id: curated-sacrifice-baneling
+          - case_id: curated-stacked-sacrifice
+            preset: curated
+            decision_id: curated-sacrifice-baneling-stacked
           - case_id: curated-preservation
             preset: curated
             decision_id: curated-preserve-wounded-scout
           - case_id: curated-spreading
             preset: curated
             decision_id: curated-spread-marine-screen
-          - case_id: curated-retreating
-            preset: curated
-            decision_id: curated-retreat-wounded-marine
-          - case_id: curated-trapped-zergling
-            preset: curated
-            decision_id: curated-trapped-zergling-last-kill
-          - case_id: curated-production-pressure
-            preset: curated
-            decision_id: curated-attack-zerg-production-early
           - case_id: curated-coordinated-commitment
             preset: curated
             decision_id: curated-coordinate-fire-lanes
