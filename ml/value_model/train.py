@@ -17,7 +17,7 @@ from .data import (
     load_jsonl_examples,
     split_examples_by_group,
 )
-from .metrics import handwritten_evaluator_score, sign_accuracy
+from .metrics import sign_accuracy
 from .model import HexValueNet
 
 
@@ -58,9 +58,6 @@ def _input_conflict_metrics(
     for example in examples:
         encoded = encoder.encode(example)
         digest = hashlib.sha256()
-        # Keep the standalone test workflow dependency-light: PyTorch is present,
-        # but NumPy is intentionally not required. Tensor tolist() is stable for
-        # these small float32 state encodings and hashes the exact model inputs.
         digest.update(json.dumps(encoded.board.flatten().tolist(), separators=(",", ":")).encode("utf-8"))
         digest.update(json.dumps(encoded.global_features.tolist(), separators=(",", ":")).encode("utf-8"))
         grouped.setdefault(digest.hexdigest(), []).append(float(encoded.target.item()))
@@ -84,6 +81,29 @@ def _input_conflict_metrics(
         "conflicting_input_groups": conflicting_groups,
         "conflicting_input_examples": conflicting_examples,
     }
+
+
+def _load_handwritten_baseline(path: str | None, expected_examples: int) -> dict | None:
+    """Load scores emitted by the real Godot PureStateEvaluator.
+
+    The training pipeline deliberately does not reimplement the handwritten evaluator
+    in Python. If a baseline is supplied, it must carry an evaluator fingerprint and
+    one score per held-out nonterminal example; otherwise no handwritten comparison is
+    reported. This prevents an offline copy from silently drifting from gameplay.
+    """
+    if not path:
+        return None
+    payload = json.loads(Path(path).read_text())
+    fingerprint = str(payload.get("evaluator_fingerprint", "")).strip()
+    scores = payload.get("scores", [])
+    if not fingerprint:
+        raise ValueError("handwritten baseline is missing evaluator_fingerprint")
+    if not isinstance(scores, list) or len(scores) != expected_examples:
+        raise ValueError(
+            f"handwritten baseline must contain {expected_examples} scores, got "
+            f"{len(scores) if isinstance(scores, list) else 'non-list'}"
+        )
+    return {"evaluator_fingerprint": fingerprint, "scores": [float(value) for value in scores]}
 
 
 def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
@@ -124,17 +144,10 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
     eval_dataset = validation_dataset if validation_examples else train_dataset
     eval_metrics = _evaluate(model, eval_dataset, args.batch_size, device)
 
-    # Compare neural and handwritten evaluators on exactly the same held-out
-    # nonterminal examples. Terminal positions remain useful for overall model
-    # metrics, but their winner is already exposed by the board state and terminal
-    # feature, so mixing them into only one side of the comparison is misleading.
     nonterminal_eval = [example for example in eval_examples if not bool(example.get("terminal", False))]
     nonterminal_dataset = ValueExampleDataset(nonterminal_eval, encoder)
     neural_nonterminal_metrics = _evaluate(model, nonterminal_dataset, args.batch_size, device)
-    baseline_scores = [handwritten_evaluator_score(example) for example in nonterminal_eval]
-    baseline_targets = [float(example.get("outcome", 0.0)) for example in nonterminal_eval]
-    baseline_accuracy = sign_accuracy(baseline_scores, baseline_targets)
-    comparison_delta = neural_nonterminal_metrics["sign_accuracy"] - baseline_accuracy
+    baseline = _load_handwritten_baseline(args.handwritten_baseline, len(nonterminal_eval))
 
     checkpoint = {
         "model_state_dict": model.state_dict(),
@@ -179,13 +192,20 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
         "eval_nonterminal_examples": len(nonterminal_eval),
         "neural_eval_mse_nonterminal": neural_nonterminal_metrics["mse"],
         "neural_eval_sign_accuracy_nonterminal": neural_nonterminal_metrics["sign_accuracy"],
-        "handwritten_eval_sign_accuracy_nonterminal": baseline_accuracy,
-        "neural_minus_handwritten_sign_accuracy_nonterminal": comparison_delta,
-        # Backward-compatible key, now corrected to the shared nonterminal population.
-        "neural_minus_handwritten_sign_accuracy": comparison_delta,
         "metric_comparison_population": "held_out_nonterminal",
         "checkpoint": str(output),
     }
+    if baseline is not None:
+        baseline_targets = [float(example.get("outcome", 0.0)) for example in nonterminal_eval]
+        baseline_accuracy = sign_accuracy(baseline["scores"], baseline_targets)
+        comparison_delta = neural_nonterminal_metrics["sign_accuracy"] - baseline_accuracy
+        result["handwritten_eval_sign_accuracy_nonterminal"] = baseline_accuracy
+        result["neural_minus_handwritten_sign_accuracy_nonterminal"] = comparison_delta
+        result["neural_minus_handwritten_sign_accuracy"] = comparison_delta
+        result["handwritten_evaluator_fingerprint"] = baseline["evaluator_fingerprint"]
+    else:
+        result["handwritten_comparison_status"] = "not_reported_without_godot_baseline"
+
     print(json.dumps(result, indent=2, sort_keys=True))
     return result
 
@@ -208,6 +228,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--residual-blocks", type=int, default=2)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--handwritten-baseline",
+        default=None,
+        help="Optional JSON scores emitted by the real Godot evaluator; Python does not reimplement it.",
+    )
     return parser
 
 
