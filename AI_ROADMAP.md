@@ -20,9 +20,10 @@ The measurement and baseline foundation is now substantially complete:
 - PR #53 landed controlled deterministic near-best policy exploration, expanding the diverse suite to 58 games while exporting exploration supervision only after the replay actually diverges from its greedy reference;
 - Value Model Experiment #73 produced 55/58 labeled games, 652 examples, zero conflicting encoded-input groups, and roughly 75.4% held-out nonterminal winner-prediction accuracy versus 71.2% for the handwritten evaluator;
 - the same experiment still exposed tactical weaknesses: neural raw counterfactual ranking was 50%, uncertainty-aware ranking was 40% over five clearly separated pairs, with the wounded-Scout healing and Baneling-sacrifice decisions remaining important misses;
+- PR #54 strengthens the counterfactual answer key before the next neural report card: opponent weights come from a pre-turn search-policy proxy rather than authored likelihoods, unresolved continuation mass is reported as whole-mixture value bounds, adversarial/best-response value is separate, and authored responses remain explicit stress cases;
 - the neural evaluator is still evidence rather than a gameplay upgrade, so the handwritten evaluator remains the champion/fallback for now.
 
-The current representation step is to give the neural model explicit command-objective positions before making the network larger or promoting it into gameplay search.
+The current representation step is to give the neural model explicit command-objective positions before making the network larger or promoting it into gameplay search. The corrected counterfactual answer key should be validated before interpreting the next objective-aware neural report card.
 
 ## Plan
 
@@ -42,6 +43,7 @@ The current representation step is to give the neural model explicit command-obj
 3. **Iterate the neural value model with real report cards.**
    - Train on terminal game outcomes, not handwritten-evaluator imitation.
    - Use held-out scenario families, raw and uncertainty-aware counterfactual ranking/regret, candidate-level diagnostics, and neural-vs-champion arena results together.
+   - Treat low-coverage counterfactual targets as intervals, not exact labels; use search-policy expected value, best-response diagnostics, and curated stress outcomes as separate signals.
    - Prefer better data, representation, augmentation, targets, and training stability before increasing model size.
    - Once neural evaluation consistently beats the handwritten champion at comparable compute, allow neural-guided self-play to become a larger part of future data generation.
 
@@ -84,4 +86,4 @@ A neural candidate should show improvement across both full-game strength and co
 
 Promote a new AI only when it beats the current champion on held-out seeded full games, reduces serious tactical regret, stays inside the turn-time budget, respects fog of war and scenario objectives, avoids non-progress/pathological loops, and players prefer playing against it.
 
-**Immediate next step: add explicit own/enemy command-objective positions to the neural state representation, rerun the value-model report card, then add capture-progress/status features if the objective-aware representation is stable.**
+**Immediate next step: validate the coverage-aware/search-policy counterfactual answer key in CI, rerun the objective-aware value-model report card once the benchmark is trustworthy, then add capture-progress/status features if the representation is stable.**
