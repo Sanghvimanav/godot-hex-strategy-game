@@ -33,6 +33,8 @@ def main() -> int:
         "rules_version",
         "champion_profile",
         "challenger_profile",
+        "champion_evaluator",
+        "challenger_evaluator",
         "preset_games",
         "preset_pairs",
         "shard_count",
@@ -137,6 +139,8 @@ def main() -> int:
         "rules_version": first["rules_version"],
         "champion_profile": first["champion_profile"],
         "challenger_profile": first["challenger_profile"],
+        "champion_evaluator": first["champion_evaluator"],
+        "challenger_evaluator": first["challenger_evaluator"],
         "champion_settings": first["champion_settings"],
         "challenger_settings": first["challenger_settings"],
         "generation_shards": expected_shards,
@@ -183,8 +187,8 @@ def main() -> int:
 | Challenger sims / decision | {challenger_search['simulations_per_decision']:.1f} |
 | Champion sims / decision | {champion_search['simulations_per_decision']:.1f} |
 
-**Champion profile:** `{first['champion_profile']}`  
-**Challenger profile:** `{first['challenger_profile']}`  
+**Champion:** `{first['champion_profile']}` / `{first['champion_evaluator']}`  
+**Challenger:** `{first['challenger_profile']}` / `{first['challenger_evaluator']}`  
 **Termination reasons:** `{dict(termination_counts)}`  
 **Unresolved games:** {', '.join(unresolved_games) or 'none'}
 """

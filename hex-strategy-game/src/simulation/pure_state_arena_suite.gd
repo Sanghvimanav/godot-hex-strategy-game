@@ -104,16 +104,21 @@ static func available_presets() -> Array[String]:
 	return ["smoke", "fast", "full"]
 
 
-static func agent_settings(profile_name: String) -> Dictionary:
+static func agent_settings(
+	profile_name: String,
+	evaluator_name: String = GameplayAI.EVALUATOR_HANDWRITTEN
+) -> Dictionary:
 	var profile: Dictionary = AGENT_PROFILES.get(profile_name, {})
 	if profile.is_empty():
 		return {}
-	return GameplayAI.handwritten_settings(
-		int(profile.get("max_actions_per_unit", 0)),
-		int(profile.get("own_max_plans", 0)),
-		int(profile.get("max_actions_per_unit", 0)),
-		int(profile.get("opponent_max_plans", 0))
-	)
+	var max_actions := int(profile.get("max_actions_per_unit", 0))
+	var own_plans := int(profile.get("own_max_plans", 0))
+	var opponent_plans := int(profile.get("opponent_max_plans", 0))
+	if evaluator_name == GameplayAI.EVALUATOR_HANDWRITTEN:
+		return GameplayAI.handwritten_settings(max_actions, own_plans, max_actions, opponent_plans)
+	if evaluator_name == GameplayAI.EVALUATOR_NEURAL:
+		return GameplayAI.neural_settings(max_actions, own_plans, max_actions, opponent_plans)
+	return {}
 
 
 static func get_preset(preset_name: String, seed_base: int = DEFAULT_SEED_BASE) -> Array:

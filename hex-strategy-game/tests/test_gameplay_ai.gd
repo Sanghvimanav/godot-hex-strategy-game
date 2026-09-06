@@ -11,6 +11,7 @@ static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_handwritten_entry_point_matches_existing_search(tests) and ok
 	ok = _test_policy_exploration_is_seeded_and_near_best_only(tests) and ok
+	ok = _test_neural_evaluator_requires_explicit_checkpoint(tests) and ok
 	ok = _test_unsupported_evaluator_fails_closed(tests) and ok
 	ok = _test_unsupported_exploration_profile_fails_closed(tests) and ok
 	return ok
@@ -45,6 +46,9 @@ static func _test_handwritten_entry_point_matches_existing_search(tests: Node) -
 		return false
 	if diagnostics.get("selected_actions", []) != decision.get("actions", []):
 		tests._fail("diagnostics should expose the final selected actions")
+		return false
+	if str(diagnostics.get("evaluator", "")) != GameplayAI.EVALUATOR_HANDWRITTEN:
+		tests._fail("search diagnostics should identify the leaf evaluator")
 		return false
 	var exploration: Dictionary = diagnostics.get("exploration", {})
 	if bool(exploration.get("explored", true)) or int(exploration.get("selected_rank", -1)) != 0:
@@ -107,11 +111,30 @@ static func _test_policy_exploration_is_seeded_and_near_best_only(tests: Node) -
 	return true
 
 
+static func _test_neural_evaluator_requires_explicit_checkpoint(tests: Node) -> bool:
+	tests._log("test_gameplay_ai: neural evaluator is explicit and fails closed without a checkpoint")
+	var state := _one_hp_zergling_vs_marine_state()
+	var decision := GameplayAI.choose_actions(state, "zerg", "terran", {
+		"evaluator": GameplayAI.EVALUATOR_NEURAL,
+	})
+	if bool(decision.get("valid", true)):
+		tests._fail("neural mode without explicit evaluator settings must not silently fall back")
+		return false
+	if str(decision.get("error", "")) != "neural_checkpoint_required":
+		tests._fail("missing neural checkpoint should return a stable explicit error")
+		return false
+	if not (decision.get("actions", []) as Array).is_empty():
+		tests._fail("failed neural decisions must not return partial actions")
+		return false
+	tests._pass("neural evaluation is opt-in and fail-closed")
+	return true
+
+
 static func _test_unsupported_evaluator_fails_closed(tests: Node) -> bool:
 	tests._log("test_gameplay_ai: unsupported evaluator fails closed")
 	var state := _one_hp_zergling_vs_marine_state()
 	var decision := GameplayAI.choose_actions(state, "zerg", "terran", {
-		"evaluator": "neural",
+		"evaluator": "oracle",
 	})
 	if bool(decision.get("valid", true)):
 		tests._fail("an evaluator that is not integrated must not silently use another implementation")
@@ -122,7 +145,7 @@ static func _test_unsupported_evaluator_fails_closed(tests: Node) -> bool:
 	if not (decision.get("actions", []) as Array).is_empty():
 		tests._fail("failed decisions must not return partial actions")
 		return false
-	tests._pass("future evaluator modes require explicit integration")
+	tests._pass("unknown evaluator modes remain fail-closed")
 	return true
 
 
