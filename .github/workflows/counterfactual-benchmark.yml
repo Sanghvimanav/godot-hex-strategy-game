@@ -30,7 +30,7 @@ jobs:
           - shard_index: 0
             decision_ids: "curated-sacrifice-baneling curated-sacrifice-baneling-stacked"
           - shard_index: 1
-            decision_ids: "curated-preserve-wounded-scout curated-spread-marine-screen"
+            decision_ids: "curated-spread-marine-screen"
           - shard_index: 2
             decision_ids: "curated-coordinate-fire-lanes"
 
@@ -180,9 +180,6 @@ jobs:
           - case_id: curated-stacked-sacrifice
             preset: curated
             decision_id: curated-sacrifice-baneling-stacked
-          - case_id: curated-preservation
-            preset: curated
-            decision_id: curated-preserve-wounded-scout
           - case_id: curated-spreading
             preset: curated
             decision_id: curated-spread-marine-screen
