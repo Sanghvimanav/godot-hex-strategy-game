@@ -12,6 +12,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_terminal_candidate_and_unlabeled_candidate(tests) and ok
 	ok = _test_suite_and_jsonl_provenance(tests) and ok
 	ok = _test_curated_cases_are_named_and_distinct(tests) and ok
+	ok = _test_baneling_sacrifice_geometries_are_distinct(tests) and ok
 	return ok
 
 
@@ -188,12 +189,11 @@ static func _test_suite_and_jsonl_provenance(tests: Node) -> bool:
 	return true
 
 
-
 static func _test_curated_cases_are_named_and_distinct(tests: Node) -> bool:
 	tests._log("test_pure_state_counterfactual_benchmark: curated behavior cases")
 	var jobs := PureStateCounterfactualSuite.get_preset("curated", "rules-curated")
-	if jobs.size() != 7:
-		tests._fail("curated preset should contain seven behavior decisions")
+	if jobs.size() != 4:
+		tests._fail("curated preset should contain four tactical regression decisions")
 		return false
 	var behaviors: Dictionary = {}
 	for job_variant in jobs:
@@ -220,12 +220,106 @@ static func _test_curated_cases_are_named_and_distinct(tests: Node) -> bool:
 				return false
 			if str(candidate.get("candidate_description", "")).is_empty():
 				return false
-	for required in ["sacrifice", "preservation", "spreading", "retreating", "trapped_zergling", "coordinated_commitment", "production_pressure"]:
+	for required in ["sacrifice", "sacrifice_stacked", "spreading", "coordinated_commitment"]:
 		if not behaviors.has(required):
 			tests._fail("missing curated behavior case: %s" % required)
 			return false
-	tests._pass("seven curated cases expose named choices, prompts, and opponent responses")
+	tests._pass("four curated regression cases expose named choices, prompts, and opponent responses")
 	return true
+
+
+static func _test_baneling_sacrifice_geometries_are_distinct(tests: Node) -> bool:
+	tests._log("test_pure_state_counterfactual_benchmark: Baneling escape versus stacked blast geometry")
+	var jobs := PureStateCounterfactualSuite.get_preset("curated", "rules-curated")
+	var escape_job := _find_job_by_behavior(jobs, "sacrifice")
+	var stacked_job := _find_job_by_behavior(jobs, "sacrifice_stacked")
+	if escape_job.is_empty() or stacked_job.is_empty():
+		tests._fail("both Baneling sacrifice fixtures must exist")
+		return false
+	if str(escape_job.get("decision_id", "")) == str(stacked_job.get("decision_id", "")):
+		tests._fail("escape and stacked Baneling fixtures must use distinct decision ids")
+		return false
+
+	var escape_baneling := _unit_cell(escape_job.get("state", {}), "zerg", 4)
+	var escape_response := _find_opponent_sample(escape_job, "weak_marines_escape_blast")
+	if escape_baneling.is_empty() or escape_response.is_empty():
+		tests._fail("escapable Baneling fixture is missing its center or escape response")
+		return false
+	for unit_id in [1, 2]:
+		var start_cell := _unit_cell(escape_job.get("state", {}), "terran", int(unit_id))
+		var end_cell := _action_endpoint(escape_response.get("actions", []), int(unit_id))
+		if _hex_distance(start_cell, escape_baneling) != 1:
+			tests._fail("escapable Marine %d should start adjacent to the Baneling" % unit_id)
+			return false
+		if _hex_distance(end_cell, escape_baneling) != 2:
+			tests._fail("escapable Marine %d should finish at distance two, outside the center-plus-adjacent blast" % unit_id)
+			return false
+
+	var stacked_baneling := _unit_cell(stacked_job.get("state", {}), "zerg", 4)
+	var stacked_response := _find_opponent_sample(stacked_job, "stacked_marines_step_out")
+	if stacked_baneling.is_empty() or stacked_response.is_empty():
+		tests._fail("stacked Baneling fixture is missing its center or step-out response")
+		return false
+	for unit_id in [1, 2]:
+		var start_cell := _unit_cell(stacked_job.get("state", {}), "terran", int(unit_id))
+		var end_cell := _action_endpoint(stacked_response.get("actions", []), int(unit_id))
+		if _hex_distance(start_cell, stacked_baneling) != 0:
+			tests._fail("stacked Marine %d should begin on the Baneling's tile" % unit_id)
+			return false
+		if _hex_distance(end_cell, stacked_baneling) != 1:
+			tests._fail("stacked Marine %d should still be in the adjacent blast ring after one move" % unit_id)
+			return false
+
+	tests._pass("adjacent Marines can escape to distance two while stacked Marines remain in blast range after one move")
+	return true
+
+
+static func _find_job_by_behavior(jobs: Array, behavior_id: String) -> Dictionary:
+	for job_variant in jobs:
+		if job_variant is Dictionary and str((job_variant as Dictionary).get("behavior_id", "")) == behavior_id:
+			return job_variant as Dictionary
+	return {}
+
+
+static func _find_opponent_sample(job: Dictionary, sample_id: String) -> Dictionary:
+	var config: Dictionary = job.get("config", {})
+	for sample_variant in config.get("opponent_samples", []):
+		if sample_variant is Dictionary and str((sample_variant as Dictionary).get("sample_id", "")) == sample_id:
+			return sample_variant as Dictionary
+	return {}
+
+
+static func _unit_cell(state_variant: Variant, group_name: String, unit_id: int) -> Array:
+	if not (state_variant is Dictionary):
+		return []
+	var state: Dictionary = state_variant
+	for group_variant in state.get("groups", []):
+		if not (group_variant is Dictionary):
+			continue
+		var group: Dictionary = group_variant
+		if str(group.get("name", "")) != group_name:
+			continue
+		for unit_variant in group.get("units", []):
+			if unit_variant is Dictionary and int((unit_variant as Dictionary).get("unit_id", -1)) == unit_id:
+				return ((unit_variant as Dictionary).get("cell", []) as Array).duplicate()
+	return []
+
+
+static func _action_endpoint(actions_variant: Variant, unit_id: int) -> Array:
+	if not (actions_variant is Array):
+		return []
+	for action_variant in actions_variant:
+		if action_variant is Dictionary and int((action_variant as Dictionary).get("unit_id", -1)) == unit_id:
+			return ((action_variant as Dictionary).get("end_point", []) as Array).duplicate()
+	return []
+
+
+static func _hex_distance(a: Array, b: Array) -> int:
+	if a.size() < 2 or b.size() < 2:
+		return -1
+	var dq := int(a[0]) - int(b[0])
+	var dr := int(a[1]) - int(b[1])
+	return int((abs(dq) + abs(dr) + abs(dq + dr)) / 2)
 
 
 static func _estimate(mean_return: float, standard_error: float) -> Dictionary:

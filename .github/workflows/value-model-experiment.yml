@@ -26,23 +26,6 @@ on:
         required: true
         default: 60
         type: number
-  pull_request:
-    paths:
-      - ".github/workflows/value-model-experiment.yml"
-      - "ml/value_model/**"
-      - "ml/tests/**"
-      - "hex-strategy-game/tools/self_play_dataset.gd"
-      - "hex-strategy-game/tools/self_play_dataset.tscn"
-      - "hex-strategy-game/tools/run_self_play_dataset.sh"
-      - "hex-strategy-game/tools/deterministic_shard.gd"
-      - "hex-strategy-game/src/simulation/pure_state_self_play_suite.gd"
-      - "hex-strategy-game/src/simulation/pure_state_training_data.gd"
-      - "hex-strategy-game/src/simulation/pure_state_plans.gd"
-      - "hex-strategy-game/src/simulation/pure_state_plan_intents.gd"
-      - "hex-strategy-game/src/simulation/pure_state_command_hex_rules.gd"
-      - "hex-strategy-game/src/simulation/pure_state_counterfactual_*.gd"
-      - "hex-strategy-game/tools/counterfactual_benchmark.*"
-      - "hex-strategy-game/tools/run_counterfactual_benchmark.sh"
 
 permissions:
   contents: read
@@ -61,7 +44,7 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3]
     env:
-      EXPERIMENT_PRESET: ${{ github.event_name == 'workflow_dispatch' && inputs.preset || 'diverse' }}
+      EXPERIMENT_PRESET: ${{ inputs.preset }}
       SHARD_COUNT: 4
 
     steps:
@@ -110,7 +93,7 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3]
     env:
-      COUNTERFACTUAL_PRESET: ${{ github.event_name == 'workflow_dispatch' && inputs.counterfactual_preset || 'curated' }}
+      COUNTERFACTUAL_PRESET: ${{ inputs.counterfactual_preset }}
       SHARD_COUNT: 4
 
     steps:
@@ -156,9 +139,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      EXPERIMENT_PRESET: ${{ github.event_name == 'workflow_dispatch' && inputs.preset || 'diverse' }}
-      COUNTERFACTUAL_PRESET: ${{ github.event_name == 'workflow_dispatch' && inputs.counterfactual_preset || 'curated' }}
-      EXPERIMENT_EPOCHS: ${{ github.event_name == 'workflow_dispatch' && inputs.epochs || '60' }}
+      EXPERIMENT_PRESET: ${{ inputs.preset }}
+      COUNTERFACTUAL_PRESET: ${{ inputs.counterfactual_preset }}
+      EXPERIMENT_EPOCHS: ${{ inputs.epochs }}
       SHARD_COUNT: 4
 
     steps:

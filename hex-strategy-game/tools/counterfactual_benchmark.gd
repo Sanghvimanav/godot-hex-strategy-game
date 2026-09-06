@@ -1,14 +1,15 @@
 extends Node
-## Headless exporter for policy-conditional counterfactual candidate targets.
+## Headless exporter for the coverage-aware counterfactual answer key.
 ##
 ## godot --headless --path . res://tools/counterfactual_benchmark.tscn -- \
 ##   --preset=starter --out=user://counterfactual_benchmark --rules-version=<git-sha>
 
 const PureStateCounterfactualBenchmark = preload("res://src/simulation/pure_state_counterfactual_benchmark.gd")
+const PureStateCounterfactualAnswerKey = preload("res://src/simulation/pure_state_counterfactual_answer_key.gd")
 const PureStateCounterfactualSuite = preload("res://src/simulation/pure_state_counterfactual_suite.gd")
 const DeterministicShard = preload("res://tools/deterministic_shard.gd")
 
-const MANIFEST_SCHEMA_VERSION := 1
+const MANIFEST_SCHEMA_VERSION := 2
 
 
 func _ready() -> void:
@@ -76,7 +77,7 @@ func _run_benchmark() -> void:
 			failed_decisions += 1
 			continue
 		var job: Dictionary = job_variant
-		var result := PureStateCounterfactualBenchmark.evaluate_decision(
+		var result := PureStateCounterfactualAnswerKey.evaluate_decision(
 			job.get("state", {}) as Dictionary,
 			str(job.get("perspective_group", "")),
 			str(job.get("opponent_group", "")),
@@ -107,11 +108,16 @@ func _run_benchmark() -> void:
 				"candidate_label": str(candidate.get("candidate_label", candidate.get("candidate_id", ""))),
 				"candidate_description": str(candidate.get("candidate_description", "")),
 				"status": str(estimate.get("status", "")),
-				"mean_return": float(estimate.get("mean_return", 0.0)),
+				"conditional_labeled_mean_return": float(estimate.get("conditional_labeled_mean_return", 0.0)),
 				"estimated_standard_error": float(estimate.get("estimated_standard_error", 0.0)),
 				"labeled_weight_fraction": coverage,
-				"worst_case_return": float(estimate.get("worst_case_return", 0.0)),
-				"best_case_return": float(estimate.get("best_case_return", 0.0)),
+				"known_weighted_return_contribution": float(estimate.get("known_weighted_return_contribution", 0.0)),
+				"full_mixture_lower_bound": float(estimate.get("full_mixture_lower_bound", -1.0)),
+				"full_mixture_upper_bound": float(estimate.get("full_mixture_upper_bound", 1.0)),
+				"best_response_value_lower_bound": float(estimate.get("best_response_value_lower_bound", -1.0)),
+				"best_response_value_upper_bound": float(estimate.get("best_response_value_upper_bound", 1.0)),
+				"best_response_opponent_sample_id": str(estimate.get("best_response_opponent_sample_id", "")),
+				"curated_stress_test_count": (estimate.get("curated_stress_tests", []) as Array).size(),
 			})
 		decision_summaries.append({
 			"decision_id": str(job.get("decision_id", "")),
@@ -124,7 +130,7 @@ func _run_benchmark() -> void:
 			"pairwise_comparison_count": (result.get("pairwise_comparisons", []) as Array).size(),
 			"candidates": candidate_summaries,
 		})
-		print("[counterfactual] %s valid=%s candidates=%d estimated_best=%s" % [
+		print("[counterfactual] %s valid=%s candidates=%d interval_best=%s" % [
 			str(job.get("decision_id", "")),
 			str(valid),
 			(result.get("candidate_results", []) as Array).size(),
@@ -133,13 +139,16 @@ func _run_benchmark() -> void:
 
 	var manifest := {
 		"manifest_schema_version": MANIFEST_SCHEMA_VERSION,
-		"candidate_schema_version": PureStateCounterfactualBenchmark.SCHEMA_VERSION,
-		"counterfactual_benchmark_version": PureStateCounterfactualBenchmark.BENCHMARK_VERSION,
+		"candidate_schema_version": PureStateCounterfactualAnswerKey.SCHEMA_VERSION,
+		"counterfactual_benchmark_version": PureStateCounterfactualAnswerKey.BENCHMARK_VERSION,
+		"answer_key_version": PureStateCounterfactualAnswerKey.ANSWER_KEY_VERSION,
 		"counterfactual_suite_version": PureStateCounterfactualSuite.SUITE_VERSION,
 		"preset": preset,
 		"rules_version": rules_version,
-		"target_semantics": "policy_conditional_terminal_return_estimate",
-		"uncertainty_semantics": "descriptive_between_policy_sample_spread_not_statistical_confidence",
+		"target_semantics": "search_policy_terminal_return_with_unresolved_bounds_v2",
+		"uncertainty_semantics": "full-mixture bounds preserve unresolved continuation mass; conditional spread remains diagnostic only",
+		"opponent_weight_semantics": "normalized_search_policy_proxy_not_empirical_behavior_probability",
+		"curated_response_semantics": "authored responses are stress cases and authored weights are not policy likelihoods",
 		"opponent_mixture_version": str(benchmark_config.get("opponent_mixture_version", "")),
 		"continuation_mixture_version": str(benchmark_config.get("continuation_mixture_version", "")),
 		"turn_limit_is_unlabeled": true,

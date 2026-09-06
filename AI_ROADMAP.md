@@ -6,7 +6,7 @@ A fair AI that coordinates simultaneous actions, avoids obvious blunders, discov
 
 ## Current position
 
-The pure simulator, legal actions, bounded joint planning, opponent-response search, tactical intents, whole-game rollout, command-hex victory, counterfactual decision benchmark, seeded AI-vs-AI arena, richer self-play export, and first neural value model all exist.
+The pure simulator, legal actions, bounded joint planning, opponent-response search, tactical intents, whole-game rollout, command-hex victory, counterfactual decision benchmark, seeded AI-vs-AI arena, richer self-play export, controlled policy exploration, and first neural value model all exist.
 
 The measurement and baseline foundation is now substantially complete:
 
@@ -17,44 +17,44 @@ The measurement and baseline foundation is now substantially complete:
 - a 64-game 2x2-vs-4x4 arena found no strength benefit from wider 4x4 search despite roughly 3x the simulations;
 - a 16-game 2x2-vs-6x6 diagnostic showed a modest 6x6 edge, but at roughly 6x the simulations and about 5-6x the decision time, so 6x6 remains a diagnostic profile rather than the default;
 - PR #52 landed a 42-game `diverse` self-play suite with 16 deterministic training-only procedural variants across the eight strategic families, with training seeds separated from frozen arena evaluation seeds;
-- Value Model Experiment #64 on that suite reached roughly 70.5% held-out nonterminal winner-prediction accuracy versus 63.6% for the handwritten evaluator, with encouraging but still small-sample counterfactual ranking results;
+- PR #53 landed controlled deterministic near-best policy exploration, expanding the diverse suite to 58 games while exporting exploration supervision only after the replay actually diverges from its greedy reference;
+- Value Model Experiment #73 produced 55/58 labeled games, 652 examples, zero conflicting encoded-input groups, and roughly 75.4% held-out nonterminal winner-prediction accuracy versus 71.2% for the handwritten evaluator;
+- the same experiment still exposed tactical weakness in neural counterfactual ranking, including the Baneling-sacrifice decision, so the neural evaluator is not yet ready to replace the handwritten champion;
+- PR #54 strengthens the counterfactual answer key before the next neural report card: opponent weights come from a pre-turn search-policy proxy rather than authored likelihoods, unresolved continuation mass is reported as whole-mixture value bounds, adversarial/best-response value is separate, and authored responses remain explicit stress cases;
+- the curated counterfactual suite is intentionally being reduced to a small set of stable tactical regression checks rather than an exhaustive strategy answer key;
 - the neural evaluator is still evidence rather than a gameplay upgrade, so the handwritten evaluator remains the champion/fallback for now.
 
-PR #53 is the current self-play step: replay comparable fast procedural states with controlled deterministic near-best policy exploration so the model sees multiple competent trajectories from the same starting position.
+The current representation step is to give the neural model explicit command-objective positions before making the network larger or promoting it into gameplay search. The counterfactual suite is a regression guardrail, while arena and self-play results remain the primary measurements as game rules evolve.
 
 ## Plan
 
-1. **Validate and land controlled policy/exploration diversity.**
-   - Keep arena, counterfactual evaluation, production gameplay, and default self-play deterministic/greedy.
-   - Replay comparable training states with deterministic exploration seeds and constrained near-best sampling.
-   - Record exploration profile/seed and replay provenance in training artifacts.
-   - Require a high terminal-label rate, zero/low generation failures, and useful held-out/counterfactual performance before promoting the expanded dataset.
-
-2. **Improve the neural state representation before making the network larger.**
+1. **Improve the neural state representation before making the network larger.**
    - Add explicit own/enemy command-hex channels so the model can see the alternate victory condition.
    - Add command occupancy/capture-progress state and strategically important status effects such as stun.
    - Add terrain/resource/objective features as those systems become strategically meaningful.
    - Keep the current small residual CNN initially; better inputs and broader training data are higher priority than more layers while the dataset is still small.
+   - Use candidate-level counterfactual diagnostics to distinguish missing representation from missing training coverage; do not assume every tactical miss is fixed by objectives.
 
-3. **Build a measured hybrid AI.**
+2. **Build a measured hybrid AI.**
    - Keep bounded search and the handwritten evaluator as a fallback.
    - Put neural leaf/state evaluation behind a feature flag using the same search budget as the handwritten baseline.
    - Run neural-vs-handwritten matches on the frozen mirrored arena seeds so evaluator quality is isolated from search width.
    - Promote neural evaluation only when it improves full-game strength and tactical regret without exceeding the decision-time budget.
 
-4. **Iterate the neural value model with real report cards.**
+3. **Iterate the neural value model with real report cards.**
    - Train on terminal game outcomes, not handwritten-evaluator imitation.
-   - Use held-out scenario families, counterfactual ranking/regret, and neural-vs-champion arena results together.
+   - Use held-out scenario families, raw and uncertainty-aware counterfactual ranking/regret, candidate-level diagnostics, and neural-vs-champion arena results together.
+   - Treat low-coverage counterfactual targets as intervals, not exact labels; use search-policy expected value, best-response diagnostics, and curated stress outcomes as separate signals.
    - Prefer better data, representation, augmentation, targets, and training stability before increasing model size.
    - Once neural evaluation consistently beats the handwritten champion at comparable compute, allow neural-guided self-play to become a larger part of future data generation.
 
-5. **Add shallow multi-turn lookahead only when measurement justifies it.**
+4. **Add shallow multi-turn lookahead only when measurement justifies it.**
    - Search width alone is not monotonic: 4x4 cost substantially more than 2x2 without improving strength, while 6x6 showed only a modest small-sample gain at much higher cost.
    - Treat 6x6/8x8 breadth as diagnostic tools, not default gameplay budgets.
    - Prefer additional seeded positions and improved state evaluation before brute-force width.
    - Add shallow multi-turn continuation only if the arena shows a meaningful strength gain inside the player's turn-time budget.
 
-6. **Tune for fun after strength is measurable.**
+5. **Tune for fun after strength is measurable.**
    - Set difficulty with search budget, controlled mistakes, and/or evaluator strength.
    - Set personalities with tactical-intent/policy preferences rather than hidden stat cheats.
    - Validate raw strength and interestingness separately through blind human playtests.
@@ -67,9 +67,19 @@ Use mirrored pairs to cancel faction/scenario bias and stable seed sets to make 
 
 Do not assume a larger plan-response budget is stronger. Compare strength per unit of compute. The current evidence makes 2x2 the practical default, 4x4 an alternate profile, 6x6 a diagnostic ceiling, and 8x8 unnecessary unless a specific experiment requires it.
 
+## Counterfactual regression policy
+
+Keep the curated counterfactual suite intentionally small and focused on obvious tactical regressions that should remain meaningful across many rule changes. Prefer roughly 4-6 stable cases over a large catalog of hand-authored strategic situations.
+
+Do not use the curated suite as the primary definition of good strategy. When rules change, update or remove a case if its old answer is no longer naturally correct. Promote a new case only when self-play, arena games, or playtesting reveals a recurring embarrassing tactical mistake worth guarding against.
+
+Use arena strength, self-play outcomes, and held-out value-model performance as the primary evolving-game measurements.
+
 ## Self-play exploration policy
 
 Exploration is a **training-data tool**, not a source of evaluation noise. Search still generates and ranks plans deterministically. Training may occasionally select a non-best plan only from a small near-best prefix and only within a bounded worst-case score gap. Every exploration choice must be reproducible from recorded state/profile/seed provenance.
+
+Exploration replays export supervised examples only after their trajectory diverges from the identical greedy reference. This prevents a state-only value model from receiving opposite outcome labels for the same pre-divergence input.
 
 Do not use unconstrained random legal actions. The purpose is to expose plausible alternate strategies and outcomes, not to teach the value model from intentionally nonsensical play.
 
@@ -85,4 +95,4 @@ A neural candidate should show improvement across both full-game strength and co
 
 Promote a new AI only when it beats the current champion on held-out seeded full games, reduces serious tactical regret, stays inside the turn-time budget, respects fog of war and scenario objectives, avoids non-progress/pathological loops, and players prefer playing against it.
 
-**Immediate next step: validate and land PR #53, then expand the neural state representation with explicit command-objective, capture-progress, and strategically important status information.**
+**Immediate next step: get the reduced tactical regression suite green in CI, rerun the objective-aware value-model report card, then add capture-progress/status features if the report card still shows a representation gap; otherwise begin the feature-flagged neural leaf-evaluator comparison against the handwritten champion.**

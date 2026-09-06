@@ -2,9 +2,6 @@ name: Value Model Tests
 
 on:
   pull_request:
-    paths:
-      - "ml/**"
-      - ".github/workflows/value-model-tests.yml"
   workflow_dispatch:
 
 permissions:

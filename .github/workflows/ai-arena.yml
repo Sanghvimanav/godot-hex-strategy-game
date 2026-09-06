@@ -34,9 +34,9 @@ on:
           - broad
   pull_request:
     paths:
-      - ".github/workflows/ai-arena.yml"
       - "hex-strategy-game/src/battle/ai/**"
       - "hex-strategy-game/src/simulation/pure_state_*.gd"
+      - "!hex-strategy-game/src/simulation/pure_state_counterfactual_*.gd"
       - "hex-strategy-game/tools/ai_arena.*"
       - "hex-strategy-game/tools/merge_ai_arena.py"
       - "hex-strategy-game/tools/deterministic_shard.gd"
