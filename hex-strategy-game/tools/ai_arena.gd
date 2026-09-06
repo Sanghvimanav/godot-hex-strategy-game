@@ -3,11 +3,13 @@ extends Node
 ##
 ## Example:
 ## godot --headless --path . res://tools/ai_arena.tscn -- \
-##   --preset=fast --champion-profile=fast --challenger-profile=balanced \
+##   --preset=fast --champion-profile=fast --challenger-profile=fast \
+##   --champion-evaluator=handwritten --challenger-evaluator=neural \
 ##   --out=user://ai_arena --shard-index=0 --shard-count=4
 
 const PureStateArenaSuite = preload("res://src/simulation/pure_state_arena_suite.gd")
 const PureStateGameRollout = preload("res://src/simulation/pure_state_game_rollout.gd")
+const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural_evaluator.gd")
 const DeterministicShard = preload("res://tools/deterministic_shard.gd")
 
 const MANIFEST_SCHEMA_VERSION := 1
@@ -21,7 +23,9 @@ func _run_arena() -> void:
 	var args := _parse_cmdline_kv()
 	var preset := str(args.get("preset", "fast"))
 	var champion_profile := str(args.get("champion-profile", "fast"))
-	var challenger_profile := str(args.get("challenger-profile", "balanced"))
+	var challenger_profile := str(args.get("challenger-profile", "fast"))
+	var champion_evaluator := str(args.get("champion-evaluator", "handwritten"))
+	var challenger_evaluator := str(args.get("challenger-evaluator", "handwritten"))
 	var seed_base := int(args.get("seed-base", str(PureStateArenaSuite.DEFAULT_SEED_BASE)))
 	var shard_index := int(args.get("shard-index", "0"))
 	var shard_count := int(args.get("shard-count", "1"))
@@ -32,10 +36,17 @@ func _run_arena() -> void:
 		push_error("Invalid arena shard %d/%d" % [shard_index, shard_count])
 		get_tree().quit(1)
 		return
-	var champion_settings := PureStateArenaSuite.agent_settings(champion_profile)
-	var challenger_settings := PureStateArenaSuite.agent_settings(challenger_profile)
+	var champion_settings := PureStateArenaSuite.agent_settings(champion_profile, champion_evaluator)
+	var challenger_settings := PureStateArenaSuite.agent_settings(challenger_profile, challenger_evaluator)
 	if champion_settings.is_empty() or challenger_settings.is_empty():
-		push_error("Unknown arena agent profile champion=%s challenger=%s" % [champion_profile, challenger_profile])
+		push_error(
+			"Unknown arena agent config champion=%s/%s challenger=%s/%s" % [
+				champion_profile,
+				champion_evaluator,
+				challenger_profile,
+				challenger_evaluator,
+			]
+		)
 		get_tree().quit(1)
 		return
 
@@ -46,8 +57,7 @@ func _run_arena() -> void:
 		return
 	# Official arena presets have a stable source order. Assign complete mirrored
 	# pairs round-robin so every worker gets the same number of pairs when the
-	# preset divides evenly (fast: 2 pairs/worker; full: 4 pairs/worker). Hashing
-	# small frozen IDs previously left some workers idle and overloaded others.
+	# preset divides evenly (fast: 2 pairs/worker; full: 4 pairs/worker).
 	var jobs := DeterministicShard.filter_grouped_jobs_round_robin(
 		all_jobs,
 		"pair_id",
@@ -168,6 +178,8 @@ func _run_arena() -> void:
 		"rules_version": rules_version,
 		"champion_profile": champion_profile,
 		"challenger_profile": challenger_profile,
+		"champion_evaluator": champion_evaluator,
+		"challenger_evaluator": challenger_evaluator,
 		"champion_settings": champion_settings.duplicate(true),
 		"challenger_settings": challenger_settings.duplicate(true),
 		"preset_games": all_jobs.size(),
@@ -199,6 +211,7 @@ func _run_arena() -> void:
 		challenger_decisive_win_rate * 100.0,
 		elapsed_ms,
 	])
+	PureStateNeuralEvaluator.shutdown()
 	get_tree().quit(0 if write_ok and int(counts["failed"]) == 0 else 1)
 
 
