@@ -2,26 +2,23 @@ extends RefCounted
 class_name PureStateCounterfactualAnswerKey
 ## Coverage-aware counterfactual answer key built on top of the raw benchmark.
 ##
-## The raw benchmark is still responsible for deterministic simultaneous-turn
+## The raw benchmark remains responsible for deterministic simultaneous-turn
 ## simulation and continuation rollouts. This layer changes the interpretation:
 ##
-## - opponent mixture weights come from a search-derived policy proxy computed once
-##   from the original pre-turn state, never from the own candidate being scored;
-## - authored opponent responses are retained as curated stress cases, but their
-##   authored weights are sampling metadata rather than behavioral probabilities;
-## - unresolved continuation mass remains visible through full-mixture lower/upper
-##   bounds instead of being silently renormalized out of the headline answer;
+## - expected-value opponent weights come only from a search-derived policy proxy
+##   computed once from the original pre-turn state, never from the own candidate;
+## - authored opponent responses are evaluated in a separate curated stress pass and
+##   therefore cannot change the expected-value mixture at all;
+## - unresolved continuation mass stays visible through full-mixture value bounds;
 ## - adversarial/best-response diagnostics are reported separately from policy value.
 
 const PureStateCounterfactualBenchmark = preload("res://src/simulation/pure_state_counterfactual_benchmark.gd")
 const PureStatePlans = preload("res://src/simulation/pure_state_plans.gd")
 const PureStateOpponentResponseSearch = preload("res://src/simulation/pure_state_opponent_response_search.gd")
-const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd")
-const PureStateEvaluator = preload("res://src/simulation/pure_state_evaluator.gd")
 
 const SCHEMA_VERSION := PureStateCounterfactualBenchmark.SCHEMA_VERSION
 const BENCHMARK_VERSION := 2
-const ANSWER_KEY_VERSION := 1
+const ANSWER_KEY_VERSION := 2
 const DEFAULT_POLICY_TEMPERATURE := 1.0
 const DEFAULT_POLICY_MAX_PLANS := 4
 const DEFAULT_POLICY_MAX_ACTIONS_PER_UNIT := 8
@@ -39,7 +36,7 @@ static func evaluate_decision(
 		0.05,
 		float(config.get("opponent_policy_temperature", DEFAULT_POLICY_TEMPERATURE))
 	)
-	var policy_samples := _build_policy_samples(
+	var policy_samples := _build_search_policy_samples(
 		game_state,
 		perspective_group,
 		opponent_group,
@@ -55,9 +52,11 @@ static func evaluate_decision(
 			config
 		)
 
+	# Expected policy value: search-generated responses only. This distribution is
+	# computed once from the shared pre-turn state and reused for every own candidate.
 	var policy_config := config.duplicate(true)
 	policy_config["opponent_samples"] = policy_samples.duplicate(true)
-	policy_config["opponent_mixture_version"] = "%s|search_policy_answer_key_v1" % str(
+	policy_config["opponent_mixture_version"] = "%s|pre_turn_search_policy_v2" % str(
 		config.get("opponent_mixture_version", "unknown")
 	)
 	var result := PureStateCounterfactualBenchmark.evaluate_decision(
@@ -70,6 +69,33 @@ static func evaluate_decision(
 	if not bool(result.get("valid", false)):
 		return result
 
+	# Authored responses are a completely separate stress pass. Their historical
+	# authored weights are retained as metadata only; they never enter policy value.
+	var curated_samples := _build_curated_stress_samples(config)
+	var curated_by_candidate: Dictionary = {}
+	if not curated_samples.is_empty():
+		var stress_config := config.duplicate(true)
+		stress_config["opponent_samples"] = curated_samples.duplicate(true)
+		stress_config["opponent_mixture_version"] = "%s|curated_stress_only_v1" % str(
+			config.get("opponent_mixture_version", "unknown")
+		)
+		var stress_result := PureStateCounterfactualBenchmark.evaluate_decision(
+			game_state,
+			perspective_group,
+			opponent_group,
+			"%s|curated_stress" % decision_id,
+			stress_config
+		)
+		if bool(stress_result.get("valid", false)):
+			for stress_candidate_variant in stress_result.get("candidate_results", []):
+				if not (stress_candidate_variant is Dictionary):
+					continue
+				var stress_candidate: Dictionary = stress_candidate_variant
+				curated_by_candidate[str(stress_candidate.get("candidate_id", ""))] = build_response_diagnostics(
+					stress_candidate.get("samples", []) as Array,
+					curated_samples
+				)
+
 	var conditional_pairwise: Array = (result.get("pairwise_comparisons", []) as Array).duplicate(true)
 	for candidate_variant in result.get("candidate_results", []):
 		if not (candidate_variant is Dictionary):
@@ -79,7 +105,9 @@ static func evaluate_decision(
 		var enriched := enrich_estimate(samples)
 		var response_diagnostics := build_response_diagnostics(samples, policy_samples)
 		enriched["response_diagnostics"] = response_diagnostics
-		enriched["curated_stress_tests"] = _curated_stress_tests(response_diagnostics)
+		enriched["curated_stress_tests"] = (
+			(curated_by_candidate.get(str(candidate.get("candidate_id", "")), []) as Array).duplicate(true)
+		)
 		var adversarial := _adversarial_bounds(response_diagnostics)
 		for key in adversarial.keys():
 			enriched[key] = adversarial[key]
@@ -101,12 +129,14 @@ static func evaluate_decision(
 	assumptions["opponent_policy_semantics"] = "opponent plan scores are computed once from the original pre-turn state and shared across every own candidate"
 	assumptions["opponent_policy_temperature"] = policy_temperature
 	assumptions["opponent_policy_computed_once_from_pre_turn_state"] = true
-	assumptions["curated_response_semantics"] = "authored responses are stress cases; authored weights are sampling metadata and do not set policy likelihood"
+	assumptions["curated_response_semantics"] = "authored responses are separate stress tests and never enter policy expected value; authored weights are metadata only"
+	assumptions["curated_responses_excluded_from_policy_value"] = true
 	assumptions["turn_limit_is_unlabeled"] = true
 	assumptions["unresolved_mass_semantics"] = "full-mixture bounds assign every unresolved/invalid unit of weight either -1 or +1"
 	assumptions["comparison_rule"] = "prefer_only_when_full_mixture_value_bounds_do_not_overlap"
 	assumptions["conditional_mean_semantics"] = "backward-compatible diagnostic over resolved terminal mass only"
 	assumptions["opponent_samples"] = _policy_assumptions(policy_samples)
+	assumptions["curated_stress_samples"] = _policy_assumptions(curated_samples)
 	result["assumptions"] = assumptions
 	return result
 
@@ -288,47 +318,49 @@ static func estimated_interval_best_candidate_ids(candidate_results: Array) -> A
 		if not (candidate_variant is Dictionary):
 			continue
 		var candidate: Dictionary = candidate_variant
+		var candidate_id := str(candidate.get("candidate_id", ""))
 		var candidate_estimate: Dictionary = candidate.get("estimate", {})
 		var candidate_upper := float(candidate_estimate.get("full_mixture_upper_bound", 1.0))
 		var dominated := false
 		for other_variant in candidate_results:
-			if not (other_variant is Dictionary) or other_variant == candidate_variant:
+			if not (other_variant is Dictionary):
 				continue
 			var other: Dictionary = other_variant
+			if str(other.get("candidate_id", "")) == candidate_id:
+				continue
 			var other_estimate: Dictionary = other.get("estimate", {})
 			var other_lower := float(other_estimate.get("full_mixture_lower_bound", -1.0))
 			if other_lower > candidate_upper and not is_equal_approx(other_lower, candidate_upper):
 				dominated = true
 				break
 		if not dominated:
-			result.append(str(candidate.get("candidate_id", "")))
+			result.append(candidate_id)
 	return result
 
 
-static func _build_policy_samples(
+static func _build_search_policy_samples(
 	game_state: Dictionary,
 	perspective_group: String,
 	opponent_group: String,
 	config: Dictionary,
 	temperature: float
 ) -> Array:
-	var policy_max_actions := int(config.get(
+	var policy_max_actions := maxi(1, int(config.get(
 		"opponent_policy_max_actions_per_unit",
 		DEFAULT_POLICY_MAX_ACTIONS_PER_UNIT
-	))
-	var policy_max_plans := int(config.get("opponent_policy_max_plans", DEFAULT_POLICY_MAX_PLANS))
-	var response_max_actions := int(config.get(
+	)))
+	var policy_max_plans := maxi(1, int(config.get(
+		"opponent_policy_max_plans",
+		DEFAULT_POLICY_MAX_PLANS
+	)))
+	var response_max_actions := maxi(1, int(config.get(
 		"opponent_policy_response_max_actions_per_unit",
 		config.get("own_max_actions_per_unit", DEFAULT_POLICY_MAX_ACTIONS_PER_UNIT)
-	))
-	var response_max_plans := int(config.get(
+	)))
+	var response_max_plans := maxi(1, int(config.get(
 		"opponent_policy_response_max_plans",
 		DEFAULT_POLICY_RESPONSE_MAX_PLANS
-	))
-	policy_max_actions = maxi(1, policy_max_actions)
-	policy_max_plans = maxi(1, policy_max_plans)
-	response_max_actions = maxi(1, response_max_actions)
-	response_max_plans = maxi(1, response_max_plans)
+	)))
 
 	var generated: Array = []
 	var search := PureStateOpponentResponseSearch.search(
@@ -382,62 +414,21 @@ static func _build_policy_samples(
 				"author_sampling_weight": 0.0,
 			})
 
-	var by_signature: Dictionary = {}
-	var ordered_signatures: Array = []
+	# Deduplicate identical action plans before softmax weighting. The same plan can
+	# surface through different intent-preserving search paths.
+	var unique: Array = []
+	var seen: Dictionary = {}
 	for sample_variant in generated:
 		if not (sample_variant is Dictionary):
 			continue
 		var sample: Dictionary = sample_variant
 		var signature := _plan_signature(sample.get("actions", []))
-		if by_signature.has(signature):
+		if seen.has(signature):
 			continue
-		by_signature[signature] = sample.duplicate(true)
-		ordered_signatures.append(signature)
-
-	var curated_variant = config.get("opponent_samples", [])
-	if curated_variant is Array:
-		for index in range((curated_variant as Array).size()):
-			var curated_sample_variant = (curated_variant as Array)[index]
-			if not (curated_sample_variant is Dictionary):
-				continue
-			var curated_sample: Dictionary = curated_sample_variant
-			var actions: Array = (curated_sample.get("actions", []) as Array).duplicate(true)
-			var signature := _plan_signature(actions)
-			var author_weight := maxf(0.0, float(curated_sample.get("weight", 0.0)))
-			if by_signature.has(signature):
-				var existing: Dictionary = by_signature[signature]
-				existing["curated"] = true
-				existing["curated_sample_id"] = str(curated_sample.get("sample_id", "curated_%02d" % index))
-				existing["author_sampling_weight"] = author_weight
-				by_signature[signature] = existing
-				continue
-			var policy_score := _score_fixed_opponent_plan(
-				game_state,
-				perspective_group,
-				opponent_group,
-				actions,
-				response_max_actions,
-				response_max_plans
-			)
-			var added := {
-				"sample_id": str(curated_sample.get("sample_id", "curated_%02d" % index)),
-				"profile_id": str(curated_sample.get("profile_id", "curated_stress")),
-				"actions": actions,
-				"proposal_score": float(curated_sample.get("proposal_score", 0.0)),
-				"policy_score": policy_score,
-				"intent": str(curated_sample.get("intent", "")),
-				"source": "curated_stress",
-				"curated": true,
-				"author_sampling_weight": author_weight,
-			}
-			by_signature[signature] = added
-			ordered_signatures.append(signature)
-
-	var union: Array = []
-	for signature_variant in ordered_signatures:
-		union.append((by_signature.get(str(signature_variant), {}) as Dictionary).duplicate(true))
-	if union.is_empty():
-		union = [{
+		seen[signature] = true
+		unique.append(sample.duplicate(true))
+	if unique.is_empty():
+		unique = [{
 			"sample_id": "opponent_no_action",
 			"profile_id": "forced_no_action",
 			"actions": [],
@@ -448,67 +439,34 @@ static func _build_policy_samples(
 			"curated": false,
 			"author_sampling_weight": 0.0,
 		}]
-	return normalize_policy_samples(union, temperature)
+	return normalize_policy_samples(unique, temperature)
 
 
-static func _score_fixed_opponent_plan(
-	game_state: Dictionary,
-	perspective_group: String,
-	opponent_group: String,
-	opponent_actions: Array,
-	response_max_actions: int,
-	response_max_plans: int
-) -> float:
-	var responses := PureStatePlans.get_candidate_plans(
-		game_state,
-		perspective_group,
-		response_max_actions,
-		response_max_plans,
-		true
-	)
-	if responses.is_empty():
-		responses = [{"actions": []}]
-	var found := false
-	var worst_for_opponent := 0.0
-	for response_variant in responses:
-		if not (response_variant is Dictionary):
+static func _build_curated_stress_samples(config: Dictionary) -> Array:
+	var raw_variant = config.get("opponent_samples", [])
+	if not (raw_variant is Array):
+		return []
+	var result: Array = []
+	for index in range((raw_variant as Array).size()):
+		var raw_sample_variant = (raw_variant as Array)[index]
+		if not (raw_sample_variant is Dictionary):
 			continue
-		var response: Dictionary = response_variant
-		var submitted := _submitted_actions(
-			game_state,
-			perspective_group,
-			(response.get("actions", []) as Array),
-			opponent_group,
-			opponent_actions
-		)
-		var simulation := PureStateSimulator.simulate_turn(game_state, submitted)
-		var next_state: Dictionary = simulation.get("next_state", {})
-		if next_state.is_empty():
-			continue
-		var breakdown := PureStateEvaluator.evaluate_breakdown(next_state, opponent_group)
-		var score := float(breakdown.get("total", 0.0))
-		if not found or score < worst_for_opponent:
-			worst_for_opponent = score
-			found = true
-	return worst_for_opponent if found else 0.0
-
-
-static func _submitted_actions(
-	state: Dictionary,
-	group_a: String,
-	actions_a: Array,
-	group_b: String,
-	actions_b: Array
-) -> Dictionary:
-	var submitted: Dictionary = {}
-	for group_variant in state.get("groups", []):
-		if group_variant is Dictionary:
-			var name := str((group_variant as Dictionary).get("name", ""))
-			if not name.is_empty():
-				submitted[name] = []
-	submitted[group_a] = actions_a.duplicate(true)
-	submitted[group_b] = actions_b.duplicate(true)
-	return submitted
+		var raw_sample: Dictionary = raw_sample_variant
+		result.append({
+			"sample_id": str(raw_sample.get("sample_id", "curated_%02d" % index)),
+			"profile_id": str(raw_sample.get("profile_id", "curated_stress")),
+			"actions": (raw_sample.get("actions", []) as Array).duplicate(true),
+			"proposal_score": float(raw_sample.get("proposal_score", 0.0)),
+			"policy_score": 0.0,
+			"intent": str(raw_sample.get("intent", "")),
+			"source": "curated_stress",
+			"curated": true,
+			"author_sampling_weight": maxf(0.0, float(raw_sample.get("weight", 0.0))),
+			# Equal evaluation allocation only; this weight is never used in policy value.
+			"weight": 1.0,
+			"search_policy_weight": 0.0,
+		})
+	return result
 
 
 static func _adversarial_bounds(response_diagnostics: Array) -> Dictionary:
@@ -532,7 +490,10 @@ static func _adversarial_bounds(response_diagnostics: Array) -> Dictionary:
 		upper = minf(upper, response_upper)
 		var midpoint := 0.5 * (response_lower + response_upper)
 		var response_id := str(response.get("opponent_sample_id", ""))
-		if midpoint < worst_midpoint or (is_equal_approx(midpoint, worst_midpoint) and (worst_id.is_empty() or response_id < worst_id)):
+		if midpoint < worst_midpoint or (
+			is_equal_approx(midpoint, worst_midpoint)
+			and (worst_id.is_empty() or response_id < worst_id)
+		):
 			worst_midpoint = midpoint
 			worst_id = response_id
 	return {
@@ -540,14 +501,6 @@ static func _adversarial_bounds(response_diagnostics: Array) -> Dictionary:
 		"best_response_value_upper_bound": upper,
 		"best_response_opponent_sample_id": worst_id,
 	}
-
-
-static func _curated_stress_tests(response_diagnostics: Array) -> Array:
-	var result: Array = []
-	for response_variant in response_diagnostics:
-		if response_variant is Dictionary and bool((response_variant as Dictionary).get("curated", false)):
-			result.append((response_variant as Dictionary).duplicate(true))
-	return result
 
 
 static func _policy_assumptions(policy_samples: Array) -> Array:
