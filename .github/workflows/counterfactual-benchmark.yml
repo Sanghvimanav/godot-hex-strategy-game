@@ -6,7 +6,7 @@ on:
     paths:
       - ".github/workflows/counterfactual-benchmark.yml"
       - "hex-strategy-game/src/simulation/pure_state_counterfactual_*.gd"
-      - "hex-strategy-game/tests/test_pure_state_counterfactual_benchmark.gd"
+      - "hex-strategy-game/tests/test_pure_state_counterfactual_*.gd"
       - "hex-strategy-game/tools/counterfactual_benchmark.*"
       - "hex-strategy-game/tools/run_counterfactual_benchmark.sh"
 
@@ -69,15 +69,29 @@ jobs:
           assert manifest["decisions_failed"] == 0, manifest
           assert manifest["candidate_count"] == len(rows), (manifest, len(rows))
           assert manifest["candidate_count"] > 0, manifest
-          assert manifest["target_semantics"] == "policy_conditional_terminal_return_estimate"
+          assert manifest["target_semantics"] == "search_policy_terminal_return_with_unresolved_bounds_v2"
+          assert manifest["opponent_weight_semantics"] == "normalized_search_policy_proxy_not_empirical_behavior_probability"
           assert manifest["turn_limit_is_unlabeled"] is True
+          widths = []
           for row in rows:
               assert row["decision_id"]
               assert row["candidate_id"]
               assert row["assumptions"]["rules_version"] != "unknown"
-              coverage = row["target_estimate"]["labeled_weight_fraction"]
+              assert row["assumptions"]["opponent_policy_computed_once_from_pre_turn_state"] is True
+              estimate = row["target_estimate"]
+              coverage = estimate["labeled_weight_fraction"]
+              lower = estimate["full_mixture_lower_bound"]
+              upper = estimate["full_mixture_upper_bound"]
+              known = estimate["known_weighted_return_contribution"]
               assert 0.0 <= coverage <= 1.0
+              assert -1.0 <= lower <= upper <= 1.0, estimate
+              assert lower - 1e-9 <= known <= upper + 1e-9, estimate
+              assert "conditional_labeled_mean_return" in estimate
+              assert "best_response_value_lower_bound" in estimate
+              assert "best_response_value_upper_bound" in estimate
+              widths.append(upper - lower)
 
+          mean_width = sum(widths) / len(widths)
           summary = (
               "## Focused counterfactual PR benchmark\n\n"
               f"- Decisions: {manifest['decisions_requested']}\n"
@@ -85,7 +99,8 @@ jobs:
               f"- Fully labeled: {manifest['fully_labeled_candidates']}\n"
               f"- Partially labeled: {manifest['partially_labeled_candidates']}\n"
               f"- Unlabeled: {manifest['unlabeled_candidates']}\n"
-              f"- Opponent mixture: `{manifest['opponent_mixture_version']}`\n"
+              f"- Mean full-mixture interval width: {mean_width:.3f}\n"
+              f"- Opponent weighting: `{manifest['opponent_weight_semantics']}`\n"
               f"- Continuation mixture: `{manifest['continuation_mixture_version']}`\n"
           )
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
@@ -195,22 +210,34 @@ jobs:
           assert manifest["decisions_requested"] == 1, manifest
           assert manifest["candidate_count"] == len(rows), (manifest, len(rows))
           assert manifest["candidate_count"] > 0, manifest
-          assert manifest["target_semantics"] == "policy_conditional_terminal_return_estimate"
+          assert manifest["target_semantics"] == "search_policy_terminal_return_with_unresolved_bounds_v2"
+          assert manifest["opponent_weight_semantics"] == "normalized_search_policy_proxy_not_empirical_behavior_probability"
           assert manifest["turn_limit_is_unlabeled"] is True
+          widths = []
           for row in rows:
               assert row["decision_id"]
               assert row["candidate_id"]
               assert row["assumptions"]["rules_version"] != "unknown"
-              coverage = row["target_estimate"]["labeled_weight_fraction"]
+              assert row["assumptions"]["opponent_policy_computed_once_from_pre_turn_state"] is True
+              estimate = row["target_estimate"]
+              coverage = estimate["labeled_weight_fraction"]
+              lower = estimate["full_mixture_lower_bound"]
+              upper = estimate["full_mixture_upper_bound"]
               assert 0.0 <= coverage <= 1.0
+              assert -1.0 <= lower <= upper <= 1.0, estimate
+              assert "best_response_value_lower_bound" in estimate
+              assert "best_response_value_upper_bound" in estimate
+              widths.append(upper - lower)
 
+          mean_width = sum(widths) / len(widths)
           summary = (
               f"## Counterfactual benchmark: {case_id}\n\n"
               f"- Candidates: {manifest['candidate_count']}\n"
               f"- Fully labeled: {manifest['fully_labeled_candidates']}\n"
               f"- Partially labeled: {manifest['partially_labeled_candidates']}\n"
               f"- Unlabeled: {manifest['unlabeled_candidates']}\n"
-              f"- Opponent mixture: `{manifest['opponent_mixture_version']}`\n"
+              f"- Mean full-mixture interval width: {mean_width:.3f}\n"
+              f"- Opponent weighting: `{manifest['opponent_weight_semantics']}`\n"
               f"- Continuation mixture: `{manifest['continuation_mixture_version']}`\n"
           )
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
