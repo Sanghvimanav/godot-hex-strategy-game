@@ -50,10 +50,7 @@ def _split_groups(examples: list[dict], split_key: str) -> list[str]:
     return sorted({example_group_value(example, split_key) for example in examples})
 
 
-def _input_conflict_metrics(
-    examples: list[dict], encoder: HexStateEncoder
-) -> dict[str, int]:
-    """Count identical encoded model inputs that carry incompatible value targets."""
+def _input_conflict_metrics(examples: list[dict], encoder: HexStateEncoder) -> dict[str, int]:
     grouped: dict[str, list[float]] = {}
     for example in examples:
         encoded = encoder.encode(example)
@@ -62,17 +59,13 @@ def _input_conflict_metrics(
         digest.update(json.dumps(encoded.global_features.tolist(), separators=(",", ":")).encode("utf-8"))
         grouped.setdefault(digest.hexdigest(), []).append(float(encoded.target.item()))
 
-    duplicate_groups = 0
-    duplicate_examples = 0
-    conflicting_groups = 0
-    conflicting_examples = 0
+    duplicate_groups = duplicate_examples = conflicting_groups = conflicting_examples = 0
     for targets in grouped.values():
         if len(targets) <= 1:
             continue
         duplicate_groups += 1
         duplicate_examples += len(targets)
-        distinct = {round(value, 8) for value in targets}
-        if len(distinct) > 1:
+        if len({round(value, 8) for value in targets}) > 1:
             conflicting_groups += 1
             conflicting_examples += len(targets)
     return {
@@ -84,13 +77,6 @@ def _input_conflict_metrics(
 
 
 def _load_handwritten_baseline(path: str | None, expected_examples: int) -> dict | None:
-    """Load scores emitted by the real Godot PureStateEvaluator.
-
-    The training pipeline deliberately does not reimplement the handwritten evaluator
-    in Python. If a baseline is supplied, it must carry an evaluator fingerprint and
-    one score per held-out nonterminal example; otherwise no handwritten comparison is
-    reported. This prevents an offline copy from silently drifting from gameplay.
-    """
     if not path:
         return None
     payload = json.loads(Path(path).read_text())
@@ -143,11 +129,10 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
     eval_examples = validation_examples if validation_examples else train_examples
     eval_dataset = validation_dataset if validation_examples else train_dataset
     eval_metrics = _evaluate(model, eval_dataset, args.batch_size, device)
-
     nonterminal_eval = [example for example in eval_examples if not bool(example.get("terminal", False))]
     nonterminal_dataset = ValueExampleDataset(nonterminal_eval, encoder)
     neural_nonterminal_metrics = _evaluate(model, nonterminal_dataset, args.batch_size, device)
-    baseline = _load_handwritten_baseline(args.handwritten_baseline, len(nonterminal_eval))
+    baseline = _load_handwritten_baseline(getattr(args, "handwritten_baseline", None), len(nonterminal_eval))
 
     checkpoint = {
         "model_state_dict": model.state_dict(),
@@ -166,15 +151,13 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
     output.parent.mkdir(parents=True, exist_ok=True)
     torch.save(checkpoint, output)
 
-    train_groups = _split_groups(train_examples, args.split_key)
-    validation_groups = _split_groups(validation_examples, args.split_key)
     result: dict[str, float | int | str | list[str]] = {
         "examples": len(all_examples),
         "train_examples": len(train_examples),
         "validation_examples": len(validation_examples),
         "split_key": args.split_key,
-        "train_split_groups": train_groups,
-        "validation_split_groups": validation_groups,
+        "train_split_groups": _split_groups(train_examples, args.split_key),
+        "validation_split_groups": _split_groups(validation_examples, args.split_key),
         "all_duplicate_input_groups": all_conflicts["duplicate_input_groups"],
         "all_duplicate_input_examples": all_conflicts["duplicate_input_examples"],
         "all_conflicting_input_groups": all_conflicts["conflicting_input_groups"],
@@ -196,12 +179,12 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
         "checkpoint": str(output),
     }
     if baseline is not None:
-        baseline_targets = [float(example.get("outcome", 0.0)) for example in nonterminal_eval]
-        baseline_accuracy = sign_accuracy(baseline["scores"], baseline_targets)
-        comparison_delta = neural_nonterminal_metrics["sign_accuracy"] - baseline_accuracy
+        targets = [float(example.get("outcome", 0.0)) for example in nonterminal_eval]
+        baseline_accuracy = sign_accuracy(baseline["scores"], targets)
+        delta = neural_nonterminal_metrics["sign_accuracy"] - baseline_accuracy
         result["handwritten_eval_sign_accuracy_nonterminal"] = baseline_accuracy
-        result["neural_minus_handwritten_sign_accuracy_nonterminal"] = comparison_delta
-        result["neural_minus_handwritten_sign_accuracy"] = comparison_delta
+        result["neural_minus_handwritten_sign_accuracy_nonterminal"] = delta
+        result["neural_minus_handwritten_sign_accuracy"] = delta
         result["handwritten_evaluator_fingerprint"] = baseline["evaluator_fingerprint"]
     else:
         result["handwritten_comparison_status"] = "not_reported_without_godot_baseline"
@@ -212,27 +195,19 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train the V1 neural value model on schema-v1 self-play JSONL.")
-    parser.add_argument("--data", required=True, help="Path to JSONL emitted by PureStateTrainingData")
+    parser.add_argument("--data", required=True)
     parser.add_argument("--output", default="artifacts/value_model.pt")
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--validation-fraction", type=float, default=0.2)
-    parser.add_argument(
-        "--split-key",
-        default="game_id",
-        help="Dotted example key used to keep related examples together (for example source.base_scenario_id)",
-    )
+    parser.add_argument("--split-key", default="game_id")
     parser.add_argument("--hidden-channels", type=int, default=32)
     parser.add_argument("--residual-blocks", type=int, default=2)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cpu")
-    parser.add_argument(
-        "--handwritten-baseline",
-        default=None,
-        help="Optional JSON scores emitted by the real Godot evaluator; Python does not reimplement it.",
-    )
+    parser.add_argument("--handwritten-baseline", default=None)
     return parser
 
 
