@@ -7,6 +7,7 @@ class_name GameplayAI
 ## call lower-level search classes when they intentionally inspect candidate sets.
 
 const PureStateOpponentResponseSearch = preload("res://src/simulation/pure_state_opponent_response_search.gd")
+const PureStatePolicyExploration = preload("res://src/simulation/pure_state_policy_exploration.gd")
 
 const POLICY_OPPONENT_RESPONSE := "opponent_response"
 const EVALUATOR_HANDWRITTEN := "handwritten"
@@ -19,6 +20,8 @@ const DEFAULT_SETTINGS := {
 	"opponent_max_actions_per_unit": PureStateOpponentResponseSearch.DEFAULT_OPPONENT_MAX_ACTIONS_PER_UNIT,
 	"opponent_max_plans": PureStateOpponentResponseSearch.DEFAULT_OPPONENT_MAX_PLANS,
 	"fixed_other_group_actions": {},
+	"exploration_profile": PureStatePolicyExploration.PROFILE_GREEDY,
+	"exploration_seed": 0,
 }
 
 
@@ -31,11 +34,15 @@ static func choose_actions(
 	var resolved := resolve_settings(settings)
 	var policy := str(resolved.get("policy", ""))
 	var evaluator := str(resolved.get("evaluator", ""))
+	var exploration_profile := str(resolved.get("exploration_profile", PureStatePolicyExploration.PROFILE_GREEDY))
+	var exploration_seed := int(resolved.get("exploration_seed", 0))
 
 	if policy != POLICY_OPPONENT_RESPONSE:
 		return _invalid_result("unsupported_policy", resolved)
 	if evaluator != EVALUATOR_HANDWRITTEN:
 		return _invalid_result("unsupported_evaluator", resolved)
+	if not PureStatePolicyExploration.is_supported_profile(exploration_profile):
+		return _invalid_result("unsupported_exploration_profile", resolved)
 
 	var fixed_actions_variant = resolved.get("fixed_other_group_actions", {})
 	if not (fixed_actions_variant is Dictionary):
@@ -55,14 +62,28 @@ static func choose_actions(
 	if not bool(search.get("valid", false)):
 		return _invalid_result("decision_failed", resolved, search)
 
+	var selection := PureStatePolicyExploration.select_result(
+		search,
+		game_state,
+		group_name,
+		exploration_profile,
+		exploration_seed
+	)
+	if selection.is_empty():
+		return _invalid_result("exploration_selection_failed", resolved, search)
+	var actions: Array = (selection.get("actions", []) as Array).duplicate(true)
+	var diagnostics := search.duplicate(true)
+	diagnostics["selected_actions"] = actions.duplicate(true)
+	diagnostics["exploration"] = selection.duplicate(true)
+
 	return {
 		"valid": true,
 		"error": "",
-		"actions": (search.get("best_actions", []) as Array).duplicate(true),
+		"actions": actions,
 		"policy": policy,
 		"evaluator": evaluator,
 		"settings": resolved.duplicate(true),
-		"diagnostics": search.duplicate(true),
+		"diagnostics": diagnostics,
 	}
 
 

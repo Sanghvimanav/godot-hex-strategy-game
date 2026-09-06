@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 from pathlib import Path
@@ -49,6 +50,42 @@ def _split_groups(examples: list[dict], split_key: str) -> list[str]:
     return sorted({example_group_value(example, split_key) for example in examples})
 
 
+def _input_conflict_metrics(
+    examples: list[dict], encoder: HexStateEncoder
+) -> dict[str, int]:
+    """Count identical encoded model inputs that carry incompatible value targets."""
+    grouped: dict[str, list[float]] = {}
+    for example in examples:
+        encoded = encoder.encode(example)
+        digest = hashlib.sha256()
+        # Keep the standalone test workflow dependency-light: PyTorch is present,
+        # but NumPy is intentionally not required. Tensor tolist() is stable for
+        # these small float32 state encodings and hashes the exact model inputs.
+        digest.update(json.dumps(encoded.board.flatten().tolist(), separators=(",", ":")).encode("utf-8"))
+        digest.update(json.dumps(encoded.global_features.tolist(), separators=(",", ":")).encode("utf-8"))
+        grouped.setdefault(digest.hexdigest(), []).append(float(encoded.target.item()))
+
+    duplicate_groups = 0
+    duplicate_examples = 0
+    conflicting_groups = 0
+    conflicting_examples = 0
+    for targets in grouped.values():
+        if len(targets) <= 1:
+            continue
+        duplicate_groups += 1
+        duplicate_examples += len(targets)
+        distinct = {round(value, 8) for value in targets}
+        if len(distinct) > 1:
+            conflicting_groups += 1
+            conflicting_examples += len(targets)
+    return {
+        "duplicate_input_groups": duplicate_groups,
+        "duplicate_input_examples": duplicate_examples,
+        "conflicting_input_groups": conflicting_groups,
+        "conflicting_input_examples": conflicting_examples,
+    }
+
+
 def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
     _seed_everything(args.seed)
     all_examples = load_jsonl_examples(args.data)
@@ -61,6 +98,9 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
         group_key=args.split_key,
     )
     encoder = HexStateEncoder()
+    all_conflicts = _input_conflict_metrics(all_examples, encoder)
+    train_conflicts = _input_conflict_metrics(train_examples, encoder)
+    validation_conflicts = _input_conflict_metrics(validation_examples, encoder)
     train_dataset = ValueExampleDataset(train_examples, encoder)
     validation_dataset = ValueExampleDataset(validation_examples, encoder)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
@@ -122,6 +162,16 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
         "split_key": args.split_key,
         "train_split_groups": train_groups,
         "validation_split_groups": validation_groups,
+        "all_duplicate_input_groups": all_conflicts["duplicate_input_groups"],
+        "all_duplicate_input_examples": all_conflicts["duplicate_input_examples"],
+        "all_conflicting_input_groups": all_conflicts["conflicting_input_groups"],
+        "all_conflicting_input_examples": all_conflicts["conflicting_input_examples"],
+        "train_duplicate_input_groups": train_conflicts["duplicate_input_groups"],
+        "train_duplicate_input_examples": train_conflicts["duplicate_input_examples"],
+        "train_conflicting_input_groups": train_conflicts["conflicting_input_groups"],
+        "train_conflicting_input_examples": train_conflicts["conflicting_input_examples"],
+        "validation_conflicting_input_groups": validation_conflicts["conflicting_input_groups"],
+        "validation_conflicting_input_examples": validation_conflicts["conflicting_input_examples"],
         "train_mse": train_metrics["mse"],
         "train_sign_accuracy": train_metrics["sign_accuracy"],
         "eval_mse": eval_metrics["mse"],

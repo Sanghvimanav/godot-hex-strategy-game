@@ -76,6 +76,9 @@ func _run_dataset() -> void:
 			continue
 		var job: Dictionary = job_variant
 		var game_id := str(job.get("game_id", ""))
+		var policy_exploration: Dictionary = job.get("policy_exploration", {}) if job.get("policy_exploration", {}) is Dictionary else {}
+		var policy_profile := str(policy_exploration.get("profile", "greedy"))
+		var policy_seed := int(policy_exploration.get("seed", 0))
 		var source_metadata := {
 			"rules_version": rules_version,
 			"self_play_suite_version": PureStateSelfPlaySuite.SUITE_VERSION,
@@ -85,6 +88,9 @@ func _run_dataset() -> void:
 			"rotation_steps": int(job.get("rotation_steps", 0)),
 			"variation_seed": int(job.get("variation_seed", 0)),
 			"training_variant": bool(job.get("training_variant", false)),
+			"policy_replay": bool(job.get("policy_replay", false)),
+			"policy_exploration_profile": policy_profile,
+			"policy_exploration_seed": policy_seed,
 			"base_scenario_id": str(job.get("scenario_id", "")),
 		}
 		var result := PureStateTrainingData.generate_game_examples(
@@ -97,7 +103,8 @@ func _run_dataset() -> void:
 			int(job.get("own_max_plans", 1)),
 			int(job.get("opponent_max_plans", 1)),
 			source_metadata,
-			str(job.get("turn_limit_winner", ""))
+			str(job.get("turn_limit_winner", "")),
+			policy_exploration
 		)
 
 		var valid := bool(result.get("valid", false))
@@ -129,6 +136,9 @@ func _run_dataset() -> void:
 			"rotation_steps": int(job.get("rotation_steps", 0)),
 			"variation_seed": int(job.get("variation_seed", 0)),
 			"training_variant": bool(job.get("training_variant", false)),
+			"policy_replay": bool(job.get("policy_replay", false)),
+			"policy_exploration_profile": policy_profile,
+			"policy_exploration_seed": policy_seed,
 			"diversity_version": int(job.get("diversity_version", 0)),
 			"max_turns": int(job.get("max_turns", 0)),
 			"turn_limit_winner": str(job.get("turn_limit_winner", "")),
@@ -144,12 +154,14 @@ func _run_dataset() -> void:
 			"example_count": example_count,
 		}
 		game_summaries.append(summary)
-		print("[self-play] %s profile=%s rotation=%d seed=%d variant=%s status=%s winner=%s turns=%d non_progress=%d examples=%d" % [
+		print("[self-play] %s profile=%s rotation=%d seed=%d variant=%s policy=%s policy_seed=%d status=%s winner=%s turns=%d non_progress=%d examples=%d" % [
 			game_id,
 			str(job.get("budget_profile", "")),
 			int(job.get("rotation_steps", 0)),
 			int(job.get("variation_seed", 0)),
 			str(bool(job.get("training_variant", false))),
+			policy_profile,
+			policy_seed,
 			status,
 			winner,
 			int(result.get("turns_played", 0)),

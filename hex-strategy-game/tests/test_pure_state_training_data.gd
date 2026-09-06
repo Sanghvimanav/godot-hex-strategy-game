@@ -9,6 +9,7 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_terminal_game_emits_paired_value_examples(tests) and ok
 	ok = _test_terminal_draw_emits_zero_targets(tests) and ok
 	ok = _test_turn_limit_emits_no_supervised_targets(tests) and ok
+	ok = _test_exploration_replay_starts_after_divergence(tests) and ok
 	return ok
 
 
@@ -180,6 +181,78 @@ static func _test_turn_limit_emits_no_supervised_targets(tests: Node) -> bool:
 	return true
 
 
+static func _test_exploration_replay_starts_after_divergence(tests: Node) -> bool:
+	tests._log("test_pure_state_training_data: exploration skips shared pre-divergence states")
+	var shared := _synthetic_training_state("shared", 0)
+	var explore_after := _synthetic_training_state("explore_after", 1)
+	var greedy_after := _synthetic_training_state("greedy_after", -1)
+	var explore_final := _synthetic_training_state("explore_final", 2)
+	var greedy_final := _synthetic_training_state("greedy_final", -2)
+	var exploration_rollout := {
+		"valid": true,
+		"status": "terminal",
+		"winner": "terran",
+		"termination_reason": "elimination",
+		"turns_played": 2,
+		"max_non_progress_streak": 0,
+		"history": [
+			{"state_before": shared.duplicate(true)},
+			{"state_before": explore_after.duplicate(true)},
+		],
+		"final_state": explore_final.duplicate(true),
+	}
+	var greedy_rollout := {
+		"valid": true,
+		"status": "terminal",
+		"winner": "zerg",
+		"termination_reason": "elimination",
+		"turns_played": 2,
+		"max_non_progress_streak": 0,
+		"history": [
+			{"state_before": shared.duplicate(true)},
+			{"state_before": greedy_after.duplicate(true)},
+		],
+		"final_state": greedy_final.duplicate(true),
+	}
+	var divergence := PureStateTrainingData.first_divergent_state_index(exploration_rollout, greedy_rollout)
+	if divergence != 1:
+		tests._fail("expected first novel exploration state at turn 1, got %d" % divergence)
+		return false
+	var result := PureStateTrainingData.build_examples_from_rollout(
+		exploration_rollout,
+		"terran",
+		"zerg",
+		"explore-divergence-test",
+		{"training_start_turn": divergence, "policy_exploration_profile": "light"}
+	)
+	var examples: Array = result.get("examples", [])
+	if examples.size() != 4:
+		tests._fail("two post-divergence states from two perspectives should emit 4 examples, got %d" % examples.size())
+		return false
+	if int((examples[0] as Dictionary).get("turn_index", -1)) != 1:
+		tests._fail("first exploration training example must begin after divergence")
+		return false
+	if (examples[0] as Dictionary).get("state", {}) == shared:
+		tests._fail("shared pre-divergence state must not be emitted by exploration replay")
+		return false
+	var identical_divergence := PureStateTrainingData.first_divergent_state_index(exploration_rollout, exploration_rollout)
+	if identical_divergence != -1:
+		tests._fail("identical replay should have no novel training state")
+		return false
+	var no_novel_examples := PureStateTrainingData.build_examples_from_rollout(
+		exploration_rollout,
+		"terran",
+		"zerg",
+		"explore-identical-test",
+		{"training_start_turn": -1, "policy_exploration_profile": "light"}
+	)
+	if not (no_novel_examples.get("examples", []) as Array).is_empty():
+		tests._fail("non-divergent exploration replay must add zero supervised examples")
+		return false
+	tests._pass("exploration replays add only states created after trajectory divergence")
+	return true
+
+
 static func _collapse_state() -> Dictionary:
 	return {
 		"scenario_id": "training_collapse",
@@ -212,6 +285,18 @@ static func _distant_scout_vs_zergling_state() -> Dictionary:
 			{"name": "zerg", "resources": {}, "units": [
 				_make_unit(2, "res://src/unit/definitions/zergling.tres", Vector2i(-4, 0)),
 			]},
+		],
+		"tile_resources": {},
+	}
+
+
+static func _synthetic_training_state(scenario_id: String, marker: int) -> Dictionary:
+	return {
+		"scenario_id": scenario_id,
+		"hex_radius": 2,
+		"groups": [
+			{"name": "terran", "resources": {"marker": marker}, "units": []},
+			{"name": "zerg", "resources": {}, "units": []},
 		],
 		"tile_resources": {},
 	}
