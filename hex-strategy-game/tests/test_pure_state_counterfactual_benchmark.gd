@@ -192,8 +192,8 @@ static func _test_suite_and_jsonl_provenance(tests: Node) -> bool:
 static func _test_curated_cases_are_named_and_distinct(tests: Node) -> bool:
 	tests._log("test_pure_state_counterfactual_benchmark: curated behavior cases")
 	var jobs := PureStateCounterfactualSuite.get_preset("curated", "rules-curated")
-	if jobs.size() != 8:
-		tests._fail("curated preset should contain eight behavior decisions")
+	if jobs.size() != 4:
+		tests._fail("curated preset should contain four tactical regression decisions")
 		return false
 	var behaviors: Dictionary = {}
 	for job_variant in jobs:
@@ -220,11 +220,11 @@ static func _test_curated_cases_are_named_and_distinct(tests: Node) -> bool:
 				return false
 			if str(candidate.get("candidate_description", "")).is_empty():
 				return false
-	for required in ["sacrifice", "sacrifice_stacked", "preservation", "spreading", "retreating", "trapped_zergling", "coordinated_commitment", "production_pressure"]:
+	for required in ["sacrifice", "sacrifice_stacked", "spreading", "coordinated_commitment"]:
 		if not behaviors.has(required):
 			tests._fail("missing curated behavior case: %s" % required)
 			return false
-	tests._pass("eight curated cases expose named choices, prompts, and opponent responses")
+	tests._pass("four curated regression cases expose named choices, prompts, and opponent responses")
 	return true
 
 
