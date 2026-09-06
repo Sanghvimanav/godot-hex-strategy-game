@@ -7,6 +7,7 @@ static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_unresolved_mass_expands_full_mixture_bounds(tests) and ok
 	ok = _test_search_policy_ignores_author_likelihood_weights(tests) and ok
+	ok = _test_curated_responses_are_stress_only(tests) and ok
 	ok = _test_interval_pairwise_requires_nonoverlap(tests) and ok
 	return ok
 
@@ -67,6 +68,38 @@ static func _test_search_policy_ignores_author_likelihood_weights(tests: Node) -
 		tests._fail("search policy weights should normalize to one")
 		return false
 	tests._pass("authored response weights no longer masquerade as likelihoods")
+	return true
+
+
+static func _test_curated_responses_are_stress_only(tests: Node) -> bool:
+	tests._log("test_pure_state_counterfactual_answer_key: curated stress separation")
+	var stress := PureStateCounterfactualAnswerKey._build_curated_stress_samples({
+		"opponent_samples": [
+			{"sample_id": "author-favorite", "actions": [], "weight": 0.9},
+			{"sample_id": "author-rare", "actions": [], "weight": 0.1},
+		],
+	})
+	if stress.size() != 2:
+		tests._fail("authored responses should remain available as two stress cases")
+		return false
+	var favorite: Dictionary = stress[0]
+	var rare: Dictionary = stress[1]
+	if not bool(favorite.get("curated", false)) or str(favorite.get("source", "")) != "curated_stress":
+		tests._fail("authored responses must be labeled as curated stress cases")
+		return false
+	if not is_equal_approx(float(favorite.get("author_sampling_weight", 0.0)), 0.9):
+		tests._fail("historical author weight should survive only as metadata")
+		return false
+	if not is_equal_approx(float(rare.get("author_sampling_weight", 0.0)), 0.1):
+		tests._fail("historical author weight should survive only as metadata")
+		return false
+	if not is_zero_approx(float(favorite.get("search_policy_weight", -1.0))) or not is_zero_approx(float(rare.get("search_policy_weight", -1.0))):
+		tests._fail("curated cases must have zero search-policy probability")
+		return false
+	if not is_equal_approx(float(favorite.get("weight", 0.0)), 1.0) or not is_equal_approx(float(rare.get("weight", 0.0)), 1.0):
+		tests._fail("curated pass should allocate equal evaluation effort independent of author weights")
+		return false
+	tests._pass("authored cases are preserved for stress testing but excluded from policy value")
 	return true
 
 
