@@ -7,9 +7,9 @@ class_name PureStateCounterfactualCuratedSuite
 
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
-const SUITE_VERSION := 4
-const OPPONENT_MIXTURE_VERSION := "scenario_curated_responses_v4"
-const CONTINUATION_MIXTURE_VERSION := "scenario_curated_continuation_1x1_2x2_v4"
+const SUITE_VERSION := 5
+const OPPONENT_MIXTURE_VERSION := "scenario_curated_responses_v5"
+const CONTINUATION_MIXTURE_VERSION := "scenario_curated_continuation_1x1_2x2_v5"
 
 const CONTINUATION_PROFILES := [
 	{
@@ -34,6 +34,7 @@ const CONTINUATION_PROFILES := [
 static func get_jobs(rules_version: String = "unknown") -> Array:
 	return [
 		_sacrifice_job(rules_version),
+		_stacked_sacrifice_job(rules_version),
 		_preservation_job(rules_version),
 		_spreading_job(rules_version),
 		_retreat_job(rules_version),
@@ -59,12 +60,12 @@ static func _sacrifice_job(rules_version: String) -> Dictionary:
 	return _job(
 		"curated-sacrifice-baneling",
 		"sacrifice",
-		"Because the Baneling explodes in the slow-ability phase, should Zerg detonate against two adjacent weakened Marines despite possible disengagement, reposition it, or preserve it?",
+		"Because the Baneling explodes in the slow-ability phase, should Zerg detonate against two adjacent weakened Marines that can move outward beyond the blast radius, reposition it, or preserve it?",
 		state,
 		"zerg",
 		"terran",
 		[
-			_candidate("explode_now", "Explode now", "Commit to a slow-phase explosion that kills weakened Marines only if they remain adjacent.", [
+			_candidate("explode_now", "Explode now", "Commit to a slow-phase explosion that kills weakened Marines only if they remain within the center-plus-adjacent blast area.", [
 				_action(4, "explode", [0, 0]),
 				_action(5, "fast_move", [0, 0]),
 				_action(6, "reload", [-1, 1]),
@@ -86,15 +87,78 @@ static func _sacrifice_job(rules_version: String) -> Dictionary:
 				_action(2, "attack_short", [0, 0]),
 				_action(3, "move_short", [1, 0]),
 			]),
-			_opponent("weak_marines_disengage", 0.3, [
-				_action(1, "move_short", [1, -1]),
-				_action(2, "move_short", [-1, 1]),
+			_opponent("weak_marines_escape_blast", 0.3, [
+				# From distance one, a normal one-hex move can reach distance two
+				# before the Baneling's slow explosion resolves.
+				_action(1, "move_short", [2, -1]),
+				_action(2, "move_short", [-1, 2]),
 				_action(3, "attack_short", [1, 0]),
 			]),
 			_opponent("healthy_marine_reinforces", 0.3, [
 				_action(1, "attack_short", [0, 0]),
 				_action(2, "attack_short", [0, 0]),
 				_action(3, "move_short", [1, 0]),
+			]),
+		],
+		rules_version
+	)
+
+
+static func _stacked_sacrifice_job(rules_version: String) -> Dictionary:
+	var state := _state("counterfactual_curated_sacrifice_stacked", 4, [
+		_group("terran", [
+			# These weakened Marines begin on the Baneling's own tile. Normal
+			# one-hex movement can only move them into the adjacent blast ring,
+			# so movement alone cannot escape a slow-phase explosion at [0,0].
+			_unit(1, "marine", [0, 0], 2),
+			_unit(2, "marine", [0, 0], 2),
+			_unit(3, "marine", [2, 0]),
+		]),
+		_group("zerg", [
+			_unit(4, "baneling", [0, 0]),
+			_unit(5, "zergling", [-1, 0]),
+			_unit(6, "zergling", [-1, 1]),
+		]),
+	])
+	return _job(
+		"curated-sacrifice-baneling-stacked",
+		"sacrifice_stacked",
+		"Two weakened Marines share the Baneling's tile. Because a one-hex move still leaves them inside its center-plus-adjacent blast radius, should Zerg take the guaranteed local trade now, preserve the Baneling, or withdraw it?",
+		state,
+		"zerg",
+		"terran",
+		[
+			_candidate("explode_now_stacked", "Explode while stacked", "Detonate on the shared tile; a one-hex Marine move still ends inside the blast ring.", [
+				_action(4, "explode", [0, 0]),
+				_action(5, "reload", [-1, 0]),
+				_action(6, "reload", [-1, 1]),
+			]),
+			_candidate("preserve_stacked", "Preserve the Baneling", "Do not detonate despite already having two weakened Marines trapped within one-move blast range.", [
+				_action(4, "reload", [0, 0]),
+				_action(5, "reload", [-1, 0]),
+				_action(6, "reload", [-1, 1]),
+			]),
+			_candidate("withdraw_stacked", "Withdraw the Baneling", "Move the Baneling away before the slow phase and give up the immediate two-Marine blast opportunity.", [
+				_action(4, "move_short", [0, -1]),
+				_action(5, "reload", [-1, 0]),
+				_action(6, "reload", [-1, 1]),
+			]),
+		],
+		[
+			_opponent("stacked_marines_hold", 0.4, [
+				_action(1, "rest_no_energy", [0, 0]),
+				_action(2, "rest_no_energy", [0, 0]),
+				_action(3, "reload", [2, 0]),
+			]),
+			_opponent("stacked_marines_step_out", 0.3, [
+				_action(1, "move_short", [1, -1]),
+				_action(2, "move_short", [-1, 1]),
+				_action(3, "reload", [2, 0]),
+			]),
+			_opponent("stacked_marines_split_edges", 0.3, [
+				_action(1, "move_short", [1, 0]),
+				_action(2, "move_short", [0, 1]),
+				_action(3, "reload", [2, 0]),
 			]),
 		],
 		rules_version
