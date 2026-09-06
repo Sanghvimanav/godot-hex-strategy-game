@@ -7,8 +7,8 @@ class_name PureStateCounterfactualCuratedSuite
 
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
-const SUITE_VERSION := 7
-const OPPONENT_MIXTURE_VERSION := "scenario_curated_responses_v7"
+const SUITE_VERSION := 8
+const OPPONENT_MIXTURE_VERSION := "scenario_curated_responses_v8"
 const CONTINUATION_MIXTURE_VERSION := "scenario_curated_continuation_1x1_2x2_v5"
 
 const CONTINUATION_PROFILES := [
@@ -35,7 +35,6 @@ static func get_jobs(rules_version: String = "unknown") -> Array:
 	return [
 		_sacrifice_job(rules_version),
 		_stacked_sacrifice_job(rules_version),
-		_preservation_job(rules_version),
 		_spreading_job(rules_version),
 		_coordinated_commitment_job(rules_version),
 	]
@@ -152,68 +151,6 @@ static func _stacked_sacrifice_job(rules_version: String) -> Dictionary:
 			_opponent("stacked_marines_split_edges", 0.3, [
 				_action(1, "move_short", [1, 0]),
 				_action(2, "move_short", [0, 1]),
-			]),
-		],
-		rules_version
-	)
-
-
-static func _preservation_job(rules_version: String) -> Dictionary:
-	var state := _state("counterfactual_curated_preservation", 4, [
-		_group("terran", [
-			# One adjacent Zergling can hit in the fast phase, but cannot kill
-			# the Scout before its normal move and the Medic's normal heal.
-			_unit(1, "scout", [0, 0], 2),
-			_unit(2, "marine", [-1, 0]),
-			_unit(3, "medic", [-1, 1]),
-		]),
-		_group("zerg", [
-			_unit(4, "zergling", [1, 0]),
-			_unit(5, "zergling", [2, -1]),
-			# The Hydralisk starts exactly two hexes from the Scout. Staying at
-			# [0,0] remains in Needle Spine range; retreating to [-1,1] breaks it.
-			_unit(6, "hydralisk", [2, 0]),
-		]),
-	])
-	return _job(
-		"curated-preserve-wounded-scout",
-		"preservation",
-		"After one survivable fast hit, should the wounded Scout retreat out of Hydralisk range and receive healing, remain exposed while being healed, or retreat without spending Medic energy?",
-		state,
-		"terran",
-		"zerg",
-		[
-			_candidate("evacuate_and_heal", "Evacuate and heal", "Take the survivable fast hit, move the Scout behind the line and out of Needle Spine range, then heal its destination.", [
-				_action(1, "move_short", [-1, 1]),
-				_action(2, "attack_short", [0, 0]),
-				_action(3, "heal_adjacent", [-1, 1]),
-			]),
-			_candidate("shoot_and_heal_in_place", "Shoot and heal in place", "Keep the Scout at [0,0] to fire while the Medic heals it, leaving it in Hydralisk range.", [
-				_action(1, "attack_ray", [1, 0]),
-				_action(2, "attack_short", [0, 0]),
-				_action(3, "heal_adjacent", [0, 0]),
-			]),
-			_candidate("withdraw_without_heal", "Withdraw without healing", "Move the Scout out of ranged pressure but save the Medic's energy instead of restoring the wounded unit.", [
-				_action(1, "move_short", [-1, 1]),
-				_action(2, "move_short", [0, 0]),
-				_action(3, "reload", [-1, 1]),
-			]),
-		],
-		[
-			_opponent("rush_and_hydra_covers_scout_cell", 0.5, [
-				_action(4, "fast_move", [0, 0]),
-				_action(5, "fast_move", [1, -1]),
-				_action(6, "attack_hydralisk", [0, 0]),
-			]),
-			_opponent("advance_and_hydra_covers_scout_cell", 0.3, [
-				_action(4, "fast_move", [0, -1]),
-				_action(5, "fast_move", [1, -1]),
-				_action(6, "attack_hydralisk", [0, 0]),
-			]),
-			_opponent("hold_and_reload", 0.2, [
-				_action(4, "reload", [1, 0]),
-				_action(5, "reload", [2, -1]),
-				_action(6, "reload", [2, 0]),
 			]),
 		],
 		rules_version
