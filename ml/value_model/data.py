@@ -43,7 +43,9 @@ OWN_HEALTH_CHANNEL = ENEMY_TYPE_OFFSET + len(UNIT_TYPES)
 ENEMY_HEALTH_CHANNEL = OWN_HEALTH_CHANNEL + 1
 OWN_ENERGY_CHANNEL = ENEMY_HEALTH_CHANNEL + 1
 ENEMY_ENERGY_CHANNEL = OWN_ENERGY_CHANNEL + 1
-BOARD_CHANNELS = ENEMY_ENERGY_CHANNEL + 1
+OWN_COMMAND_HEX_CHANNEL = ENEMY_ENERGY_CHANNEL + 1
+ENEMY_COMMAND_HEX_CHANNEL = OWN_COMMAND_HEX_CHANNEL + 1
+BOARD_CHANNELS = ENEMY_COMMAND_HEX_CHANNEL + 1
 
 GLOBAL_FEATURE_NAMES: tuple[str, ...] = (
     "own_alive_units",
@@ -92,6 +94,16 @@ def _cell(unit: dict[str, Any]) -> tuple[int, int] | None:
     return int(value[0]), int(value[1])
 
 
+def _command_cell(state: dict[str, Any], group_name: str) -> tuple[int, int] | None:
+    command_hexes = state.get("command_hexes", {})
+    if not isinstance(command_hexes, dict):
+        return None
+    value = command_hexes.get(group_name)
+    if not isinstance(value, list) or len(value) < 2:
+        return None
+    return int(value[0]), int(value[1])
+
+
 def _in_hex(q: int, r: int, radius: int) -> bool:
     s = -q - r
     return max(abs(q), abs(r), abs(s)) <= radius
@@ -119,6 +131,7 @@ class HexStateEncoder:
         perspective = str(example.get("perspective_group", ""))
         if not perspective:
             raise ValueError("perspective_group is required")
+        opponent = str(example.get("opponent_group", ""))
         state = example.get("state")
         if not isinstance(state, dict):
             raise ValueError("state must be an object")
@@ -133,6 +146,30 @@ class HexStateEncoder:
                 if _in_hex(q, r, radius):
                     board[VALID_MASK_CHANNEL, r + MAX_RADIUS, q + MAX_RADIUS] = 1.0
 
+        groups = state.get("groups", [])
+        if not isinstance(groups, list):
+            raise ValueError("state.groups must be an array")
+        if not opponent:
+            for group in groups:
+                if isinstance(group, dict):
+                    name = str(group.get("name", ""))
+                    if name and name != perspective:
+                        opponent = name
+                        break
+
+        for group_name, channel in (
+            (perspective, OWN_COMMAND_HEX_CHANNEL),
+            (opponent, ENEMY_COMMAND_HEX_CHANNEL),
+        ):
+            if not group_name:
+                continue
+            command_cell = _command_cell(state, group_name)
+            if command_cell is None:
+                continue
+            q, r = command_cell
+            if _in_hex(q, r, radius):
+                board[channel, r + MAX_RADIUS, q + MAX_RADIUS] = 1.0
+
         totals = {
             "own_units": 0.0,
             "enemy_units": 0.0,
@@ -143,10 +180,6 @@ class HexStateEncoder:
             "own_energy": 0.0,
             "enemy_energy": 0.0,
         }
-
-        groups = state.get("groups", [])
-        if not isinstance(groups, list):
-            raise ValueError("state.groups must be an array")
 
         for group in groups:
             if not isinstance(group, dict):
