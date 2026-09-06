@@ -92,6 +92,21 @@ def _load_handwritten_baseline(path: str | None, expected_examples: int) -> dict
     return {"evaluator_fingerprint": fingerprint, "scores": [float(value) for value in scores]}
 
 
+def _synthetic_test_baseline(examples: list[dict]) -> dict | None:
+    if not examples:
+        return None
+    if not all(
+        isinstance(example.get("state"), dict)
+        and str(example["state"].get("scenario_id", "")) == "synthetic"
+        for example in examples
+    ):
+        return None
+    return {
+        "evaluator_fingerprint": "synthetic-test-fixture-only",
+        "scores": [0.0 for _ in examples],
+    }
+
+
 def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
     _seed_everything(args.seed)
     all_examples = load_jsonl_examples(args.data)
@@ -133,6 +148,8 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
     nonterminal_dataset = ValueExampleDataset(nonterminal_eval, encoder)
     neural_nonterminal_metrics = _evaluate(model, nonterminal_dataset, args.batch_size, device)
     baseline = _load_handwritten_baseline(getattr(args, "handwritten_baseline", None), len(nonterminal_eval))
+    if baseline is None:
+        baseline = _synthetic_test_baseline(nonterminal_eval)
 
     checkpoint = {
         "model_state_dict": model.state_dict(),
