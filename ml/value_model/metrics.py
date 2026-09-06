@@ -1,8 +1,74 @@
 from __future__ import annotations
 
-from typing import Hashable, Sequence
+from typing import Any, Hashable, Sequence
 
 import torch
+
+
+def handwritten_evaluator_score(example: dict[str, Any]) -> float:
+    """Return a score produced by the real Godot evaluator.
+
+    Production experiment paths must annotate states with a Godot-computed score.
+    A tiny synthetic fallback remains only for the legacy unit-test fixture so the
+    metric module itself stays dependency-light. Real gameplay/counterfactual rows
+    without an annotation fail loudly instead of silently using a stale Python copy.
+    """
+    state = example.get("state", {})
+    if not isinstance(state, dict):
+        raise ValueError("handwritten evaluator requires a state object")
+    annotated = state.get("_godot_handwritten_evaluator_score")
+    if isinstance(annotated, (int, float)):
+        return float(annotated)
+    if str(state.get("scenario_id", "")) != "synthetic":
+        raise ValueError(
+            "handwritten evaluator score must come from Godot; missing "
+            "_godot_handwritten_evaluator_score"
+        )
+
+    # Legacy synthetic fixture only. Never used for experiment/gameplay data.
+    perspective = str(example.get("perspective_group", ""))
+    groups = [group for group in state.get("groups", []) if isinstance(group, dict)]
+    own = next((group for group in groups if str(group.get("name", "")) == perspective), None)
+    if own is None:
+        return 0.0
+
+    def totals(group: dict[str, Any]) -> tuple[int, float, float, float]:
+        units = 0
+        health = 0.0
+        energy = 0.0
+        for unit in group.get("units", []):
+            if not isinstance(unit, dict) or float(unit.get("health", 0.0)) <= 0.0:
+                continue
+            units += 1
+            health += float(unit.get("health", 0.0))
+            energy += max(0.0, float(unit.get("energy", 0.0)))
+        resources = group.get("resources", {})
+        resource_total = sum(
+            float(value)
+            for value in resources.values()
+            if isinstance(resources, dict) and isinstance(value, (int, float))
+        ) if isinstance(resources, dict) else 0.0
+        return units, health, resource_total, energy
+
+    own_units, own_health, own_resources, own_energy = totals(own)
+    enemy_units = 0
+    enemy_health = 0.0
+    enemy_resources = 0.0
+    enemy_energy = 0.0
+    for group in groups:
+        if str(group.get("name", "")) == perspective:
+            continue
+        units, health, resources, energy = totals(group)
+        enemy_units += units
+        enemy_health += health
+        enemy_resources += resources
+        enemy_energy += energy
+    return (
+        (own_units - enemy_units) * 100.0
+        + (own_health - enemy_health) * 10.0
+        + (own_resources - enemy_resources) * 2.0
+        + (own_energy - enemy_energy)
+    )
 
 
 def sign_accuracy(scores: Sequence[float] | torch.Tensor, targets: Sequence[float] | torch.Tensor) -> float:
@@ -36,15 +102,7 @@ def candidate_ranking_metrics(
     decision_ids: Sequence[Hashable],
     tie_tolerance: float = 1e-8,
 ) -> dict[str, float | int]:
-    """Measure pairwise ordering within each decision's candidate plans.
-
-    Target ties are omitted because neither candidate is objectively better.
-    Prediction ties receive half credit. Every remaining candidate pair is
-    weighted equally across the benchmark.
-    """
-    prediction_tensor, target_tensor, grouped = _group_candidate_indices(
-        predictions, targets, decision_ids
-    )
+    prediction_tensor, target_tensor, grouped = _group_candidate_indices(predictions, targets, decision_ids)
     correct_credit = 0.0
     comparable_pairs = 0
     decisions_with_pairs = 0
@@ -64,10 +122,8 @@ def candidate_ranking_metrics(
                     correct_credit += 1.0
         if decision_pairs > 0:
             decisions_with_pairs += 1
-
-    accuracy = correct_credit / comparable_pairs if comparable_pairs else float("nan")
     return {
-        "candidate_ranking_accuracy": accuracy,
+        "candidate_ranking_accuracy": correct_credit / comparable_pairs if comparable_pairs else float("nan"),
         "candidate_ranking_pairs": comparable_pairs,
         "candidate_ranking_decisions": decisions_with_pairs,
     }
@@ -81,14 +137,10 @@ def uncertainty_aware_candidate_ranking_metrics(
     separation_z: float = 1.96,
     tie_tolerance: float = 1e-8,
 ) -> dict[str, float | int]:
-    """Rank only candidate pairs the counterfactual samples meaningfully separate."""
-    prediction_tensor, target_tensor, grouped = _group_candidate_indices(
-        predictions, targets, decision_ids
-    )
+    prediction_tensor, target_tensor, grouped = _group_candidate_indices(predictions, targets, decision_ids)
     error_tensor = torch.as_tensor(target_standard_errors, dtype=torch.float32).flatten()
     if error_tensor.numel() != target_tensor.numel():
         raise ValueError("target_standard_errors must contain one value per candidate")
-
     correct_credit = 0.0
     comparable_pairs = 0
     decisions_with_pairs = 0
@@ -100,9 +152,7 @@ def uncertainty_aware_candidate_ranking_metrics(
                 target_delta = float(target_tensor[left] - target_tensor[right])
                 if abs(target_delta) <= tie_tolerance:
                     continue
-                combined_error = (
-                    float(error_tensor[left]) ** 2 + float(error_tensor[right]) ** 2
-                ) ** 0.5
+                combined_error = (float(error_tensor[left]) ** 2 + float(error_tensor[right]) ** 2) ** 0.5
                 if abs(target_delta) <= safe_z * combined_error:
                     continue
                 prediction_delta = float(prediction_tensor[left] - prediction_tensor[right])
@@ -114,10 +164,8 @@ def uncertainty_aware_candidate_ranking_metrics(
                     correct_credit += 1.0
         if decision_pairs > 0:
             decisions_with_pairs += 1
-
-    accuracy = correct_credit / comparable_pairs if comparable_pairs else float("nan")
     return {
-        "uncertainty_aware_candidate_ranking_accuracy": accuracy,
+        "uncertainty_aware_candidate_ranking_accuracy": correct_credit / comparable_pairs if comparable_pairs else float("nan"),
         "uncertainty_aware_candidate_ranking_pairs": comparable_pairs,
         "uncertainty_aware_candidate_ranking_decisions": decisions_with_pairs,
         "uncertainty_aware_separation_z": safe_z,
@@ -130,10 +178,7 @@ def top_plan_regret_metrics(
     decision_ids: Sequence[Hashable],
     tie_tolerance: float = 1e-8,
 ) -> dict[str, float | int]:
-    """Measure value lost by choosing the top predicted plan per decision."""
-    prediction_tensor, target_tensor, grouped = _group_candidate_indices(
-        predictions, targets, decision_ids
-    )
+    prediction_tensor, target_tensor, grouped = _group_candidate_indices(predictions, targets, decision_ids)
     regrets: list[float] = []
     optimal_choices = 0
     for indices in grouped.values():
@@ -146,7 +191,6 @@ def top_plan_regret_metrics(
         regrets.append(regret)
         if regret <= tie_tolerance:
             optimal_choices += 1
-
     if not regrets:
         return {
             "top_plan_mean_regret": float("nan"),
