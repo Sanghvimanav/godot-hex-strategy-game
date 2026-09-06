@@ -20,9 +20,21 @@ concurrency:
 jobs:
   pr-benchmark:
     if: github.event_name == 'pull_request'
-    name: Focused PR benchmark
+    name: Focused PR benchmark shard ${{ matrix.shard_index }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard_index: 0
+            decision_ids: "curated-sacrifice-baneling curated-sacrifice-baneling-stacked"
+          - shard_index: 1
+            decision_ids: "curated-preserve-wounded-scout curated-spread-marine-screen"
+          - shard_index: 2
+            decision_ids: "curated-retreat-wounded-marine curated-trapped-zergling-last-kill"
+          - shard_index: 3
+            decision_ids: "curated-attack-zerg-production-early curated-coordinate-fire-lanes"
 
     steps:
       - name: Checkout repository
@@ -41,79 +53,105 @@ jobs:
         working-directory: hex-strategy-game
         run: godot --headless --import
 
-      - name: Run curated counterfactual suite
+      - name: Run curated counterfactual shard
         shell: bash
+        env:
+          SHARD_INDEX: ${{ matrix.shard_index }}
+          DECISION_IDS: ${{ matrix.decision_ids }}
         run: |
           set -euo pipefail
-          out="${GITHUB_WORKSPACE}/artifacts/pr-curated"
           cd hex-strategy-game
-          timeout 15m bash tools/run_counterfactual_benchmark.sh \
-            --preset=curated \
-            --out="${out}"
+          for decision_id in ${DECISION_IDS}; do
+            out="${GITHUB_WORKSPACE}/artifacts/pr-curated/shard-${SHARD_INDEX}/${decision_id}"
+            echo "[counterfactual-ci] shard=${SHARD_INDEX} decision=${decision_id}"
+            timeout 8m bash tools/run_counterfactual_benchmark.sh \
+              --preset=curated \
+              --decision-id="${decision_id}" \
+              --out="${out}"
+          done
 
-      - name: Audit focused benchmark
+      - name: Audit focused benchmark shard
+        env:
+          SHARD_INDEX: ${{ matrix.shard_index }}
         run: |
           python - <<'PY'
           import json
           import os
           from pathlib import Path
 
-          root = Path("artifacts/pr-curated")
-          manifest = json.loads((root / "manifest.json").read_text())
-          rows = [
-              json.loads(line)
-              for line in (root / "candidates.jsonl").read_text().splitlines()
-              if line.strip()
-          ]
-          assert manifest["decisions_requested"] > 0, manifest
-          assert manifest["decisions_failed"] == 0, manifest
-          assert manifest["candidate_count"] == len(rows), (manifest, len(rows))
-          assert manifest["candidate_count"] > 0, manifest
-          assert manifest["target_semantics"] == "search_policy_terminal_return_with_unresolved_bounds_v2"
-          assert manifest["opponent_weight_semantics"] == "normalized_search_policy_proxy_not_empirical_behavior_probability"
-          assert manifest["turn_limit_is_unlabeled"] is True
+          shard_index = os.environ["SHARD_INDEX"]
+          root = Path("artifacts/pr-curated") / f"shard-{shard_index}"
+          decision_dirs = sorted(path for path in root.iterdir() if path.is_dir())
+          assert len(decision_dirs) == 2, decision_dirs
+
+          total_candidates = 0
+          total_full = 0
+          total_partial = 0
+          total_unlabeled = 0
           widths = []
-          for row in rows:
-              assert row["decision_id"]
-              assert row["candidate_id"]
-              assert row["assumptions"]["rules_version"] != "unknown"
-              assert row["assumptions"]["opponent_policy_computed_once_from_pre_turn_state"] is True
-              estimate = row["target_estimate"]
-              coverage = estimate["labeled_weight_fraction"]
-              lower = estimate["full_mixture_lower_bound"]
-              upper = estimate["full_mixture_upper_bound"]
-              known = estimate["known_weighted_return_contribution"]
-              assert 0.0 <= coverage <= 1.0
-              assert -1.0 <= lower <= upper <= 1.0, estimate
-              assert lower - 1e-9 <= known <= upper + 1e-9, estimate
-              assert "conditional_labeled_mean_return" in estimate
-              assert "best_response_value_lower_bound" in estimate
-              assert "best_response_value_upper_bound" in estimate
-              widths.append(upper - lower)
+          decision_ids = []
+
+          for decision_dir in decision_dirs:
+              manifest = json.loads((decision_dir / "manifest.json").read_text())
+              rows = [
+                  json.loads(line)
+                  for line in (decision_dir / "candidates.jsonl").read_text().splitlines()
+                  if line.strip()
+              ]
+              assert manifest["decisions_requested"] == 1, manifest
+              assert manifest["decisions_failed"] == 0, manifest
+              assert manifest["candidate_count"] == len(rows), (manifest, len(rows))
+              assert manifest["candidate_count"] > 0, manifest
+              assert manifest["target_semantics"] == "search_policy_terminal_return_with_unresolved_bounds_v2"
+              assert manifest["opponent_weight_semantics"] == "normalized_search_policy_proxy_not_empirical_behavior_probability"
+              assert manifest["turn_limit_is_unlabeled"] is True
+
+              for row in rows:
+                  assert row["decision_id"]
+                  assert row["candidate_id"]
+                  assert row["assumptions"]["rules_version"] != "unknown"
+                  assert row["assumptions"]["opponent_policy_computed_once_from_pre_turn_state"] is True
+                  estimate = row["target_estimate"]
+                  coverage = estimate["labeled_weight_fraction"]
+                  lower = estimate["full_mixture_lower_bound"]
+                  upper = estimate["full_mixture_upper_bound"]
+                  known = estimate["known_weighted_return_contribution"]
+                  assert 0.0 <= coverage <= 1.0
+                  assert -1.0 <= lower <= upper <= 1.0, estimate
+                  assert lower - 1e-9 <= known <= upper + 1e-9, estimate
+                  assert "conditional_labeled_mean_return" in estimate
+                  assert "best_response_value_lower_bound" in estimate
+                  assert "best_response_value_upper_bound" in estimate
+                  widths.append(upper - lower)
+
+              decision_ids.extend(decision["decision_id"] for decision in manifest["decisions"])
+              total_candidates += manifest["candidate_count"]
+              total_full += manifest["fully_labeled_candidates"]
+              total_partial += manifest["partially_labeled_candidates"]
+              total_unlabeled += manifest["unlabeled_candidates"]
 
           mean_width = sum(widths) / len(widths)
           summary = (
-              "## Focused counterfactual PR benchmark\n\n"
-              f"- Decisions: {manifest['decisions_requested']}\n"
-              f"- Candidates: {manifest['candidate_count']}\n"
-              f"- Fully labeled: {manifest['fully_labeled_candidates']}\n"
-              f"- Partially labeled: {manifest['partially_labeled_candidates']}\n"
-              f"- Unlabeled: {manifest['unlabeled_candidates']}\n"
+              f"## Focused counterfactual PR benchmark — shard {shard_index}\n\n"
+              f"- Decisions: {', '.join(decision_ids)}\n"
+              f"- Candidates: {total_candidates}\n"
+              f"- Fully labeled: {total_full}\n"
+              f"- Partially labeled: {total_partial}\n"
+              f"- Unlabeled: {total_unlabeled}\n"
               f"- Mean full-mixture interval width: {mean_width:.3f}\n"
-              f"- Opponent weighting: `{manifest['opponent_weight_semantics']}`\n"
-              f"- Continuation mixture: `{manifest['continuation_mixture_version']}`\n"
+              "- Opponent weighting: `normalized_search_policy_proxy_not_empirical_behavior_probability`\n"
           )
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
               handle.write(summary)
-          print(json.dumps(manifest, indent=2, sort_keys=True))
+          print(summary)
           PY
 
-      - name: Upload focused benchmark
+      - name: Upload focused benchmark shard
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: counterfactual-pr-curated-${{ github.run_number }}
-          path: artifacts/pr-curated/
+          name: counterfactual-pr-curated-shard-${{ matrix.shard_index }}-${{ github.run_number }}
+          path: artifacts/pr-curated/shard-${{ matrix.shard_index }}/
           if-no-files-found: warn
           retention-days: 14
 
