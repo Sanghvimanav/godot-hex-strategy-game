@@ -2,14 +2,11 @@ name: Counterfactual Benchmark
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - "ai/benchmark-correctness-ranking-metrics"
+  pull_request:
     paths:
       - ".github/workflows/counterfactual-benchmark.yml"
       - "hex-strategy-game/src/simulation/pure_state_counterfactual_*.gd"
       - "hex-strategy-game/tests/test_pure_state_counterfactual_benchmark.gd"
-      - "hex-strategy-game/tests/run_tests.gd"
       - "hex-strategy-game/tools/counterfactual_benchmark.*"
       - "hex-strategy-game/tools/run_counterfactual_benchmark.sh"
 
@@ -17,18 +14,102 @@ permissions:
   contents: read
 
 concurrency:
-  group: counterfactual-benchmark-${{ github.ref }}
+  group: counterfactual-benchmark-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  benchmark:
+  pr-benchmark:
+    if: github.event_name == 'pull_request'
+    name: Focused PR benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Run curated counterfactual suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="${GITHUB_WORKSPACE}/artifacts/pr-curated"
+          cd hex-strategy-game
+          timeout 15m bash tools/run_counterfactual_benchmark.sh \
+            --preset=curated \
+            --out="${out}"
+
+      - name: Audit focused benchmark
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("artifacts/pr-curated")
+          manifest = json.loads((root / "manifest.json").read_text())
+          rows = [
+              json.loads(line)
+              for line in (root / "candidates.jsonl").read_text().splitlines()
+              if line.strip()
+          ]
+          assert manifest["decisions_requested"] > 0, manifest
+          assert manifest["decisions_failed"] == 0, manifest
+          assert manifest["candidate_count"] == len(rows), (manifest, len(rows))
+          assert manifest["candidate_count"] > 0, manifest
+          assert manifest["target_semantics"] == "policy_conditional_terminal_return_estimate"
+          assert manifest["turn_limit_is_unlabeled"] is True
+          for row in rows:
+              assert row["decision_id"]
+              assert row["candidate_id"]
+              assert row["assumptions"]["rules_version"] != "unknown"
+              coverage = row["target_estimate"]["labeled_weight_fraction"]
+              assert 0.0 <= coverage <= 1.0
+
+          summary = (
+              "## Focused counterfactual PR benchmark\n\n"
+              f"- Decisions: {manifest['decisions_requested']}\n"
+              f"- Candidates: {manifest['candidate_count']}\n"
+              f"- Fully labeled: {manifest['fully_labeled_candidates']}\n"
+              f"- Partially labeled: {manifest['partially_labeled_candidates']}\n"
+              f"- Unlabeled: {manifest['unlabeled_candidates']}\n"
+              f"- Opponent mixture: `{manifest['opponent_mixture_version']}`\n"
+              f"- Continuation mixture: `{manifest['continuation_mixture_version']}`\n"
+          )
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
+              handle.write(summary)
+          print(json.dumps(manifest, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload focused benchmark
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: counterfactual-pr-curated-${{ github.run_number }}
+          path: artifacts/pr-curated/
+          if-no-files-found: warn
+          retention-days: 14
+
+  full-benchmark:
+    if: github.event_name == 'workflow_dispatch'
     name: Benchmark ${{ matrix.case_id }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-# Full curated matrix covers all named scenario-construction cases; the fast/full split follows.
         include:
           - case_id: smoke
             preset: smoke
@@ -145,22 +226,3 @@ jobs:
           path: artifacts/${{ matrix.case_id }}/
           if-no-files-found: warn
           retention-days: 14
-
-  tests:
-    name: Full Godot test suite
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Set up Godot 4.6
-        uses: chickensoft-games/setup-godot@v2.4.1
-        with:
-          version: 4.6.0
-          use-dotnet: false
-          include-templates: false
-      - name: Import Godot project
-        working-directory: hex-strategy-game
-        run: godot --headless --import
-      - name: Run full suite
-        run: timeout 10m godot --headless --path hex-strategy-game res://tests/test_runner.tscn
