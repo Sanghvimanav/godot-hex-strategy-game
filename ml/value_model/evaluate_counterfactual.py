@@ -89,6 +89,8 @@ def _neural_scores(
     batch_size: int,
     device: torch.device,
 ) -> list[float]:
+    if not examples:
+        return []
     dataset = ValueExampleDataset(examples)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     scores: list[float] = []
@@ -118,6 +120,45 @@ def _metric_set(
     }
 
 
+def _weighted_average(weights: Sequence[float], scores: Sequence[float]) -> float:
+    total_weight = sum(weights)
+    if total_weight <= 0.0:
+        raise ValueError("weighted score population has no positive weight")
+    return sum(weight * score for weight, score in zip(weights, scores)) / total_weight
+
+
+def _interval_fit_metrics(
+    predictions: Sequence[float],
+    lower_bounds: Sequence[float],
+    upper_bounds: Sequence[float],
+) -> dict[str, float | int]:
+    if not (len(predictions) == len(lower_bounds) == len(upper_bounds)):
+        raise ValueError("interval metric inputs must have equal lengths")
+    if not predictions:
+        return {
+            "interval_fit_candidates": 0,
+            "interval_fit_rate": 0.0,
+            "mean_distance_outside_interval": 0.0,
+            "max_distance_outside_interval": 0.0,
+        }
+    distances: list[float] = []
+    inside = 0
+    for prediction, lower, upper in zip(predictions, lower_bounds, upper_bounds):
+        if lower <= prediction <= upper:
+            inside += 1
+            distances.append(0.0)
+        elif prediction < lower:
+            distances.append(lower - prediction)
+        else:
+            distances.append(prediction - upper)
+    return {
+        "interval_fit_candidates": len(predictions),
+        "interval_fit_rate": inside / len(predictions),
+        "mean_distance_outside_interval": sum(distances) / len(distances),
+        "max_distance_outside_interval": max(distances),
+    }
+
+
 def evaluate_counterfactual_rows(
     rows: Sequence[dict[str, Any]],
     checkpoint_path: str | Path,
@@ -126,14 +167,21 @@ def evaluate_counterfactual_rows(
 ) -> dict[str, Any]:
     """Score counterfactual candidates with neural, handwritten, and planner evaluators.
 
-    Each candidate is scored after its first simultaneous turn. Scores are averaged
-    over the same labeled opponent/continuation sample weights used by the
-    counterfactual target, preventing unlabeled turn limits from changing the
-    evaluation population.
+    The benchmark target keeps unresolved continuation mass as an interval. For
+    backward-compatible ranking metrics we still compare against the conditional
+    terminal mean, but evaluator diagnostics now score two populations:
+
+    1. labeled-policy states: only branches whose continuation reached a terminal;
+    2. all-policy states: every valid first-turn branch, including unresolved ones.
+
+    The second population lets us see what the evaluator thinks about states such
+    as a successful escape even when the rollout cannot yet produce a terminal label.
     """
     candidates: list[dict[str, Any]] = []
-    examples: list[dict[str, Any]] = []
-    sample_weights: list[float] = []
+    labeled_examples: list[dict[str, Any]] = []
+    labeled_weights: list[float] = []
+    all_examples: list[dict[str, Any]] = []
+    all_weights: list[float] = []
 
     for row in rows:
         if not isinstance(row, dict):
@@ -144,7 +192,9 @@ def evaluate_counterfactual_rows(
         assumptions = row.get("assumptions", {})
         if not isinstance(assumptions, dict):
             assumptions = {}
-        start = len(examples)
+
+        labeled_start = len(labeled_examples)
+        all_start = len(all_examples)
         for sample in row.get("samples", []):
             if not isinstance(sample, dict):
                 continue
@@ -152,28 +202,46 @@ def evaluate_counterfactual_rows(
             state = sample.get("state_after_first_turn")
             if (
                 not bool(sample.get("valid", True))
-                or not bool(sample.get("labeled", False))
                 or weight <= 0.0
                 or not isinstance(state, dict)
                 or not state
             ):
                 continue
-            examples.append(_sample_example(row, sample))
-            sample_weights.append(weight)
-        stop = len(examples)
-        if stop == start:
+            example = _sample_example(row, sample)
+            all_examples.append(example)
+            all_weights.append(weight)
+            if bool(sample.get("labeled", False)):
+                labeled_examples.append(example)
+                labeled_weights.append(weight)
+
+        labeled_stop = len(labeled_examples)
+        all_stop = len(all_examples)
+        if labeled_stop == labeled_start or all_stop == all_start:
             continue
+
+        conditional_target = float(
+            estimate.get(
+                "conditional_labeled_mean_return",
+                estimate.get("mean_return", 0.0),
+            )
+        )
+        lower_bound = float(estimate.get("full_mixture_lower_bound", conditional_target))
+        upper_bound = float(estimate.get("full_mixture_upper_bound", conditional_target))
         candidates.append(
             {
                 "decision_id": str(row.get("decision_id", "")),
                 "candidate_id": str(row.get("candidate_id", "")),
                 "candidate_label": str(row.get("candidate_label", row.get("candidate_id", ""))),
                 "candidate_description": str(row.get("candidate_description", "")),
-                "target": float(estimate.get("mean_return", 0.0)),
+                "target": conditional_target,
+                "target_lower_bound": lower_bound,
+                "target_upper_bound": upper_bound,
                 "target_standard_error": max(0.0, float(estimate.get("estimated_standard_error", 0.0))),
                 "proposal_score": float(row.get("proposal_score", 0.0)),
-                "sample_start": start,
-                "sample_stop": stop,
+                "labeled_sample_start": labeled_start,
+                "labeled_sample_stop": labeled_stop,
+                "all_sample_start": all_start,
+                "all_sample_stop": all_stop,
                 "coverage": float(estimate.get("labeled_weight_fraction", 0.0)),
                 "separation_z": max(0.0, float(assumptions.get("separation_z", 1.96))),
             }
@@ -189,26 +257,53 @@ def evaluate_counterfactual_rows(
 
     device = torch.device(device_name)
     model = _load_model(checkpoint_path, device)
-    neural_sample_scores = _neural_scores(model, examples, batch_size, device)
-    handwritten_sample_scores = [handwritten_evaluator_score(example) for example in examples]
+    neural_labeled_sample_scores = _neural_scores(model, labeled_examples, batch_size, device)
+    neural_all_sample_scores = _neural_scores(model, all_examples, batch_size, device)
+    handwritten_labeled_sample_scores = [
+        handwritten_evaluator_score(example) for example in labeled_examples
+    ]
+    handwritten_all_sample_scores = [
+        handwritten_evaluator_score(example) for example in all_examples
+    ]
 
-    neural_candidates: list[float] = []
-    handwritten_candidates: list[float] = []
+    neural_labeled_candidates: list[float] = []
+    neural_all_candidates: list[float] = []
+    handwritten_labeled_candidates: list[float] = []
+    handwritten_all_candidates: list[float] = []
     for candidate in candidates:
-        start = int(candidate["sample_start"])
-        stop = int(candidate["sample_stop"])
-        weights = sample_weights[start:stop]
-        total_weight = sum(weights)
-        neural_candidates.append(
-            sum(weight * score for weight, score in zip(weights, neural_sample_scores[start:stop]))
-            / total_weight
+        labeled_start = int(candidate["labeled_sample_start"])
+        labeled_stop = int(candidate["labeled_sample_stop"])
+        all_start = int(candidate["all_sample_start"])
+        all_stop = int(candidate["all_sample_stop"])
+
+        neural_labeled_candidates.append(
+            _weighted_average(
+                labeled_weights[labeled_start:labeled_stop],
+                neural_labeled_sample_scores[labeled_start:labeled_stop],
+            )
         )
-        handwritten_candidates.append(
-            sum(weight * score for weight, score in zip(weights, handwritten_sample_scores[start:stop]))
-            / total_weight
+        neural_all_candidates.append(
+            _weighted_average(
+                all_weights[all_start:all_stop],
+                neural_all_sample_scores[all_start:all_stop],
+            )
+        )
+        handwritten_labeled_candidates.append(
+            _weighted_average(
+                labeled_weights[labeled_start:labeled_stop],
+                handwritten_labeled_sample_scores[labeled_start:labeled_stop],
+            )
+        )
+        handwritten_all_candidates.append(
+            _weighted_average(
+                all_weights[all_start:all_stop],
+                handwritten_all_sample_scores[all_start:all_stop],
+            )
         )
 
     targets = [float(candidate["target"]) for candidate in candidates]
+    lower_bounds = [float(candidate["target_lower_bound"]) for candidate in candidates]
+    upper_bounds = [float(candidate["target_upper_bound"]) for candidate in candidates]
     target_standard_errors = [float(candidate["target_standard_error"]) for candidate in candidates]
     decision_ids = [str(candidate["decision_id"]) for candidate in candidates]
     proposal_scores = [float(candidate["proposal_score"]) for candidate in candidates]
@@ -220,8 +315,12 @@ def evaluate_counterfactual_rows(
         raise ValueError("counterfactual data contains no decision with at least two labeled candidates")
 
     candidate_details = []
-    for candidate, neural_score, handwritten_score in zip(
-        candidates, neural_candidates, handwritten_candidates
+    for candidate, neural_labeled, neural_all, handwritten_labeled, handwritten_all in zip(
+        candidates,
+        neural_labeled_candidates,
+        neural_all_candidates,
+        handwritten_labeled_candidates,
+        handwritten_all_candidates,
     ):
         candidate_details.append(
             {
@@ -230,11 +329,23 @@ def evaluate_counterfactual_rows(
                 "candidate_label": candidate["candidate_label"],
                 "candidate_description": candidate["candidate_description"],
                 "target_return": candidate["target"],
+                "target_conditional_labeled_mean_return": candidate["target"],
+                "target_full_mixture_lower_bound": candidate["target_lower_bound"],
+                "target_full_mixture_upper_bound": candidate["target_upper_bound"],
                 "target_standard_error": candidate["target_standard_error"],
                 "target_coverage": candidate["coverage"],
-                "neural_score": neural_score,
-                "handwritten_score": handwritten_score,
+                # Backward-compatible names remain the labeled-policy population.
+                "neural_score": neural_labeled,
+                "handwritten_score": handwritten_labeled,
+                "neural_score_labeled_policy": neural_labeled,
+                "neural_score_all_policy": neural_all,
+                "handwritten_score_labeled_policy": handwritten_labeled,
+                "handwritten_score_all_policy": handwritten_all,
                 "planner_proposal_score": candidate["proposal_score"],
+                "labeled_policy_sample_states": int(candidate["labeled_sample_stop"])
+                - int(candidate["labeled_sample_start"]),
+                "all_policy_sample_states": int(candidate["all_sample_stop"])
+                - int(candidate["all_sample_start"]),
             }
         )
 
@@ -243,19 +354,34 @@ def evaluate_counterfactual_rows(
         "evaluated_candidates": len(candidates),
         "excluded_candidates": len(rows) - len(candidates),
         "evaluated_decisions": evaluated_decisions,
-        "labeled_sample_states": len(examples),
+        "labeled_sample_states": len(labeled_examples),
+        "all_valid_first_turn_sample_states": len(all_examples),
         "mean_target_coverage": sum(float(candidate["coverage"]) for candidate in candidates) / len(candidates),
-        "target_semantics": "policy_conditional_terminal_return_estimate",
-        "candidate_score_semantics": "weighted_first_turn_state_value_over_labeled_policy_samples",
-        "uncertainty_semantics": "descriptive_between_policy_sample_spread_not_statistical_confidence",
+        "target_semantics": "search_policy_terminal_return_with_unresolved_bounds_v2",
+        "candidate_score_semantics": {
+            "labeled_policy": "weighted_first_turn_state_value_over_labeled_policy_samples",
+            "all_policy": "weighted_first_turn_state_value_over_all_valid_policy_samples_including_unresolved_continuations",
+        },
+        "uncertainty_semantics": "full-mixture terminal-return bounds preserve unresolved continuation mass",
         "separation_z": separation_z,
         "candidate_details": candidate_details,
+        "interval_diagnostics": {
+            "neural_value_model_all_policy": _interval_fit_metrics(
+                neural_all_candidates, lower_bounds, upper_bounds
+            ),
+            "handwritten_state_evaluator_all_policy": _interval_fit_metrics(
+                handwritten_all_candidates, lower_bounds, upper_bounds
+            ),
+        },
         "evaluators": {
+            # Ranking/regret remain tied to the conditional labeled target for
+            # backward compatibility; interval diagnostics above are the preferred
+            # interpretation when target coverage is incomplete.
             "neural_value_model": _metric_set(
-                neural_candidates, targets, target_standard_errors, decision_ids, separation_z
+                neural_labeled_candidates, targets, target_standard_errors, decision_ids, separation_z
             ),
             "handwritten_state_evaluator": _metric_set(
-                handwritten_candidates, targets, target_standard_errors, decision_ids, separation_z
+                handwritten_labeled_candidates, targets, target_standard_errors, decision_ids, separation_z
             ),
             "planner_proposal_score": _metric_set(
                 proposal_scores, targets, target_standard_errors, decision_ids, separation_z
