@@ -13,5 +13,5 @@ def test_handwritten_metric_requires_godot_annotation_for_real_states() -> None:
     metrics_source = Path("ml/value_model/metrics.py").read_text()
 
     assert "_godot_handwritten_evaluator_score" in metrics_source
-    assert "missing _godot_handwritten_evaluator_score" in metrics_source
+    assert "handwritten evaluator score must come from Godot" in metrics_source
     assert 'scenario_id", "")) != "synthetic"' in metrics_source
