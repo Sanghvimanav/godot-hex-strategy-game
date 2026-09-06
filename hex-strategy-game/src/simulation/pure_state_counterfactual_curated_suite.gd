@@ -7,8 +7,8 @@ class_name PureStateCounterfactualCuratedSuite
 
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
-const SUITE_VERSION := 5
-const OPPONENT_MIXTURE_VERSION := "scenario_curated_responses_v5"
+const SUITE_VERSION := 6
+const OPPONENT_MIXTURE_VERSION := "scenario_curated_responses_v6"
 const CONTINUATION_MIXTURE_VERSION := "scenario_curated_continuation_1x1_2x2_v5"
 
 const CONTINUATION_PROFILES := [
@@ -82,19 +82,21 @@ static func _sacrifice_job(rules_version: String) -> Dictionary:
 			]),
 		],
 		[
-			_opponent("weakened_marines_hold", 0.4, [
+			# Temporary tactical prior until response weights are search-derived.
+			# Escaping the slow blast is the strongest Marine response here.
+			_opponent("weakened_marines_hold", 0.1, [
 				_action(1, "attack_short", [0, 0]),
 				_action(2, "attack_short", [0, 0]),
 				_action(3, "move_short", [1, 0]),
 			]),
-			_opponent("weak_marines_escape_blast", 0.3, [
+			_opponent("weak_marines_escape_blast", 0.65, [
 				# From distance one, a normal one-hex move can reach distance two
 				# before the Baneling's slow explosion resolves.
 				_action(1, "move_short", [2, -1]),
 				_action(2, "move_short", [-1, 2]),
 				_action(3, "attack_short", [1, 0]),
 			]),
-			_opponent("healthy_marine_reinforces", 0.3, [
+			_opponent("healthy_marine_reinforces", 0.25, [
 				_action(1, "attack_short", [0, 0]),
 				_action(2, "attack_short", [0, 0]),
 				_action(3, "move_short", [1, 0]),
