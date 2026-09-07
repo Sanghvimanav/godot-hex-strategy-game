@@ -1,0 +1,85 @@
+name: Value Model Experiment
+
+on:
+  push:
+    branches:
+      - experiment/relay-value-model-81-v2
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  relay:
+    name: Relay experiment 81 artifacts after schema fix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download self-play shard 0
+        uses: actions/download-artifact@v4
+        with:
+          name: self-play-shard-0
+          path: relay/self-play-shard-0
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 34152473442
+
+      - name: Download self-play shard 1
+        uses: actions/download-artifact@v4
+        with:
+          name: self-play-shard-1
+          path: relay/self-play-shard-1
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 34152473442
+
+      - name: Download self-play shard 2
+        uses: actions/download-artifact@v4
+        with:
+          name: self-play-shard-2
+          path: relay/self-play-shard-2
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 34152473442
+
+      - name: Download self-play shard 3
+        uses: actions/download-artifact@v4
+        with:
+          name: self-play-shard-3
+          path: relay/self-play-shard-3
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 34152473442
+
+      - name: Download experiment model
+        uses: actions/download-artifact@v4
+        with:
+          name: value-model-experiment-81
+          path: relay/value-model-experiment-81
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 34152473442
+
+      - name: Upload self-play shard 0
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-play-shard-0
+          path: relay/self-play-shard-0
+
+      - name: Upload self-play shard 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-play-shard-1
+          path: relay/self-play-shard-1
+
+      - name: Upload self-play shard 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-play-shard-2
+          path: relay/self-play-shard-2
+
+      - name: Upload self-play shard 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: self-play-shard-3
+          path: relay/self-play-shard-3
+
+      - name: Upload experiment model
+        uses: actions/upload-artifact@v4
+        with:
+          name: value-model-experiment-81
+          path: relay/value-model-experiment-81
