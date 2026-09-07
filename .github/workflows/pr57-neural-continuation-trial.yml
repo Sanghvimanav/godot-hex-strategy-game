@@ -73,7 +73,7 @@ jobs:
           set -euo pipefail
           OUT="${GITHUB_WORKSPACE}/artifacts/neural-continuation-trial"
           cd hex-strategy-game
-          timeout --signal=TERM 300s ./tools/run_rejected_continuations.sh \
+          timeout --signal=TERM 300s bash ./tools/run_rejected_continuations.sh \
             --out="${OUT}" \
             --neural-checkpoint="${CHECKPOINT}" \
             --max-continuations=12
