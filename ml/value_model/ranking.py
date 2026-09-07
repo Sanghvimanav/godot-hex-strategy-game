@@ -11,6 +11,7 @@ from torch.utils.data import Dataset
 from .data import HexStateEncoder
 
 RANKING_SCHEMA_VERSION = 1
+SUPPORTED_RANKING_SCHEMA_VERSIONS = {1, 2}
 
 
 def load_ranking_pairs(path: str | Path) -> list[dict[str, Any]]:
@@ -23,7 +24,8 @@ def load_ranking_pairs(path: str | Path) -> list[dict[str, Any]]:
             value = json.loads(line)
             if not isinstance(value, dict):
                 raise ValueError(f"line {line_number} is not a JSON object")
-            if int(value.get("schema_version", -1)) != RANKING_SCHEMA_VERSION:
+            schema_version = int(value.get("schema_version", -1))
+            if schema_version not in SUPPORTED_RANKING_SCHEMA_VERSIONS:
                 raise ValueError(
                     f"line {line_number} has unsupported ranking schema_version "
                     f"{value.get('schema_version')}"
