@@ -234,7 +234,36 @@ static func _submitted_actions(
 static func _plan_signature(actions: Array) -> String:
 	var signatures: Array[String] = []
 	for action_variant in actions:
-		if action_variant is Dictionary:
-			signatures.append(JSON.stringify(action_variant))
+		if not (action_variant is Dictionary):
+			continue
+		var action: Dictionary = action_variant
+		signatures.append("%08d|%s|%s|%s" % [
+			int(action.get("unit_id", -1)),
+			str(action.get("action_key", "")),
+			_cell_signature(action.get("end_point", [])),
+			_path_signature(action.get("path", [])),
+		])
 	signatures.sort()
-	return "|".join(signatures)
+	return ";".join(signatures)
+
+
+static func _path_signature(path_variant: Variant) -> String:
+	if not (path_variant is Array):
+		return str(path_variant)
+	var parts: PackedStringArray = []
+	for cell_variant in path_variant:
+		parts.append(_cell_signature(cell_variant))
+	return ">".join(parts)
+
+
+static func _cell_signature(cell_variant: Variant) -> String:
+	if cell_variant is Vector2i:
+		var cell_i: Vector2i = cell_variant
+		return "%d,%d" % [cell_i.x, cell_i.y]
+	if cell_variant is Vector2:
+		var cell_f: Vector2 = cell_variant
+		return "%d,%d" % [int(cell_f.x), int(cell_f.y)]
+	if cell_variant is Array and (cell_variant as Array).size() >= 2:
+		var cell_array: Array = cell_variant
+		return "%d,%d" % [int(cell_array[0]), int(cell_array[1])]
+	return str(cell_variant)
