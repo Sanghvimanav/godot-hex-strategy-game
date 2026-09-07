@@ -172,7 +172,7 @@ jobs:
       - name: Download prior Arena shards
         uses: actions/download-artifact@v4
         with:
-          pattern: "*arena*shard-*"
+          pattern: "dense-ranked-4x4-shard-*"
           path: artifacts/prior_arena_shards
           merge-multiple: false
           github-token: ${{ secrets.GITHUB_TOKEN }}
