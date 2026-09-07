@@ -45,11 +45,12 @@ jobs:
           set -o pipefail
           godot --headless --path . res://tests/test_runner.tscn 2>&1 | tee test-output.log
 
-      - name: Smoke-test 2x2 search-decision export
+      - name: Smoke-test search-decision export
         shell: bash
         run: |
           set -euo pipefail
           OUT="${GITHUB_WORKSPACE}/artifacts/search-decision-smoke"
+          WIDE="${GITHUB_WORKSPACE}/artifacts/search-decision-wide-smoke"
           cd hex-strategy-game
 
           # The smoke preset is a one-turn game and should finish quickly. The
@@ -103,6 +104,48 @@ jobs:
           if manifest.get("complete_matrix_count") != manifest.get("decision_count"):
               raise SystemExit(f"smoke matrices are incomplete: {manifest}")
           print(f"validated {len(rows)} full 2x2 search decisions")
+          PY
+
+          # The value-model experiment widens only the own-candidate side of the
+          # post-processed decision matrix. Reuse the exact played trace and ensure its
+          # selected 2x2 action remains among four offline siblings while the original
+          # two modeled opponent responses remain unchanged.
+          mkdir -p "${WIDE}"
+          cp "${OUT}/traces.jsonl" "${WIDE}/traces.jsonl"
+          timeout --signal=TERM 60s godot --headless --path . \
+            res://tools/search_decision_dataset_v2.tscn -- \
+            --out="${WIDE}" \
+            --decision-own-max-plans=4 \
+            --decision-opponent-max-plans=2
+          python - "${WIDE}" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          rows = [
+              json.loads(line)
+              for line in (root / "search_decisions.jsonl").read_text().splitlines()
+              if line.strip()
+          ]
+          if not rows:
+              raise SystemExit("offline 4x2 capture produced no decisions")
+          for row in rows:
+              budget = row.get("budget", {})
+              if budget.get("own_max_plans") != 4 or budget.get("opponent_max_plans") != 2:
+                  raise SystemExit(f"unexpected offline capture budget: {budget}")
+              if row.get("candidate_count") != 4 or row.get("opponent_response_count") != 2:
+                  raise SystemExit("offline decision did not preserve the full 4x2 matrix")
+              if not row.get("complete_requested_matrix"):
+                  raise SystemExit("offline 4x2 matrix marked incomplete")
+              if sum(bool(candidate.get("selected")) for candidate in row.get("candidates", [])) != 1:
+                  raise SystemExit("played 2x2 action missing or duplicated in offline siblings")
+          manifest = json.loads((root / "search_decisions_manifest.json").read_text())
+          if manifest.get("capture_budget") != "4x2":
+              raise SystemExit(f"wide capture manifest mismatch: {manifest}")
+          if manifest.get("failed_decision_count") != 0 or manifest.get("selected_candidate_missing_count") != 0:
+              raise SystemExit(f"offline 4x2 capture drifted from played action: {manifest}")
+          print(f"validated {len(rows)} offline 4x2 sibling decision matrices")
           PY
 
           # Continuation labeling is deliberately separate from self-play because a
@@ -203,4 +246,5 @@ jobs:
           path: |
             hex-strategy-game/test-output.log
             artifacts/search-decision-smoke/
+            artifacts/search-decision-wide-smoke/
           if-no-files-found: ignore

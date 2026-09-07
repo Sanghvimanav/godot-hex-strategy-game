@@ -15,9 +15,19 @@ godot --headless --path . res://tools/self_play_dataset.tscn -- \
   --rules-version="${RULES_VERSION}" \
   "$@"
 
-# Search-decision data is a post-process so the played game and normal search
-# pruning are untouched. V1 records only fast 2x2 decisions from the generated
-# traces, retaining the full candidate x modeled-response leaf matrix.
-godot --headless --path . res://tools/search_decision_dataset.tscn -- \
+# Search-decision capture is offline and does not affect the played trajectory.
+# The diverse value-model dataset widens fast 2x2 turns to four own candidates while
+# retaining the two opponent responses from the played search. That exposes A/B/C/D
+# siblings without changing gameplay or spending compute on extra responses that the
+# response-controlled ranking stage will not use. Smoke/starter retain historical 2x2.
+DECISION_CAPTURE_ARGS=()
+for arg in "$@"; do
+  if [[ "${arg}" == "--preset=diverse" ]]; then
+    DECISION_CAPTURE_ARGS+=(--decision-own-max-plans=4 --decision-opponent-max-plans=2)
+  fi
+done
+
+godot --headless --path . res://tools/search_decision_dataset_v2.tscn -- \
   --out=user://self_play_dataset \
+  "${DECISION_CAPTURE_ARGS[@]}" \
   "$@"

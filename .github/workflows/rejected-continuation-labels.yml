@@ -20,7 +20,7 @@ jobs:
     name: Label siblings and retrain ranked value model
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout experiment commit
@@ -84,13 +84,14 @@ jobs:
             --neural-checkpoint="${GITHUB_WORKSPACE}/artifacts/experiment/value_model.pt" \
             --max-continuations=16
 
-      - name: Build same-response sibling ranking pairs
+      - name: Build dense same-response sibling ranking pairs
         shell: bash
         run: |
           set -euo pipefail
           cd hex-strategy-game
-          godot --headless --path . res://tools/search_decision_ranking_pairs.tscn -- \
-            --out="${GITHUB_WORKSPACE}/artifacts/self_play"
+          godot --headless --path . res://tools/search_decision_sibling_pairs.tscn -- \
+            --out="${GITHUB_WORKSPACE}/artifacts/self_play" \
+            --max-decisions=24
 
       - name: Audit continuation and ranking labels
         run: |
@@ -115,8 +116,14 @@ jobs:
               raise SystemExit("ranking-pair generation produced no terminal preference pairs")
           if not bool(ranking.get("same_opponent_response", False)):
               raise SystemExit("ranking pairs are not response-controlled")
+          if not bool(ranking.get("all_candidate_siblings", False)):
+              raise SystemExit("ranking generation did not expand the candidate sibling set")
+          if not bool(ranking.get("family_diverse_selection", False)):
+              raise SystemExit("ranking decision selection is not family-diverse")
           if bool(ranking.get("loss_vs_loss_pairs", True)):
               raise SystemExit("ranking data must not reward delaying losses")
+          if len(ranking.get("selected_decisions_by_family", {})) < 2:
+              raise SystemExit("ranking data did not cover multiple scenario families")
           PY
 
       - name: Train value plus sibling-ranking model
@@ -178,16 +185,19 @@ jobs:
           | Counterfactual mean regret | {float(base_neural['top_plan_mean_regret']):.3f} | {float(ranked_neural['top_plan_mean_regret']):.3f} |
           | Counterfactual max regret | {float(base_neural['top_plan_max_regret']):.3f} | {float(ranked_neural['top_plan_max_regret']):.3f} |
           | Counterfactual optimal-choice rate | {float(base_neural['top_plan_optimal_rate']):.1%} | {float(ranked_neural['top_plan_optimal_rate']):.1%} |
-          | Held-out sibling-ranking accuracy | n/a | {float(ranked_metrics['eval_ranking_accuracy']):.1%} |
+          | Sibling-ranking accuracy | n/a | {float(ranked_metrics['eval_ranking_accuracy']):.1%} |
 
           **Experiment run:** {os.environ.get('SOURCE_RUN', 'unknown')}  
           **Rejected continuations:** {continuations['continuations_labeled']} terminal / {continuations['continuations_selected']} selected  
+          **Sibling decisions:** {ranking['decisions_selected']} selected across {len(ranking['selected_decisions_by_family'])} families  
+          **Sibling branch continuations:** {ranking['branch_continuations']}  
           **Ranking pairs:** {ranking['pairs_written']} total = {ranking['outcome_pairs']} outcome + {ranking['faster_win_pairs']} faster-win  
+          **Ranking comparison population:** {ranked_metrics['ranking_comparison_population']} ({ranked_metrics['validation_ranking_pairs']} held-out pairs)  
           **Pair weights:** outcome={ranking['outcome_pair_weight']}, faster-win={ranking['faster_win_pair_weight']}  
           **Ranking loss weight:** {ranked_metrics['ranking_weight']}  
           **Priority reasons:** `{continuations['priority_reason_counts']}`
 
-          Every ranking pair compares sibling leaves from the same decision under the same modeled opponent response. Win/draw/loss ordering is the primary label. Faster wins are lower-confidence supervision. Loss-vs-loss pairs are intentionally omitted so the model is not rewarded for merely delaying defeat.
+          Ranking selection keeps the neural-disagreement decisions from rejected-continuation analysis, adds family-diverse decisions, expands each selected decision to every stored candidate, and continues every candidate under the same modeled opponent response. Win/draw/loss ordering is the primary label. Faster wins are lower-confidence supervision. Loss-vs-loss pairs are intentionally omitted so the model is not rewarded for merely delaying defeat.
           """
           Path("artifacts/continuation_summary.md").write_text(summary, encoding="utf-8")
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
@@ -205,6 +215,7 @@ jobs:
             artifacts/self_play/search_decisions_manifest.json
             artifacts/self_play/rejected_continuations.jsonl
             artifacts/self_play/rejected_continuations_manifest.json
+            artifacts/self_play/sibling_branches.jsonl
             artifacts/self_play/ranking_pairs.jsonl
             artifacts/self_play/ranking_pairs_manifest.json
             artifacts/ranked_value_model.pt
