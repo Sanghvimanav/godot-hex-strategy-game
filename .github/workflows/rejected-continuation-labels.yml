@@ -1,0 +1,144 @@
+name: Rejected Continuation Labels
+
+on:
+  workflow_run:
+    workflows:
+      - Value Model Experiment
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: rejected-continuations-${{ github.event.workflow_run.id }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: Label high-value rejected plans
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout experiment commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Download self-play shards from experiment
+        uses: actions/download-artifact@v4
+        with:
+          pattern: self-play-shard-*
+          path: artifacts/self_play_shards
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Download trained experiment artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: value-model-experiment-*
+          path: artifacts/experiment
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Merge search-decision matrices
+        run: |
+          python -m ml.value_model.merge_search_decisions \
+            --root artifacts/self_play_shards \
+            --output artifacts/self_play
+
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Label prioritized rejected alternatives
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd hex-strategy-game
+          bash tools/run_rejected_continuations.sh \
+            --out="${GITHUB_WORKSPACE}/artifacts/self_play" \
+            --neural-checkpoint="${GITHUB_WORKSPACE}/artifacts/experiment/value_model.pt" \
+            --max-continuations=16
+
+      - name: Audit continuation labels
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("artifacts/self_play")
+          manifest = json.loads((root / "rejected_continuations_manifest.json").read_text())
+          print(json.dumps(manifest, indent=2, sort_keys=True))
+          if int(manifest.get("continuations_invalid", 0)) != 0:
+              raise SystemExit("continuation generation produced invalid branches")
+          if int(manifest.get("continuations_selected", 0)) <= 0:
+              raise SystemExit("continuation generation selected no rejected alternatives")
+          if not bool(manifest.get("neural_prioritization_enabled", False)):
+              raise SystemExit("continuation generation did not use the trained neural checkpoint")
+          PY
+
+      - name: Write continuation summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = json.loads(
+              Path("artifacts/self_play/rejected_continuations_manifest.json").read_text()
+          )
+          summary = f"""## Rejected-alternative continuation labels
+
+          | Metric | Result |
+          | --- | ---: |
+          | Experiment run | {os.environ.get('SOURCE_RUN', 'unknown')} |
+          | Search decisions considered | {manifest['decisions_considered']} |
+          | Rejected candidates considered | {manifest['rejected_candidates_considered']} |
+          | Continuations selected | {manifest['continuations_selected']} |
+          | Terminal labels | {manifest['continuations_labeled']} |
+          | Unresolved/unlabeled | {manifest['continuations_unlabeled']} |
+          | Invalid | {manifest['continuations_invalid']} |
+          | Priority reasons | `{manifest['priority_reason_counts']}` |
+
+          Selection favors neural-vs-handwritten disagreement, then close neural scores, then tactically large one-turn swings. Only one modeled response branch per selected rejected candidate is continued.
+          """
+          Path("artifacts/continuation_summary.md").write_text(summary, encoding="utf-8")
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
+              handle.write(summary)
+          print(summary)
+          PY
+        env:
+          SOURCE_RUN: ${{ github.event.workflow_run.id }}
+
+      - name: Upload continuation labels
+        uses: actions/upload-artifact@v4
+        with:
+          name: rejected-continuations-${{ github.event.workflow_run.run_number }}
+          path: |
+            artifacts/self_play/search_decisions_manifest.json
+            artifacts/self_play/rejected_continuations.jsonl
+            artifacts/self_play/rejected_continuations_manifest.json
+            artifacts/continuation_summary.md
+          if-no-files-found: error
+          retention-days: 14
