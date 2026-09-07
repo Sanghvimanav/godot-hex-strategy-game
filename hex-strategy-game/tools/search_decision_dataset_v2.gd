@@ -45,6 +45,7 @@ func _run() -> void:
 	var turns_considered: int = 0
 	var failed_decisions: int = 0
 	var selected_candidate_missing: int = 0
+	var selected_candidate_preserved: int = 0
 	var complete_matrices: int = 0
 	var incomplete_matrices: int = 0
 
@@ -131,6 +132,23 @@ func _run() -> void:
 					game_outcome,
 					capture_source
 				)
+				if bool(row.get("valid", false)) and int(row.get("selected_candidate_index", -1)) < 0:
+					row = _preserve_played_candidate_from_source_search(
+						row,
+						state_before,
+						perspective_group,
+						opponent_group,
+						selected_actions,
+						max_actions_per_unit,
+						source_own_max_plans,
+						source_opponent_max_plans,
+						capture_own_max_plans,
+						capture_opponent_max_plans,
+						game_id,
+						turn_index,
+						game_outcome,
+						capture_source
+					)
 				if not bool(row.get("valid", false)):
 					failed_decisions += 1
 					push_error("Search-decision capture failed game=%s turn=%d side=%s error=%s" % [
@@ -140,6 +158,8 @@ func _run() -> void:
 						str(row.get("error", "unknown")),
 					])
 					continue
+				if bool(row.get("selected_candidate_preserved", false)):
+					selected_candidate_preserved += 1
 				if int(row.get("selected_candidate_index", -1)) < 0:
 					selected_candidate_missing += 1
 				if bool(row.get("complete_requested_matrix", false)):
@@ -164,13 +184,14 @@ func _run() -> void:
 		"incomplete_matrix_count": incomplete_matrices,
 		"failed_decision_count": failed_decisions,
 		"selected_candidate_missing_count": selected_candidate_missing,
+		"selected_candidate_preserved_count": selected_candidate_preserved,
 	}
 
 	var write_ok: bool = _write_text(decisions_path, _to_jsonl(rows))
 	write_ok = _write_text(manifest_path, JSON.stringify(manifest, "  ") + "\n") and write_ok
 	print("[search-decisions-v2] wrote %s" % decisions_path)
 	print("[search-decisions-v2] wrote %s" % manifest_path)
-	print("[search-decisions-v2] traces=%d source=%d decisions=%d capture=%dx%d complete=%d incomplete=%d failed=%d selected_missing=%d" % [
+	print("[search-decisions-v2] traces=%d source=%d decisions=%d capture=%dx%d complete=%d incomplete=%d failed=%d selected_missing=%d selected_preserved=%d" % [
 		traces_considered,
 		source_budget_traces,
 		rows.size(),
@@ -180,9 +201,96 @@ func _run() -> void:
 		incomplete_matrices,
 		failed_decisions,
 		selected_candidate_missing,
+		selected_candidate_preserved,
 	])
 	var valid: bool = failed_decisions == 0 and selected_candidate_missing == 0
 	get_tree().quit(0 if write_ok and valid else 1)
+
+
+func _preserve_played_candidate_from_source_search(
+	wide_row: Dictionary,
+	game_state: Dictionary,
+	perspective_group: String,
+	opponent_group: String,
+	selected_actions: Array,
+	max_actions_per_unit: int,
+	source_own_max_plans: int,
+	source_opponent_max_plans: int,
+	capture_own_max_plans: int,
+	capture_opponent_max_plans: int,
+	game_id: String,
+	turn_index: int,
+	game_outcome: Dictionary,
+	capture_source: Dictionary
+) -> Dictionary:
+	# Only repair intentional own-side widening. A missing selected candidate at the
+	# original gameplay budget still fails closed so genuine generation drift is visible.
+	if capture_own_max_plans <= source_own_max_plans:
+		return wide_row
+	if capture_opponent_max_plans != source_opponent_max_plans:
+		return wide_row
+
+	var source_row: Dictionary = PureStateSearchDecisionData.capture_decision(
+		game_state,
+		perspective_group,
+		opponent_group,
+		selected_actions,
+		max_actions_per_unit,
+		source_own_max_plans,
+		source_opponent_max_plans,
+		game_id,
+		turn_index,
+		game_outcome,
+		capture_source
+	)
+	if not bool(source_row.get("valid", false)):
+		return wide_row
+	var source_selected_index: int = int(source_row.get("selected_candidate_index", -1))
+	if source_selected_index < 0:
+		return wide_row
+	var source_candidates_variant: Variant = source_row.get("candidates", [])
+	var wide_candidates_variant: Variant = wide_row.get("candidates", [])
+	if not (source_candidates_variant is Array) or not (wide_candidates_variant is Array):
+		return wide_row
+	var source_candidates: Array = source_candidates_variant as Array
+	var wide_candidates: Array = wide_candidates_variant as Array
+	if source_selected_index >= source_candidates.size() or wide_candidates.is_empty():
+		return wide_row
+
+	# The source and widened captures intentionally share the exact opponent budget.
+	# Refuse to splice the played candidate if that response set ever drifts.
+	if JSON.stringify(source_row.get("opponent_responses", [])) != JSON.stringify(wide_row.get("opponent_responses", [])):
+		return wide_row
+
+	var played_variant: Variant = source_candidates[source_selected_index]
+	if not (played_variant is Dictionary):
+		return wide_row
+	var played_candidate: Dictionary = (played_variant as Dictionary).duplicate(true)
+	played_candidate["candidate_index"] = 0
+	played_candidate["selected"] = true
+	played_candidate["preserved_from_source_search"] = true
+
+	var merged: Array = [played_candidate]
+	for candidate_variant: Variant in wide_candidates:
+		if merged.size() >= capture_own_max_plans:
+			break
+		if not (candidate_variant is Dictionary):
+			continue
+		var candidate: Dictionary = (candidate_variant as Dictionary).duplicate(true)
+		candidate["candidate_index"] = merged.size()
+		candidate["selected"] = false
+		merged.append(candidate)
+
+	var repaired: Dictionary = wide_row.duplicate(true)
+	repaired["candidates"] = merged
+	repaired["candidate_count"] = merged.size()
+	repaired["selected_candidate_index"] = 0
+	repaired["selected_candidate_preserved"] = true
+	repaired["complete_requested_matrix"] = (
+		merged.size() == capture_own_max_plans
+		and int(repaired.get("opponent_response_count", 0)) == capture_opponent_max_plans
+	)
+	return repaired
 
 
 func _read_jsonl(path: String) -> Variant:
