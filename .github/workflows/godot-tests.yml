@@ -52,13 +52,9 @@ jobs:
           OUT="${GITHUB_WORKSPACE}/artifacts/search-decision-smoke"
           cd hex-strategy-game
 
-          # Parse the exporter explicitly before running the smoke game. A broken
-          # exporter should fail here rather than leave a failed scene process alive.
-          godot --headless --path . --check-only --script res://tools/check_search_decision_dataset.gd
-
-          # The smoke preset is a one-turn game and should finish quickly. Bound the
-          # integration check independently so a future Godot process hang cannot
-          # consume the entire 15-minute test job.
+          # The smoke preset is a one-turn game and should finish quickly. The
+          # integration path is the reliable compile/runtime check because standalone
+          # --check-only scripts do not load this project's registered class_name graph.
           timeout --signal=TERM 60s ./tools/run_self_play_dataset.sh \
             --preset=smoke \
             --max-games=1 \
