@@ -17,10 +17,10 @@ concurrency:
 
 jobs:
   label:
-    name: Label high-value rejected plans
+    name: Label siblings and retrain ranked value model
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout experiment commit
@@ -67,6 +67,9 @@ jobs:
       - name: Install CPU PyTorch
         run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
+      - name: Run value-model tests
+        run: python -m unittest discover -s ml/tests -v
+
       - name: Import Godot project
         working-directory: hex-strategy-game
         run: godot --headless --import
@@ -81,47 +84,110 @@ jobs:
             --neural-checkpoint="${GITHUB_WORKSPACE}/artifacts/experiment/value_model.pt" \
             --max-continuations=16
 
-      - name: Audit continuation labels
+      - name: Build same-response sibling ranking pairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd hex-strategy-game
+          godot --headless --path . res://tools/search_decision_ranking_pairs.tscn -- \
+            --out="${GITHUB_WORKSPACE}/artifacts/self_play"
+
+      - name: Audit continuation and ranking labels
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
 
           root = Path("artifacts/self_play")
-          manifest = json.loads((root / "rejected_continuations_manifest.json").read_text())
-          print(json.dumps(manifest, indent=2, sort_keys=True))
-          if int(manifest.get("continuations_invalid", 0)) != 0:
+          continuations = json.loads((root / "rejected_continuations_manifest.json").read_text())
+          ranking = json.loads((root / "ranking_pairs_manifest.json").read_text())
+          print(json.dumps(continuations, indent=2, sort_keys=True))
+          print(json.dumps(ranking, indent=2, sort_keys=True))
+          if int(continuations.get("continuations_invalid", 0)) != 0:
               raise SystemExit("continuation generation produced invalid branches")
-          if int(manifest.get("continuations_selected", 0)) <= 0:
+          if int(continuations.get("continuations_selected", 0)) <= 0:
               raise SystemExit("continuation generation selected no rejected alternatives")
-          if not bool(manifest.get("neural_prioritization_enabled", False)):
+          if not bool(continuations.get("neural_prioritization_enabled", False)):
               raise SystemExit("continuation generation did not use the trained neural checkpoint")
+          if int(ranking.get("invalid", 0)) != 0:
+              raise SystemExit("ranking-pair generation produced invalid sibling branches")
+          if int(ranking.get("pairs_written", 0)) <= 0:
+              raise SystemExit("ranking-pair generation produced no terminal preference pairs")
+          if not bool(ranking.get("same_opponent_response", False)):
+              raise SystemExit("ranking pairs are not response-controlled")
+          if bool(ranking.get("loss_vs_loss_pairs", True)):
+              raise SystemExit("ranking data must not reward delaying losses")
           PY
 
-      - name: Write continuation summary
+      - name: Train value plus sibling-ranking model
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m ml.value_model.train_ranked \
+            --data artifacts/experiment/self_play/examples.jsonl \
+            --ranking-data artifacts/self_play/ranking_pairs.jsonl \
+            --output artifacts/ranked_value_model.pt \
+            --epochs 60 \
+            --batch-size 64 \
+            --ranking-batch-size 32 \
+            --ranking-weight 0.5 \
+            --learning-rate 0.0003 \
+            --weight-decay 0.0001 \
+            --validation-fraction 0.25 \
+            --split-key source.base_scenario_id \
+            --seed 0 \
+            --device cpu \
+            --handwritten-baseline artifacts/experiment/handwritten_baseline.json \
+            | tee artifacts/ranked_metrics.json
+
+      - name: Evaluate ranked model on counterfactual decisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m ml.value_model.evaluate_counterfactual \
+            --candidates artifacts/experiment/counterfactual/candidates_with_handwritten.jsonl \
+            --checkpoint artifacts/ranked_value_model.pt \
+            --output artifacts/ranked_counterfactual_metrics.json
+
+      - name: Write continuation and ranked-training summary
         run: |
           python - <<'PY'
           import json
           import os
           from pathlib import Path
 
-          manifest = json.loads(
+          continuations = json.loads(
               Path("artifacts/self_play/rejected_continuations_manifest.json").read_text()
           )
-          summary = f"""## Rejected-alternative continuation labels
+          ranking = json.loads(
+              Path("artifacts/self_play/ranking_pairs_manifest.json").read_text()
+          )
+          base_metrics = json.loads(Path("artifacts/experiment/metrics.json").read_text())
+          ranked_metrics = json.loads(Path("artifacts/ranked_metrics.json").read_text())
+          base_cf = json.loads(Path("artifacts/experiment/counterfactual_metrics.json").read_text())
+          ranked_cf = json.loads(Path("artifacts/ranked_counterfactual_metrics.json").read_text())
+          base_neural = base_cf["evaluators"]["neural_value_model"]
+          ranked_neural = ranked_cf["evaluators"]["neural_value_model"]
 
-          | Metric | Result |
-          | --- | ---: |
-          | Experiment run | {os.environ.get('SOURCE_RUN', 'unknown')} |
-          | Search decisions considered | {manifest['decisions_considered']} |
-          | Rejected candidates considered | {manifest['rejected_candidates_considered']} |
-          | Continuations selected | {manifest['continuations_selected']} |
-          | Terminal labels | {manifest['continuations_labeled']} |
-          | Unresolved/unlabeled | {manifest['continuations_unlabeled']} |
-          | Invalid | {manifest['continuations_invalid']} |
-          | Priority reasons | `{manifest['priority_reason_counts']}` |
+          summary = f"""## Sibling-ranking value-model follow-up
 
-          Selection favors neural-vs-handwritten disagreement, then close neural scores, then tactically large one-turn swings. Only one modeled response branch per selected rejected candidate is continued.
+          | Metric | Value-only | Value + ranking |
+          | --- | ---: | ---: |
+          | Held-out nonterminal winner accuracy | {float(base_metrics['neural_eval_sign_accuracy_nonterminal']):.1%} | {float(ranked_metrics['neural_eval_sign_accuracy_nonterminal']):.1%} |
+          | Counterfactual candidate-ranking accuracy | {float(base_neural['candidate_ranking_accuracy']):.1%} | {float(ranked_neural['candidate_ranking_accuracy']):.1%} |
+          | Counterfactual mean regret | {float(base_neural['top_plan_mean_regret']):.3f} | {float(ranked_neural['top_plan_mean_regret']):.3f} |
+          | Counterfactual max regret | {float(base_neural['top_plan_max_regret']):.3f} | {float(ranked_neural['top_plan_max_regret']):.3f} |
+          | Counterfactual optimal-choice rate | {float(base_neural['top_plan_optimal_rate']):.1%} | {float(ranked_neural['top_plan_optimal_rate']):.1%} |
+          | Held-out sibling-ranking accuracy | n/a | {float(ranked_metrics['eval_ranking_accuracy']):.1%} |
+
+          **Experiment run:** {os.environ.get('SOURCE_RUN', 'unknown')}  
+          **Rejected continuations:** {continuations['continuations_labeled']} terminal / {continuations['continuations_selected']} selected  
+          **Ranking pairs:** {ranking['pairs_written']} total = {ranking['outcome_pairs']} outcome + {ranking['faster_win_pairs']} faster-win  
+          **Pair weights:** outcome={ranking['outcome_pair_weight']}, faster-win={ranking['faster_win_pair_weight']}  
+          **Ranking loss weight:** {ranked_metrics['ranking_weight']}  
+          **Priority reasons:** `{continuations['priority_reason_counts']}`
+
+          Every ranking pair compares sibling leaves from the same decision under the same modeled opponent response. Win/draw/loss ordering is the primary label. Faster wins are lower-confidence supervision. Loss-vs-loss pairs are intentionally omitted so the model is not rewarded for merely delaying defeat.
           """
           Path("artifacts/continuation_summary.md").write_text(summary, encoding="utf-8")
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as handle:
@@ -131,7 +197,7 @@ jobs:
         env:
           SOURCE_RUN: ${{ github.event.workflow_run.id }}
 
-      - name: Upload continuation labels
+      - name: Upload sibling-ranking follow-up
         uses: actions/upload-artifact@v4
         with:
           name: rejected-continuations-${{ github.event.workflow_run.run_number }}
@@ -139,6 +205,11 @@ jobs:
             artifacts/self_play/search_decisions_manifest.json
             artifacts/self_play/rejected_continuations.jsonl
             artifacts/self_play/rejected_continuations_manifest.json
+            artifacts/self_play/ranking_pairs.jsonl
+            artifacts/self_play/ranking_pairs_manifest.json
+            artifacts/ranked_value_model.pt
+            artifacts/ranked_metrics.json
+            artifacts/ranked_counterfactual_metrics.json
             artifacts/continuation_summary.md
           if-no-files-found: error
           retention-days: 14
