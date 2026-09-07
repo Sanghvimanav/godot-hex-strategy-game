@@ -6,12 +6,12 @@
 
 Normal gameplay search is unchanged. `run_self_play_dataset.sh` post-processes traces after the played game has finished.
 
-For ordinary smoke/starter runs the historical 2x2 decision recorder is preserved. For the `diverse` value-model dataset, fast played 2x2 turns are re-captured offline as **4 own candidates x 4 modeled opponent responses**. That gives sibling training more alternatives without paying 4x4 search cost during gameplay.
+For ordinary smoke/starter runs the historical 2x2 decision recorder is preserved. For the `diverse` value-model dataset, fast played 2x2 turns are re-captured offline as **4 own candidates x 2 modeled opponent responses**. This gives sibling training A/B/C/D alternatives while preserving the opponent-response set from the played search. Because dense ranking later holds one response fixed, widening the opponent side would add compute without increasing the number of own-plan sibling comparisons.
 
 The wider capture is implemented by `search_decision_dataset_v2.gd`. Callers can override it explicitly with:
 
 ```bash
---decision-own-max-plans=4 --decision-opponent-max-plans=4
+--decision-own-max-plans=4 --decision-opponent-max-plans=2
 ```
 
 ## Prioritized rejected continuations
@@ -88,7 +88,7 @@ The first ranked follow-up after Value Model Experiment #79 had 652 ordinary val
 
 Dense sibling capture attacks both problems:
 
-- wider offline 4x4 matrices expose multiple own-plan alternatives from one exact parent state;
+- wider offline 4x2 matrices expose four own-plan alternatives from one exact parent state while preserving the played opponent-response set;
 - family-diverse decision selection makes it much more likely that held-out value families also contain sibling pairs;
 - every candidate is continued under the same response and all useful pairwise preferences are retained.
 
