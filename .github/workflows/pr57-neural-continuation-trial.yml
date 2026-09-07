@@ -1,0 +1,157 @@
+name: PR57 Neural Continuation Trial
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pr57-neural-continuation-trial.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: pr57-neural-continuation-trial-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  trial:
+    name: Real neural checkpoint continuation trial
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Download retained Arena neural checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_ARTIFACT_ID: "9998973550"
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/neural_checkpoint
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CHECKPOINT_ARTIFACT_ID}/zip" > /tmp/neural-checkpoint.zip
+          unzip -q /tmp/neural-checkpoint.zip -d artifacts/neural_checkpoint
+          CHECKPOINT="$(find artifacts/neural_checkpoint -type f -name '*.pt' | head -n 1)"
+          test -n "${CHECKPOINT}"
+          echo "CHECKPOINT=${GITHUB_WORKSPACE}/${CHECKPOINT}" >> "$GITHUB_ENV"
+          echo "Using ${CHECKPOINT}"
+
+      - name: Generate targeted 2x2 search decisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/artifacts/neural-continuation-trial"
+          cd hex-strategy-game
+          timeout --signal=TERM 300s ./tools/run_self_play_dataset.sh \
+            --preset=starter \
+            --max-games=10 \
+            --out="${OUT}"
+
+      - name: Label prioritized rejected alternatives with neural checkpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/artifacts/neural-continuation-trial"
+          cd hex-strategy-game
+          timeout --signal=TERM 300s ./tools/run_rejected_continuations.sh \
+            --out="${OUT}" \
+            --neural-checkpoint="${CHECKPOINT}" \
+            --max-continuations=12
+
+      - name: Summarize neural prioritization trial
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("artifacts/neural-continuation-trial")
+          manifest = json.loads((root / "rejected_continuations_manifest.json").read_text())
+          rows = [
+              json.loads(line)
+              for line in (root / "rejected_continuations.jsonl").read_text().splitlines()
+              if line.strip()
+          ]
+
+          if not manifest.get("neural_prioritization_enabled"):
+              raise SystemExit("trial did not actually enable neural prioritization")
+          if int(manifest.get("neural_scored_decisions", 0)) <= 0:
+              raise SystemExit("trial did not score any decisions with the neural evaluator")
+          if int(manifest.get("continuations_selected", 0)) <= 0 or not rows:
+              raise SystemExit("trial selected no rejected alternatives")
+          if int(manifest.get("continuations_invalid", 0)) != 0:
+              raise SystemExit(f"trial produced invalid continuations: {manifest}")
+
+          reasons = manifest.get("priority_reason_counts", {})
+          disagreements = int(reasons.get("neural_handwritten_disagreement", 0))
+          close = int(reasons.get("neural_scores_close", 0))
+          tactical = int(reasons.get("tactically_important", 0))
+          labeled = int(manifest.get("continuations_labeled", 0))
+          unlabeled = int(manifest.get("continuations_unlabeled", 0))
+
+          by_scenario = {}
+          for row in rows:
+              scenario = row.get("scenario_id") or row.get("base_scenario_id") or "unknown"
+              bucket = by_scenario.setdefault(scenario, {"rows": 0, "labeled": 0, "reasons": {}})
+              bucket["rows"] += 1
+              bucket["labeled"] += int(bool(row.get("labeled")))
+              for reason in row.get("priority_reasons", []):
+                  bucket["reasons"][reason] = bucket["reasons"].get(reason, 0) + 1
+
+          print(json.dumps(manifest, indent=2, sort_keys=True))
+          print("scenario_breakdown=" + json.dumps(by_scenario, indent=2, sort_keys=True))
+          print(
+              f"NEURAL_TRIAL decisions={manifest.get('decisions_considered')} "
+              f"neural_scored={manifest.get('neural_scored_decisions')} "
+              f"selected={manifest.get('continuations_selected')} labeled={labeled} unlabeled={unlabeled} "
+              f"disagreements={disagreements} close={close} tactical={tactical}"
+          )
+
+          summary = f"""## PR57 targeted neural continuation trial
+
+          - Neural-scored decisions: {manifest.get('neural_scored_decisions')}
+          - Rejected continuations selected: {manifest.get('continuations_selected')}
+          - Real terminal labels: {labeled}
+          - Unresolved/unlabeled: {unlabeled}
+          - Invalid: {manifest.get('continuations_invalid')}
+          - Neural vs handwritten disagreement selections: {disagreements}
+          - Close-neural-score selections: {close}
+          - Tactically-important selections: {tactical}
+
+          Scenario breakdown:
+          ```json
+          {json.dumps(by_scenario, indent=2, sort_keys=True)}
+          ```
+          """
+          with Path(__import__('os').environ['GITHUB_STEP_SUMMARY']).open('a', encoding='utf-8') as f:
+              f.write(summary)
+          PY
+
+      - name: Upload targeted trial data
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr57-neural-continuation-trial
+          path: artifacts/neural-continuation-trial/
+          if-no-files-found: error
+          retention-days: 7
