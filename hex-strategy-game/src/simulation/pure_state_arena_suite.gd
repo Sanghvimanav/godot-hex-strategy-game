@@ -89,9 +89,10 @@ const FAMILY_MAX_TURNS := {
 }
 
 const AGENT_PROFILES := {
-	# Plan-pair count dominates one-turn search cost. Keep the per-PR tier at 2x2
-	# while preserving the same action enumeration used by existing self-play.
-	"fast": {"max_actions_per_unit": 8, "own_max_plans": 2, "opponent_max_plans": 2},
+	# Diagnostic-only branch: remap the PR "fast" profile to 4x4 so the frozen
+	# eight-pair arena can reveal whether 2x2 candidate recall is hiding useful
+	# hold/reposition/disengage plans in the currently faction-dominated cases.
+	"fast": {"max_actions_per_unit": 8, "own_max_plans": 4, "opponent_max_plans": 4},
 	"balanced": {"max_actions_per_unit": 8, "own_max_plans": 4, "opponent_max_plans": 4},
 	# Intermediate diagnostic profile: if 6x6 cannot justify its extra compute on
 	# the frozen arena, there is little reason to spend full-run budget on 8x8.
