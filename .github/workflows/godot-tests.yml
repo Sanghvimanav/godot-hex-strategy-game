@@ -126,7 +126,7 @@ jobs:
           if not labels:
               raise SystemExit("continuation smoke produced no rejected-alternative rows")
           for row in labels:
-              if row.get("selected_candidate_index") == row.get("rejected_candidate_index"):
+              if row.get("played_candidate_index") == row.get("rejected_candidate_index"):
                   raise SystemExit("continuation label did not use a rejected candidate")
               if not row.get("priority_reasons"):
                   raise SystemExit("continuation label missing prioritization reason")
@@ -143,6 +143,56 @@ jobs:
           if manifest.get("continuations_selected") != len(labels):
               raise SystemExit(f"continuation manifest/file mismatch: {manifest}")
           print(f"validated {len(labels)} selective rejected-alternative continuations")
+          PY
+
+          # Compile/runtime-check the response-controlled sibling continuation path.
+          # The tiny smoke fixture may legitimately produce zero preference pairs if
+          # both siblings end identically, so CI validates structure rather than count.
+          timeout --signal=TERM 60s godot --headless --path . \
+            res://tools/search_decision_ranking_pairs.tscn -- \
+            --out="${OUT}"
+          python - "${OUT}" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          pair_path = root / "ranking_pairs.jsonl"
+          manifest_path = root / "ranking_pairs_manifest.json"
+          if not pair_path.exists() or not manifest_path.exists():
+              raise SystemExit("ranking-pair smoke output missing")
+          pairs = [
+              json.loads(line)
+              for line in pair_path.read_text().splitlines()
+              if line.strip()
+          ]
+          for row in pairs:
+              if row.get("pair_kind") not in {"outcome", "faster_win"}:
+                  raise SystemExit(f"unexpected ranking pair kind: {row}")
+              if float(row.get("weight", 0)) <= 0:
+                  raise SystemExit("ranking pair weight must be positive")
+              if not row.get("better_state") or not row.get("worse_state"):
+                  raise SystemExit("ranking pair missing sibling states")
+              if row.get("pair_kind") == "outcome" and not (
+                  float(row.get("better_outcome", 0)) > float(row.get("worse_outcome", 0))
+              ):
+                  raise SystemExit("outcome ranking pair is not ordered")
+              if (
+                  float(row.get("better_outcome", 0)) == -1.0
+                  and float(row.get("worse_outcome", 0)) == -1.0
+              ):
+                  raise SystemExit("loss-vs-loss ranking pair should never be emitted")
+
+          manifest = json.loads(manifest_path.read_text())
+          if int(manifest.get("invalid", 0)) != 0:
+              raise SystemExit(f"invalid sibling continuation branches: {manifest}")
+          if int(manifest.get("pairs_written", -1)) != len(pairs):
+              raise SystemExit(f"ranking manifest/file mismatch: {manifest}")
+          if not manifest.get("same_opponent_response"):
+              raise SystemExit("ranking pairs must hold opponent response fixed")
+          if manifest.get("loss_vs_loss_pairs"):
+              raise SystemExit("ranking policy must exclude loss-vs-loss labels")
+          print(f"validated {len(pairs)} response-controlled sibling ranking pairs")
           PY
 
       - name: Upload test output on failure
