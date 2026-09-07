@@ -16,13 +16,14 @@ godot --headless --path . res://tools/self_play_dataset.tscn -- \
   "$@"
 
 # Search-decision capture is offline and does not affect the played trajectory.
-# The diverse value-model dataset widens fast 2x2 turns to a 4x4 matrix so one
-# decision can teach about several sibling candidates. Smoke/starter retain the
-# historical 2x2 recorder unless callers explicitly override these args.
+# The diverse value-model dataset widens fast 2x2 turns to four own candidates while
+# retaining the two opponent responses from the played search. That exposes A/B/C/D
+# siblings without changing gameplay or spending compute on extra responses that the
+# response-controlled ranking stage will not use. Smoke/starter retain historical 2x2.
 DECISION_CAPTURE_ARGS=()
 for arg in "$@"; do
   if [[ "${arg}" == "--preset=diverse" ]]; then
-    DECISION_CAPTURE_ARGS+=(--decision-own-max-plans=4 --decision-opponent-max-plans=4)
+    DECISION_CAPTURE_ARGS+=(--decision-own-max-plans=4 --decision-opponent-max-plans=2)
   fi
 done
 
