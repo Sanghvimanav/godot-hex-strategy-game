@@ -16,8 +16,9 @@ godot --headless --path . res://tools/self_play_dataset.tscn -- \
   "$@"
 
 # Search-decision data is a post-process so the played game and normal search
-# pruning are untouched. V1 records only fast 2x2 decisions from the generated
-# traces, retaining the full candidate x modeled-response leaf matrix.
-godot --headless --path . res://tools/search_decision_dataset.tscn -- \
+# pruning are untouched. The recorder defaults to the historical fast 2x2 matrix,
+# while value-model experiments can widen only this offline capture to 4x4 so each
+# played decision exposes more sibling candidates without changing gameplay search.
+godot --headless --path . res://tools/search_decision_dataset_v2.tscn -- \
   --out=user://self_play_dataset \
   "$@"
