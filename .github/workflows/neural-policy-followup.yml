@@ -1,0 +1,471 @@
+name: Neural Policy Follow-up
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_experiment_run_id:
+        description: Value Model Experiment run that owns the base self-play/counterfactual data
+        required: true
+        type: string
+      checkpoint_run_id:
+        description: Run containing ranked_value_model.pt (current neural policy)
+        required: true
+        type: string
+      arena_run_id:
+        description: Prior neural-vs-handwritten Arena run whose traces will be mined
+        required: true
+        type: string
+      policy_preset:
+        description: Frozen Arena state set used to collect neural-policy states
+        required: true
+        default: fast
+        type: choice
+        options: [fast, full]
+      search_profile:
+        description: Search budget used for neural-policy collection and promotion Arena
+        required: true
+        default: balanced
+        type: choice
+        options: [balanced, wide]
+      max_sibling_decisions:
+        description: Family-diverse decisions to continue under neural-vs-handwritten policy
+        required: true
+        default: "16"
+        type: string
+      epochs:
+        description: Ranked retraining epochs
+        required: true
+        default: "60"
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: neural-policy-followup-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  neural-policy-data:
+    name: Neural-policy state shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Download source checkpoint artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          path: artifacts/source_candidate
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.checkpoint_run_id }}
+
+      - name: Resolve ranked checkpoint
+        run: |
+          set -euo pipefail
+          checkpoint="$(find artifacts/source_candidate -type f -name ranked_value_model.pt -print -quit)"
+          if [[ -z "$checkpoint" ]]; then
+            echo "ranked_value_model.pt not found in run ${{ inputs.checkpoint_run_id }}" >&2
+            exit 1
+          fi
+          mkdir -p artifacts/checkpoint
+          cp "$checkpoint" artifacts/checkpoint/ranked_value_model.pt
+
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Collect neural-policy states against handwritten
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/neural_policy_dataset.tscn -- \
+            --preset="${{ inputs.policy_preset }}" \
+            --profile="${{ inputs.search_profile }}" \
+            --checkpoint="${GITHUB_WORKSPACE}/artifacts/checkpoint/ranked_value_model.pt" \
+            --out="${GITHUB_WORKSPACE}/artifacts/neural_policy" \
+            --shard-index="${{ matrix.shard }}" \
+            --shard-count=4
+
+      - name: Upload neural-policy shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: neural-policy-data-shard-${{ matrix.shard }}
+          path: artifacts/neural_policy/
+          if-no-files-found: error
+          retention-days: 7
+
+  retrain:
+    name: Build policy-aligned supervision and retrain
+    needs: neural-policy-data
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Download current neural candidate artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          path: artifacts/source_candidate
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.checkpoint_run_id }}
+
+      - name: Download base value-model experiment
+        uses: actions/download-artifact@v4
+        with:
+          pattern: value-model-experiment-*
+          path: artifacts/experiment
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.source_experiment_run_id }}
+
+      - name: Download base search-decision shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: self-play-shard-*
+          path: artifacts/self_play_shards
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.source_experiment_run_id }}
+
+      - name: Download newly collected neural-policy states
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-policy-data-shard-*
+          path: artifacts/neural_policy_shards
+          merge-multiple: false
+
+      - name: Download prior Arena shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*arena*shard-*"
+          path: artifacts/prior_arena_shards
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.arena_run_id }}
+
+      - name: Resolve source checkpoint and sibling metadata
+        run: |
+          set -euo pipefail
+          checkpoint="$(find artifacts/source_candidate -type f -name ranked_value_model.pt -print -quit)"
+          rejected="$(find artifacts/source_candidate -type f -name rejected_continuations.jsonl -print -quit)"
+          if [[ -z "$checkpoint" || -z "$rejected" ]]; then
+            echo "Source run must contain ranked_value_model.pt and rejected_continuations.jsonl" >&2
+            exit 1
+          fi
+          mkdir -p artifacts/checkpoint artifacts/self_play
+          cp "$checkpoint" artifacts/checkpoint/ranked_value_model.pt
+          cp "$rejected" artifacts/self_play/rejected_continuations.jsonl
+
+      - name: Merge source search-decision matrices
+        run: |
+          python -m ml.value_model.merge_search_decisions \
+            --root artifacts/self_play_shards \
+            --output artifacts/self_play
+
+      - name: Run value-model tests
+        run: python -m unittest discover -s ml/tests -v
+
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Build neural-vs-handwritten sibling pairs
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/search_decision_neural_sibling_pairs.tscn -- \
+            --out="${GITHUB_WORKSPACE}/artifacts/self_play" \
+            --neural-checkpoint="${GITHUB_WORKSPACE}/artifacts/checkpoint/ranked_value_model.pt" \
+            --max-decisions="${{ inputs.max_sibling_decisions }}"
+
+      - name: Mine prior Arena divergences as hard negatives
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/arena_divergence_pairs.tscn -- \
+            --arena-root="${GITHUB_WORKSPACE}/artifacts/prior_arena_shards" \
+            --neural-checkpoint="${GITHUB_WORKSPACE}/artifacts/checkpoint/ranked_value_model.pt" \
+            --profile="${{ inputs.search_profile }}" \
+            --out="${GITHUB_WORKSPACE}/artifacts/arena_hard_negatives" \
+            --max-pairs=16
+
+      - name: Merge policy-aligned value and ranking supervision
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/combined
+
+          previous_examples="$(find artifacts/source_candidate -type f -name combined_examples.jsonl -print -quit)"
+          if [[ -n "$previous_examples" ]]; then
+            cp "$previous_examples" artifacts/combined/base_examples.jsonl
+          else
+            cp artifacts/experiment/self_play/examples.jsonl artifacts/combined/base_examples.jsonl
+          fi
+          cat artifacts/combined/base_examples.jsonl > artifacts/combined/combined_examples.jsonl
+          find artifacts/neural_policy_shards -type f -name examples.jsonl -print0 \
+            | sort -z \
+            | xargs -0 cat >> artifacts/combined/combined_examples.jsonl
+
+          previous_pairs="$(find artifacts/source_candidate -type f -name combined_ranking_pairs.jsonl -print -quit)"
+          if [[ -z "$previous_pairs" ]]; then
+            previous_pairs="$(find artifacts/source_candidate -type f -name ranking_pairs.jsonl -print -quit)"
+          fi
+          : > artifacts/combined/combined_ranking_pairs.jsonl
+          if [[ -n "$previous_pairs" ]]; then
+            cat "$previous_pairs" >> artifacts/combined/combined_ranking_pairs.jsonl
+          fi
+          cat artifacts/self_play/neural_ranking_pairs.jsonl >> artifacts/combined/combined_ranking_pairs.jsonl
+          if [[ -s artifacts/arena_hard_negatives/arena_hard_negative_pairs.jsonl ]]; then
+            cat artifacts/arena_hard_negatives/arena_hard_negative_pairs.jsonl >> artifacts/combined/combined_ranking_pairs.jsonl
+          fi
+
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          def rows(path):
+              return [json.loads(line) for line in Path(path).read_text().splitlines() if line.strip()]
+
+          examples = rows("artifacts/combined/combined_examples.jsonl")
+          pairs = rows("artifacts/combined/combined_ranking_pairs.jsonl")
+          summary = {
+              "value_examples": len(examples),
+              "neural_policy_examples": sum(
+                  1 for row in examples
+                  if row.get("source", {}).get("data_policy") == "neural_vs_handwritten"
+              ),
+              "ranking_pairs": len(pairs),
+              "ranking_pairs_by_continuation_policy": dict(Counter(
+                  row.get("continuation_policy", "handwritten")
+                  for row in pairs
+              )),
+              "arena_hard_negative_pairs": sum(
+                  1 for row in pairs
+                  if row.get("source", {}).get("data_origin") == "arena_divergence_hard_negative"
+              ),
+              "ranking_pair_kinds": dict(Counter(row.get("pair_kind", "") for row in pairs)),
+          }
+          Path("artifacts/combined/supervision_manifest.json").write_text(
+              json.dumps(summary, indent=2) + "\n"
+          )
+          print(json.dumps(summary, indent=2))
+          PY
+
+      - name: Train fresh policy-aligned ranked model
+        run: |
+          python -m ml.value_model.train_ranked \
+            --data artifacts/combined/combined_examples.jsonl \
+            --ranking-data artifacts/combined/combined_ranking_pairs.jsonl \
+            --output artifacts/ranked_value_model.pt \
+            --epochs "${{ inputs.epochs }}" \
+            --batch-size 64 \
+            --ranking-batch-size 32 \
+            --ranking-weight 0.5 \
+            --learning-rate 0.0003 \
+            --weight-decay 0.0001 \
+            --validation-fraction 0.25 \
+            --split-key source.base_scenario_id \
+            --seed 0 \
+            --device cpu \
+            --handwritten-baseline artifacts/experiment/handwritten_baseline.json \
+            | tee artifacts/ranked_metrics.json
+
+      - name: Evaluate candidate on frozen counterfactual benchmark
+        run: |
+          python -m ml.value_model.evaluate_counterfactual \
+            --candidates artifacts/experiment/counterfactual/candidates_with_handwritten.jsonl \
+            --checkpoint artifacts/ranked_value_model.pt \
+            --output artifacts/ranked_counterfactual_metrics.json
+
+      - name: Write training summary
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          supervision = json.loads(Path("artifacts/combined/supervision_manifest.json").read_text())
+          metrics = json.loads(Path("artifacts/ranked_metrics.json").read_text())
+          cf = json.loads(Path("artifacts/ranked_counterfactual_metrics.json").read_text())
+          neural = cf["evaluators"]["neural_value_model"]
+          sibling = json.loads(Path("artifacts/self_play/neural_ranking_pairs_manifest.json").read_text())
+          hard = json.loads(Path("artifacts/arena_hard_negatives/arena_hard_negative_manifest.json").read_text())
+          summary = f"""## Neural-policy supervision follow-up
+
+          | Metric | Result |
+          | --- | ---: |
+          | Combined value examples | {supervision['value_examples']} |
+          | Neural-policy value examples | {supervision['neural_policy_examples']} |
+          | Combined ranking pairs | {supervision['ranking_pairs']} |
+          | Neural-continuation sibling pairs | {sibling['pairs_written']} |
+          | Arena hard-negative pairs | {hard['pairs_written']} |
+          | Held-out nonterminal winner accuracy | {float(metrics['neural_eval_sign_accuracy_nonterminal']):.1%} |
+          | Held-out sibling ranking accuracy | {float(metrics['eval_ranking_accuracy']):.1%} |
+          | Counterfactual candidate ranking | {float(neural['candidate_ranking_accuracy']):.1%} |
+          | Counterfactual mean regret | {float(neural['top_plan_mean_regret']):.3f} |
+          | Counterfactual optimal-choice rate | {float(neural['top_plan_optimal_rate']):.1%} |
+
+          **Source checkpoint run:** {os.environ['CHECKPOINT_RUN']}  
+          **Source experiment run:** {os.environ['EXPERIMENT_RUN']}  
+          **Mined Arena run:** {os.environ['ARENA_RUN']}  
+          **Ranking policies:** `{supervision['ranking_pairs_by_continuation_policy']}`
+          """
+          Path("artifacts/training_summary.md").write_text(summary)
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as handle:
+              handle.write(summary)
+          print(summary)
+          PY
+        env:
+          CHECKPOINT_RUN: ${{ inputs.checkpoint_run_id }}
+          EXPERIMENT_RUN: ${{ inputs.source_experiment_run_id }}
+          ARENA_RUN: ${{ inputs.arena_run_id }}
+
+      - name: Preserve source rejected-continuation priorities
+        run: cp artifacts/self_play/rejected_continuations.jsonl artifacts/combined/rejected_continuations.jsonl
+
+      - name: Upload policy-aligned candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: neural-policy-candidate-${{ github.run_number }}
+          path: |
+            artifacts/ranked_value_model.pt
+            artifacts/ranked_metrics.json
+            artifacts/ranked_counterfactual_metrics.json
+            artifacts/training_summary.md
+            artifacts/combined/combined_examples.jsonl
+            artifacts/combined/combined_ranking_pairs.jsonl
+            artifacts/combined/supervision_manifest.json
+            artifacts/combined/rejected_continuations.jsonl
+            artifacts/self_play/neural_ranking_pairs.jsonl
+            artifacts/self_play/neural_ranking_pairs_manifest.json
+            artifacts/arena_hard_negatives/arena_hard_negative_pairs.jsonl
+            artifacts/arena_hard_negatives/arena_hard_negative_manifest.json
+            artifacts/arena_hard_negatives/arena_divergences.jsonl
+          if-no-files-found: error
+          retention-days: 14
+
+  arena:
+    name: Policy-aligned 4x4 Arena shard ${{ matrix.shard }}
+    needs: retrain
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Download policy-aligned candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: neural-policy-candidate-${{ github.run_number }}
+          path: artifacts/candidate
+
+      - name: Install candidate checkpoint
+        run: |
+          mkdir -p hex-strategy-game/models
+          cp artifacts/candidate/ranked_value_model.pt \
+            hex-strategy-game/models/objective_aware_candidate_v1.pt
+
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Run frozen fast 4x4 neural vs handwritten Arena
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/ai_arena.tscn -- \
+            --preset=fast \
+            --champion-profile="${{ inputs.search_profile }}" \
+            --challenger-profile="${{ inputs.search_profile }}" \
+            --champion-evaluator=handwritten \
+            --challenger-evaluator=neural \
+            --rules-version="${GITHUB_SHA}" \
+            --out="${GITHUB_WORKSPACE}/artifacts/arena" \
+            --shard-index="${{ matrix.shard }}" \
+            --shard-count=4
+
+      - name: Upload Arena shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: neural-policy-arena-shard-${{ matrix.shard }}
+          path: artifacts/arena/
+          if-no-files-found: error
+          retention-days: 7
+
+  merge-arena:
+    name: Merge policy-aligned 4x4 Arena
+    needs: arena
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Arena shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-policy-arena-shard-*
+          path: artifacts/arena_shards
+          merge-multiple: false
+
+      - name: Merge and summarize Arena
+        run: |
+          python3 hex-strategy-game/tools/merge_ai_arena.py \
+            --input-root artifacts/arena_shards \
+            --out artifacts/arena_merged \
+            --checkpoint-source="neural-policy-followup:${GITHUB_RUN_ID}"
+          cat artifacts/arena_merged/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload merged Arena
+        uses: actions/upload-artifact@v4
+        with:
+          name: neural-policy-arena-${{ github.run_number }}
+          path: artifacts/arena_merged/
+          if-no-files-found: error
+          retention-days: 14
