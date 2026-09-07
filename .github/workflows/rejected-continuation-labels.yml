@@ -58,14 +58,14 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
 
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
       - name: Merge search-decision matrices
         run: |
           python -m ml.value_model.merge_search_decisions \
             --root artifacts/self_play_shards \
             --output artifacts/self_play
-
-      - name: Install CPU PyTorch
-        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Run value-model tests
         run: python -m unittest discover -s ml/tests -v
