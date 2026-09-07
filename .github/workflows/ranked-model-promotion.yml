@@ -1,0 +1,60 @@
+name: Ranked Model Promotion Arena
+
+on:
+  workflow_run:
+    workflows:
+      - Rejected Continuation Labels
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: ranked-model-promotion-${{ github.event.workflow_run.id }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    name: Launch frozen 4x4 promotion Arena
+    if: github.event.workflow_run.conclusion == 'success' && vars.AUTO_PROMOTION_ARENA == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify ranked checkpoint artifact exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          artifact_count="$(
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select(.expired == false)] | length'
+          )"
+          if [[ "$artifact_count" -le 0 ]]; then
+            echo "No unexpired artifacts found on ranked-training run ${SOURCE_RUN_ID}" >&2
+            exit 1
+          fi
+          echo "Found ${artifact_count} artifact(s) on ranked-training run ${SOURCE_RUN_ID}"
+
+      - name: Dispatch 4x4 neural vs handwritten Arena
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          gh workflow run ai-arena.yml \
+            --ref main \
+            -f preset=fast \
+            -f champion_search_budget=4x4 \
+            -f challenger_search_budget=4x4 \
+            -f champion_evaluator=handwritten \
+            -f challenger_evaluator=neural \
+            -f checkpoint_run_id="${SOURCE_RUN_ID}" \
+            -f checkpoint_filename=ranked_value_model.pt
+
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Promotion Arena dispatched
+
+          Ranked-training run **${SOURCE_RUN_ID}** completed successfully, so a frozen **4x4 handwritten vs neural** Arena was dispatched using `ranked_value_model.pt` from that exact run.
+          EOF

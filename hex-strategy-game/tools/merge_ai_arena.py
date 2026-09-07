@@ -13,6 +13,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-root", required=True)
     parser.add_argument("--out", required=True)
+    parser.add_argument(
+        "--checkpoint-source",
+        default="",
+        help="Reproducible checkpoint provenance such as artifact:123 or run:456/file.pt",
+    )
     return parser.parse_args()
 
 
@@ -42,12 +47,18 @@ def main() -> int:
     for shard in shards[1:]:
         for key in invariant_keys:
             if shard.get(key) != first.get(key):
-                raise SystemExit(f"Arena shard metadata mismatch for {key}: {shard.get(key)!r} != {first.get(key)!r}")
+                raise SystemExit(
+                    f"Arena shard metadata mismatch for {key}: "
+                    f"{shard.get(key)!r} != {first.get(key)!r}"
+                )
 
     expected_shards = int(first["shard_count"])
     shard_indexes = sorted(int(shard["shard_index"]) for shard in shards)
     if shard_indexes != list(range(expected_shards)):
-        raise SystemExit(f"Arena shards incomplete: got {shard_indexes}, expected 0..{expected_shards - 1}")
+        raise SystemExit(
+            f"Arena shards incomplete: got {shard_indexes}, "
+            f"expected 0..{expected_shards - 1}"
+        )
 
     games = []
     seen_game_ids = set()
@@ -62,14 +73,18 @@ def main() -> int:
 
     expected_games = int(first["preset_games"])
     if len(games) != expected_games:
-        raise SystemExit(f"Arena game coverage mismatch: got {len(games)}, expected {expected_games}")
+        raise SystemExit(
+            f"Arena game coverage mismatch: got {len(games)}, expected {expected_games}"
+        )
 
     pairs = defaultdict(list)
     for game in games:
         pairs[game["pair_id"]].append(game)
     expected_pairs = int(first["preset_pairs"])
     if len(pairs) != expected_pairs:
-        raise SystemExit(f"Arena pair coverage mismatch: got {len(pairs)}, expected {expected_pairs}")
+        raise SystemExit(
+            f"Arena pair coverage mismatch: got {len(pairs)}, expected {expected_pairs}"
+        )
     for pair_id, rows in pairs.items():
         groups = sorted(row["challenger_group"] for row in rows)
         if len(rows) != 2 or groups != ["terran", "zerg"]:
@@ -80,11 +95,28 @@ def main() -> int:
     decisive = counts["challenger"] + counts["champion"]
     decisive_win_rate = counts["challenger"] / decisive if decisive else 0.0
 
+    family_counts: dict[str, Counter] = defaultdict(Counter)
+    challenger_faction_counts: dict[str, Counter] = defaultdict(Counter)
+    winner_faction_counts = Counter()
+    for game in games:
+        outcome = str(game.get("winner_agent", "failed"))
+        family = str(game.get("base_scenario_id", "unknown"))
+        challenger_group = str(game.get("challenger_group", "unknown"))
+        family_counts[family][outcome] += 1
+        challenger_faction_counts[challenger_group][outcome] += 1
+        if outcome in {"challenger", "champion"}:
+            winner_group = str(game.get("winner_group", "unknown"))
+            winner_faction_counts[winner_group] += 1
+        else:
+            winner_faction_counts[outcome] += 1
+
     pair_counts = Counter()
     scored_pairs = 0
+    pair_family_counts: dict[str, Counter] = defaultdict(Counter)
     for rows in pairs.values():
         points = 0.0
         scored = 0
+        family = str(rows[0].get("base_scenario_id", "unknown"))
         for game in rows:
             outcome = game["winner_agent"]
             if outcome == "challenger":
@@ -97,14 +129,18 @@ def main() -> int:
                 scored += 1
         if scored != 2:
             pair_counts["unresolved"] += 1
+            pair_family_counts[family]["unresolved"] += 1
             continue
         scored_pairs += 1
         if points > 1.0:
             pair_counts["challenger"] += 1
+            pair_family_counts[family]["challenger"] += 1
         elif points < 1.0:
             pair_counts["champion"] += 1
+            pair_family_counts[family]["champion"] += 1
         else:
             pair_counts["tie"] += 1
+            pair_family_counts[family]["tie"] += 1
 
     def search_totals(agent_key: str) -> dict:
         elapsed = 0.0
@@ -128,7 +164,9 @@ def main() -> int:
 
     champion_search = search_totals("champion")
     challenger_search = search_totals("challenger")
-    max_non_progress = max((int(game.get("max_non_progress_streak", 0)) for game in games), default=0)
+    max_non_progress = max(
+        (int(game.get("max_non_progress_streak", 0)) for game in games), default=0
+    )
     mean_turns = sum(int(game.get("turns_played", 0)) for game in games) / len(games)
 
     merged = {
@@ -137,6 +175,7 @@ def main() -> int:
         "preset": first["preset"],
         "seed_base": first["seed_base"],
         "rules_version": first["rules_version"],
+        "checkpoint_source": args.checkpoint_source,
         "champion_profile": first["champion_profile"],
         "challenger_profile": first["challenger_profile"],
         "champion_evaluator": first["champion_evaluator"],
@@ -149,6 +188,14 @@ def main() -> int:
         "pairs_played": len(pairs),
         "counts": dict(counts),
         "pair_counts": dict(pair_counts),
+        "family_counts": {key: dict(value) for key, value in family_counts.items()},
+        "pair_family_counts": {
+            key: dict(value) for key, value in pair_family_counts.items()
+        },
+        "challenger_faction_counts": {
+            key: dict(value) for key, value in challenger_faction_counts.items()
+        },
+        "winner_faction_counts": dict(winner_faction_counts),
         "scored_pairs": scored_pairs,
         "termination_counts": dict(termination_counts),
         "decisive_games": decisive,
@@ -163,7 +210,35 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     (out / "manifest.json").write_text(json.dumps(merged, indent=2) + "\n")
 
-    unresolved_games = [game["game_id"] for game in games if game["winner_agent"] == "unresolved"]
+    unresolved_games = [
+        game["game_id"] for game in games if game["winner_agent"] == "unresolved"
+    ]
+
+    family_lines = [
+        "| Family | Neural wins | Handwritten wins | Draws | Unresolved | Pair: neural | Pair: handwritten | Pair ties |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for family in sorted(family_counts):
+        game_row = family_counts[family]
+        pair_row = pair_family_counts[family]
+        family_lines.append(
+            f"| {family} | {game_row['challenger']} | {game_row['champion']} | "
+            f"{game_row['draw']} | {game_row['unresolved']} | {pair_row['challenger']} | "
+            f"{pair_row['champion']} | {pair_row['tie']} |"
+        )
+
+    faction_lines = [
+        "| Neural playing as | Neural wins | Handwritten wins | Draws | Unresolved |",
+        "| --- | ---: | ---: | ---: | ---: |",
+    ]
+    for faction in ["terran", "zerg"]:
+        row = challenger_faction_counts[faction]
+        faction_lines.append(
+            f"| {faction} | {row['challenger']} | {row['champion']} | "
+            f"{row['draw']} | {row['unresolved']} |"
+        )
+
+    checkpoint_line = args.checkpoint_source or "not recorded"
     summary = f"""## Seeded AI arena
 
 | Metric | Result |
@@ -189,8 +264,18 @@ def main() -> int:
 
 **Champion:** `{first['champion_profile']}` / `{first['champion_evaluator']}`  
 **Challenger:** `{first['challenger_profile']}` / `{first['challenger_evaluator']}`  
+**Checkpoint source:** `{checkpoint_line}`  
+**Winning factions:** `{dict(winner_faction_counts)}`  
 **Termination reasons:** `{dict(termination_counts)}`  
 **Unresolved games:** {', '.join(unresolved_games) or 'none'}
+
+### Results by scenario family
+
+{chr(10).join(family_lines)}
+
+### Neural results by faction
+
+{chr(10).join(faction_lines)}
 """
     (out / "summary.md").write_text(summary)
     print(summary)
