@@ -15,10 +15,18 @@ godot --headless --path . res://tools/self_play_dataset.tscn -- \
   --rules-version="${RULES_VERSION}" \
   "$@"
 
-# Search-decision data is a post-process so the played game and normal search
-# pruning are untouched. The recorder defaults to the historical fast 2x2 matrix,
-# while value-model experiments can widen only this offline capture to 4x4 so each
-# played decision exposes more sibling candidates without changing gameplay search.
+# Search-decision capture is offline and does not affect the played trajectory.
+# The diverse value-model dataset widens fast 2x2 turns to a 4x4 matrix so one
+# decision can teach about several sibling candidates. Smoke/starter retain the
+# historical 2x2 recorder unless callers explicitly override these args.
+DECISION_CAPTURE_ARGS=()
+for arg in "$@"; do
+  if [[ "${arg}" == "--preset=diverse" ]]; then
+    DECISION_CAPTURE_ARGS+=(--decision-own-max-plans=4 --decision-opponent-max-plans=4)
+  fi
+done
+
 godot --headless --path . res://tools/search_decision_dataset_v2.tscn -- \
   --out=user://self_play_dataset \
+  "${DECISION_CAPTURE_ARGS[@]}" \
   "$@"
