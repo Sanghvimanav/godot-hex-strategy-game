@@ -44,6 +44,7 @@ on:
       - "hex-strategy-game/tools/merge_ai_arena.py"
       - "hex-strategy-game/tools/deterministic_shard.gd"
       - "ml/value_model/**"
+      - "!ml/value_model/merge_search_decisions.py"
 
 permissions:
   contents: read

@@ -105,6 +105,46 @@ jobs:
           print(f"validated {len(rows)} full 2x2 search decisions")
           PY
 
+          # Continuation labeling is deliberately separate from self-play because a
+          # current neural checkpoint is optional. CI exercises the tactical fallback
+          # path without installing PyTorch or running the expensive Arena.
+          timeout --signal=TERM 60s godot --headless --path . \
+            res://tools/search_decision_continuations.tscn -- \
+            --out="${OUT}" \
+            --max-continuations=2
+          python - "${OUT}" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          labels = [
+              json.loads(line)
+              for line in (root / "rejected_continuations.jsonl").read_text().splitlines()
+              if line.strip()
+          ]
+          if not labels:
+              raise SystemExit("continuation smoke produced no rejected-alternative rows")
+          for row in labels:
+              if row.get("selected_candidate_index") == row.get("rejected_candidate_index"):
+                  raise SystemExit("continuation label did not use a rejected candidate")
+              if not row.get("priority_reasons"):
+                  raise SystemExit("continuation label missing prioritization reason")
+              if row.get("continuation_policy") != "handwritten_greedy":
+                  raise SystemExit("unexpected continuation policy")
+              if "labeled" not in row or "perspective_outcome" not in row:
+                  raise SystemExit("continuation row missing outcome fields")
+              if not row.get("state_after_first_turn"):
+                  raise SystemExit("continuation row missing forced-branch state")
+
+          manifest = json.loads((root / "rejected_continuations_manifest.json").read_text())
+          if manifest.get("continuations_invalid") != 0:
+              raise SystemExit(f"invalid continuation labels: {manifest}")
+          if manifest.get("continuations_selected") != len(labels):
+              raise SystemExit(f"continuation manifest/file mismatch: {manifest}")
+          print(f"validated {len(labels)} selective rejected-alternative continuations")
+          PY
+
       - name: Upload test output on failure
         if: failure()
         uses: actions/upload-artifact@v4
