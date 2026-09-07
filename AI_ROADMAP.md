@@ -4,6 +4,13 @@
 
 A fair AI that coordinates simultaneous actions, avoids obvious blunders, discovers useful strategies, offers distinct play styles, and responds within the player's turn-time budget.
 
+The roadmap should improve two things together:
+
+1. **AI decision quality** — generate strong candidate plans, evaluate them correctly, model opponent responses well, and spend search compute efficiently.
+2. **Game-backend support for strategy** — keep simulation deterministic and fast while making it easy to add objectives, information, economy, positioning, and other mechanics that create interesting decisions.
+
+Do not treat a stronger value network as the default answer to every AI weakness. Before changing the model, determine whether the failure came from candidate generation, candidate ranking, opponent-response modeling, state representation, or backend/game-rule limitations.
+
 ## Current position
 
 The pure simulator, legal actions, bounded joint planning, opponent-response search, tactical intents, whole-game rollout, command-hex victory, counterfactual decision benchmark, seeded AI-vs-AI arena, richer self-play export, controlled policy exploration, and first neural value model all exist.
@@ -30,65 +37,270 @@ The measurement and baseline foundation is now substantially complete:
 - the curated counterfactual suite is intentionally a small set of stable tactical regression checks rather than an exhaustive strategy answer key;
 - the neural evaluator remains evidence rather than a gameplay upgrade, so the handwritten evaluator is still the champion/fallback.
 
-The current learning step is to make the neural value function better at the exact ranking problem search asks it to solve. Keep terminal game outcome as the broad state-value target, then add same-decision sibling ranking supervision from real continuations. Do not add a learned policy/pruning head until value ranking is measurably useful under a fixed candidate set.
+The next phase should answer three separate questions instead of collapsing them into one generic "AI strength" metric:
 
-## Plan
+1. **Candidate oracle recall:** did production search generate a near-best plan at all?
+2. **Oracle value gap:** when it missed, how strategically costly was the miss?
+3. **Selection accuracy conditional on recall:** when a near-best plan was present, did the evaluator/search ranking actually choose it?
 
-1. **Improve the neural state representation before making the network larger.**
-   - Keep explicit own/enemy command-hex channels so the model can see the alternate victory condition.
-   - Add command occupancy/capture-progress state and strategically important status effects such as stun when report cards show those are still missing signals.
-   - Add terrain/resource/objective features as those systems become strategically meaningful.
-   - Keep the current small residual CNN initially; better inputs and broader training data are higher priority than more layers while the dataset is still small.
-   - Use candidate-level diagnostics to distinguish missing representation, missing training coverage, and missing candidate recall; do not assume every tactical miss is a value-model problem.
+This decomposition should drive the order of future work.
 
-2. **Build a measured hybrid AI.**
-   - Keep bounded search and the handwritten evaluator as a fallback.
-   - Put neural leaf/state evaluation behind a feature flag using the same search budget as the handwritten baseline.
-   - Compare neural vs handwritten on frozen mirrored arena seeds at identical search width.
-   - Use 2x2 for cheap PR smoke/regression where appropriate, but use a 4x4 same-budget diagnostic for evaluator-promotion questions when 2x2 candidate recall is known to hide tactical alternatives.
-   - Promote neural evaluation only when it improves full-game strength and tactical regret without exceeding the decision-time budget.
+## Revised sequencing
 
-3. **Train the value model on both outcome and sibling ordering.**
-   - Keep the existing terminal-outcome value loss: learn who eventually wins from each state.
-   - Add pairwise ranking loss over sibling leaves from the same recorded decision, using real simulator continuations rather than handwritten leaf scores as the preference target.
-   - Control the comparison by using the same modeled opponent response for both siblings whenever possible, so the label measures the own-plan difference rather than response variance.
-   - Primary ordering is `win > draw > loss` with full ranking weight.
-   - Among two winning continuations, use faster victory only as lower-confidence supervision.
-   - Do **not** create loss-vs-loss preferences based on survival time; the model should not learn that merely delaying defeat is strategically valuable.
-   - Report held-out sibling-ranking accuracy alongside winner-prediction accuracy, counterfactual candidate-ranking accuracy/regret, and direct Arena results.
-   - Train on terminal game outcomes, not handwritten-evaluator imitation.
-   - Once neural evaluation consistently beats the handwritten champion at comparable compute, allow neural-guided self-play to become a larger part of future data generation.
+The preferred sequence is:
 
-4. **Add a learned policy/prior for candidate pruning after value ranking works.**
-   - Move toward an AlphaZero-like policy + value architecture rather than leaving candidate pruning permanently handcrafted.
-   - Train a policy/prior from successful self-play/search decisions to score which unit actions and joint-plan components deserve search budget.
-   - Use learned priors to rank/prune own plans and likely opponent responses while retaining a tactical-intent diversity floor, objective recall, and a small exploration floor so unusual but important plans are not permanently hidden.
-   - For simultaneous turns, prefer factorized per-unit or joint-plan-component priors before attempting a flat probability distribution over the combinatorial joint-plan space.
-   - Measure policy recall separately: how often does the eventual best sibling survive candidate pruning?
-   - Only replace handcrafted proposal scoring when learned pruning improves strength or candidate recall per unit of compute.
+**candidate-recall oracle -> batched neural evaluation -> candidate-generation/refinement experiments -> stronger sibling-ranking data -> risk-aware response scoring -> selective deeper search -> opponent league -> learned policy prior -> personality/fun tuning.**
 
-5. **Add shallow multi-turn lookahead only when measurement justifies it.**
-   - Search width alone is not monotonic: prior aggregate testing found 4x4 cost substantially more than 2x2 without improving aggregate strength, while 6x6 showed only a modest small-sample gain at much higher cost.
-   - The frozen fast-arena diagnostic established a different point: 4x4 can materially improve candidate recall and make evaluator comparisons cleaner even when it is not globally stronger per unit compute.
-   - Treat 4x4 as an evaluator/candidate-recall diagnostic, and 6x6/8x8 as wider diagnostic tools rather than automatic gameplay defaults.
-   - Prefer additional seeded positions, better candidate priors, and improved state evaluation before brute-force width.
-   - Add shallow multi-turn continuation only if the arena shows a meaningful strength gain inside the player's turn-time budget.
+Game-backend work should proceed in parallel where it unlocks faster search, richer objectives, deterministic replay, or better strategic mechanics.
 
-6. **Tune for fun after strength is measurable.**
-   - Set difficulty with search budget, controlled mistakes, and/or evaluator strength.
-   - Set personalities with tactical-intent/policy preferences rather than hidden stat cheats.
-   - Validate raw strength and interestingness separately through blind human playtests.
+## AI improvements
+
+### 1. Build a Candidate Oracle Recall benchmark
+
+Before spending more effort on the neural evaluator, measure whether the bounded production search is exposing it to good plans.
+
+- For selected frozen benchmark and self-play decision states, run an intentionally expensive **offline oracle search** with much larger candidate budgets and/or smarter candidate-generation methods.
+- The oracle is a diagnostic teacher, not the gameplay AI. It may use substantially more time and compute than is acceptable during a real turn.
+- Record the best oracle plan/value and compare each production candidate set against it.
+- Do not require an exact action-array match. Count recall when production search contains a plan whose oracle-controlled value is within an agreed near-best tolerance of the oracle winner.
+- Report at least:
+  - near-oracle candidate recall;
+  - best-production-vs-best-oracle value gap;
+  - severe-miss rate for decisions where the production candidate set omits a materially stronger plan;
+  - selection accuracy conditional on a near-oracle candidate being present.
+- Break recall down by tactical/strategic family where practical: commit, hold, reposition, disengage, objective, sacrifice, screening/blocking, focus fire, crossfire, production/tempo, and other recurring motifs.
+- Instrument where an oracle plan is lost: per-unit action pruning, joint-plan beam pruning, intent preservation, opponent conditioning, or final candidate cap.
+- Use the oracle to compare candidate generators **per unit of compute**, not merely by absolute recall.
+
+The diagnostic question is:
+
+> Did the AI fail because it could not generate the idea, or because it generated the idea and valued it incorrectly?
+
+### 2. Batch neural leaf evaluation before making the model larger
+
+The current neural runtime is persistent, but leaf states are still evaluated one request/forward pass at a time. Remove that avoidable overhead before scaling search or model size.
+
+- Add an `evaluate_many` path that accepts multiple simulated leaf states and returns aligned values in one request.
+- Stack encoded states and perform one/few PyTorch forward passes per batch rather than one forward pass per leaf.
+- Start with a low-risk integration such as batching all opponent-response leaves for one own candidate, preserving most current minimax/pruning behavior.
+- Measure separately:
+  - Godot simulation time;
+  - state serialization/IPC time;
+  - Python state encoding time;
+  - neural inference time;
+  - total search time.
+- Add deterministic state hashes and cache duplicate neural evaluations where identical states recur.
+- Only consider a larger network after input quality, candidate coverage, batching, and training supervision are no longer the dominant bottlenecks.
+
+The goal is not merely faster inference. The goal is to convert saved evaluator overhead into more useful candidate diversity, opponent responses, or selective continuation depth.
+
+### 3. Improve candidate generation with portfolio seeds and local refinement
+
+Do not rely only on widening the current per-unit/joint-plan beam. Wider search has already shown rapidly increasing cost and inconsistent strength gains.
+
+- Keep the existing bounded beam as the baseline/fallback.
+- Add a feature-flagged **portfolio/refinement generator** that starts from several strategically different complete-team plans, then locally improves them.
+- Portfolio seeds should remain generic and explainable, for example:
+  - focus/commit;
+  - hold/defend;
+  - reposition/flank;
+  - disengage/preserve;
+  - objective pressure;
+  - screening/interception;
+  - production/resource tempo when applicable.
+- Evaluate complete plans with the real simulator/search rather than allowing the template heuristic to determine the final answer.
+- Refine a seed by changing one unit action at a time, retaining improvements and repeating for a bounded number of iterations.
+- Preserve multiple diverse seeds because local refinement can get trapped in local optima.
+- Compare beam, wider beam, portfolio/refinement, and hybrid generators using:
+  - candidate oracle recall;
+  - oracle value gap;
+  - simulations;
+  - wall-clock decision time;
+  - same-budget arena strength.
+- Prefer smarter recall per unit of compute over brute-force width.
+
+### 4. Train the value model on stronger sibling supervision
+
+Keep terminal game outcome as the broad value target, but make sibling-ranking data increasingly reflect difficult tactical distinctions rather than only the current production candidate set.
+
+- Keep pairwise ranking over sibling leaves from the same decision.
+- Hold the modeled opponent response fixed across compared own-plan siblings whenever possible so the label isolates the effect of the own plan.
+- Continue to ground ranking labels in real simulator continuations rather than handwritten evaluator imitation.
+- Primary ordering remains `win > draw > loss` with full confidence where resolved.
+- Faster wins may break ties between two wins at lower weight.
+- Do **not** prefer slower losses over faster losses merely because they survived longer.
+- Leave genuinely unresolved comparisons unlabeled rather than fabricating certainty.
+
+Improve the sibling pool in four ways:
+
+1. **Oracle/refined siblings** — include strong plans discovered by the expensive candidate oracle or portfolio/refinement search, not only production-beam siblings.
+2. **Hard siblings** — oversample neural-vs-handwritten disagreements, close neural scores, meaningful continuation-value gaps, and tactically different but superficially similar states.
+3. **Local perturbations** — around a strong plan, change one unit action at a time to teach the evaluator why a particular coordinated execution is better.
+4. **Mistake mining** — after arena/self-play failures, rerun important decision states with the oracle and turn discovered better alternatives into new training comparisons.
+
+Track sibling-ranking accuracy by decision family, not only overall accuracy. A model that is 90% accurate on routine commit-vs-commit pairs but poor on sacrifice, objective/material, crossfire, or production/tempo tradeoffs is not yet strategically reliable.
+
+Use oracle-generated training targets as a teacher for the future learned policy as well, so the policy does not merely imitate the blind spots of the current production search.
+
+### 5. Improve neural state representation before increasing network size
+
+- Keep explicit own/enemy command-hex channels so the model can see the alternate victory condition.
+- Add command occupancy/capture-progress state and strategically important status effects such as stun when report cards show those are still missing signals.
+- Add terrain/resource/objective features as those systems become strategically meaningful.
+- Add observation/fog features only after the backend exposes a canonical player-observation state.
+- Keep the current small residual CNN initially; better inputs, broader training data, and better candidate coverage are higher priority than more layers while the dataset remains modest.
+- Use candidate/oracle diagnostics to distinguish missing representation, missing training coverage, and missing candidate recall.
+
+### 6. Improve opponent-response scoring after candidate coverage is measured
+
+The current worst-response-first search is a strong safety baseline for simultaneous turns, but pure maximin can become unnecessarily conservative when one modeled response is extremely unlikely.
+
+- Preserve hard forced-loss detection and adversarial stress cases.
+- Experiment with a risk-aware score that combines likely-response expected value with explicit downside protection.
+- Keep adversarial/best-response value separately visible in diagnostics.
+- For hard-AI experiments, use the already available candidate x opponent-response payoff matrix to evaluate a restricted two-player zero-sum matrix-game solve when the leaf utility assumptions are appropriate.
+- Do not replace current maximin until same-budget arena tests show that the alternative is stronger without creating reckless tactical failures.
+
+### 7. Add selective multi-turn search, not uniform deeper search
+
+Do not make every position two or more turns deep.
+
+- Continue to treat one simultaneous turn plus strong leaf evaluation as the default.
+- Trigger deeper continuation only on unstable/important decisions, such as:
+  - near-terminal positions;
+  - objective capture races;
+  - high evaluator disagreement;
+  - close top candidate scores;
+  - sacrifice/tempo decisions whose value is deliberately delayed;
+  - large oracle/production uncertainty.
+- Compare selective continuation against equivalent compute spent on broader candidate generation.
+- Promote deeper search only when it improves strength/regret inside the player's turn-time budget.
+
+### 8. Build an opponent league before relying on learned-policy self-play
+
+Once candidate generation and value ranking are stronger, diversify the opponents that training/evaluation must withstand.
+
+- Preserve historical champion checkpoints/policies.
+- Add simple strategic archetypes where useful, such as aggressive objective pressure, preservation/retreat bias, economy/production bias, or tactical commit bias.
+- Evaluate exploit gaps against the league, not only against the newest self-play policy.
+- Use the league to reduce overfitting to one current opponent style and to generate more varied hard decision states.
+
+### 9. Add a learned policy/prior only after search-generated targets are strong
+
+Do not train the future policy head primarily to imitate the current bounded production search.
+
+- Distill priors from successful oracle/refined search decisions and strong self-play/search trajectories.
+- Prefer factorized per-unit or joint-plan-component priors before attempting a flat distribution over the combinatorial joint-plan space.
+- Use learned priors to allocate candidate/search budget, not to remove the simulator/search safety net immediately.
+- Retain tactical-intent diversity, objective recall, and a small exploration floor so unusual but important plans remain discoverable.
+- Measure policy quality by **candidate oracle recall per unit of compute** and same-budget full-game strength.
+- Only replace handcrafted proposal scoring when the learned prior produces stronger or more complete candidate sets within the gameplay budget.
+
+### 10. Tune difficulty and personality after strength is measurable
+
+- Set difficulty primarily with search budget, candidate/refinement budget, continuation budget, risk tolerance, and evaluator strength.
+- Set personalities through tactical/strategic priors rather than hidden stat cheats.
+- Allow easier AI to make controlled, legible mistakes rather than random nonsense.
+- Validate raw strength and player preference separately through blind playtests.
+
+## Game backend improvements that unlock better AI and a better game
+
+The AI roadmap depends on the game backend continuing to make strategic states cheap, deterministic, expressive, and understandable. Keep one canonical simulation authority rather than creating an AI-only rules engine.
+
+### 1. Add a canonical state/index/hash layer before any wholesale state rewrite
+
+- Keep the dictionary-based state format for now unless profiling proves it is the dominant bottleneck.
+- Add thin canonical indexes such as `unit_by_id`, occupancy-by-cell, and group lookup so repeated full scans are avoidable.
+- Add a deterministic canonical state hash usable for neural-evaluation caching, replay verification, transposition-style reuse, and regression debugging.
+- Separate static scenario/unit-definition data from frequently copied dynamic state where practical.
+- Profile before introducing more complex delta/scratch-state simulation.
+
+### 2. Keep `TurnExecutionCore` canonical, but modularize its internals
+
+Do not fork simulation logic between gameplay and AI. Preserve the current architecture in which pure simulation delegates to the same turn-resolution rules.
+
+As complexity grows, split responsibilities behind the canonical facade into pure rule/resolver modules, for example:
+
+- movement/collision;
+- combat/targeting;
+- effects/status;
+- economy/resources/production;
+- objectives/victory;
+- shared rule queries.
+
+This should improve testability and iteration speed without creating two sources of truth.
+
+### 3. Generalize objectives and scenarios
+
+The command hex is a useful anti-stalling pressure mechanism, but it should not become the only strategic geometry the AI learns.
+
+- Introduce data-driven `ScenarioDefinition` / `ObjectiveDefinition` concepts.
+- Support command-hex capture as a default/fallback objective while allowing scenario-specific primary objectives.
+- Make it easy to express multiple control points, escort/defend, resource pressure, production races, survival/escape, and similar strategic families without bespoke engine branches.
+- Use procedural variants to vary geometry and prevent overfitting to one objective layout.
+
+### 4. Add a canonical player-observation API before fog/scouting mechanics
+
+Before adding imperfect information, define the exact state visible to each player.
+
+- Gameplay AI should eventually plan from `ObservationState(player)` rather than unrestricted world state when fog/stealth exists.
+- Keep hidden full state available to the simulator/server, not to the planning policy.
+- Use the same observation contract for human-client information and AI information so fair-play guarantees are testable.
+
+### 5. Prefer generic traits/effect operators over unit-specific rule branches
+
+As new mechanics are added, compose them from reusable concepts such as damage, stun, movement modification, interception, spawning, resource transfer, capture progress, vision, and timed effects.
+
+This keeps the backend extensible and gives the AI consistent semantic features rather than a growing collection of special-case unit logic.
+
+### 6. Add deterministic ReplayV1 and reason-coded events
+
+- Record enough data to reproduce a match deterministically from initial state + submitted simultaneous actions + seeds/configuration.
+- Include state hashes at useful boundaries so replay divergence can be located precisely.
+- Emit reason-coded resolution events that can explain movement conflicts, missed attacks, blocks/intercepts, objective progress, effects, spawns, and victory triggers.
+- Use the same event stream for debugging, visualization, and eventually player-facing combat explanations.
+
+Readability matters for fun: simultaneous outcomes should feel surprising because the opponent outguessed the player, not because resolution rules are opaque.
+
+### 7. Add invariants and metamorphic tests for simultaneous resolution
+
+In addition to authored examples, test properties that should hold across many generated states, such as:
+
+- deterministic replay of the same state/actions/seed;
+- faction/name permutations do not change rule semantics;
+- mirrored/rotated equivalent states resolve equivalently when the rules are symmetric;
+- unit/resource conservation rules hold where applicable;
+- no unit occupies an impossible cell after resolution;
+- objective capture is checked at the defined full-turn boundary;
+- AI simulation and gameplay/server execution produce identical next states for the same inputs.
+
+### 8. Prioritize mechanics that create simultaneous strategic prediction
+
+A smarter AI cannot create depth if the game offers only one dominant decision axis. Favor mechanics that create meaningful tradeoffs between prediction, commitment, information, positioning, objectives, and tempo.
+
+Strong candidates include:
+
+- interception/overwatch or other ways to punish predicted movement;
+- telegraphed attacks with positional counterplay;
+- cover/terrain that changes movement-vs-damage tradeoffs;
+- scouting/fog/stealth once the observation API exists;
+- multiple objectives that force splitting and screening;
+- production/reinforcement systems that create immediate-pressure-vs-growth decisions;
+- support/screening mechanics that make coordinated multi-unit plans valuable.
+
+Do not add many abilities merely for variety. Add mechanics that create new kinds of decisions the search and value model can learn to distinguish.
 
 ## Arena efficiency policy
 
-Spend compute on **more independent seeded positions before wider search** by default. Keep the ordinary PR arena inexpensive and use wider/full diagnostics for promotion decisions. Record win/loss/draw, unresolved rate, termination reason, non-progress streak, decision time, simulation count, and candidate-intent coverage where practical.
+Spend compute on **more independent seeded positions before wider search** by default. Keep the ordinary PR arena inexpensive and use wider/full diagnostics for promotion decisions. Record win/loss/draw, unresolved rate, termination reason, non-progress streak, decision time, simulation count, candidate-intent coverage, candidate-oracle recall, oracle value gap, and conditional selection accuracy where practical.
 
 Use mirrored pairs to cancel faction/scenario bias and stable seed sets to make before/after comparisons meaningful. New training seeds must not overlap frozen evaluation seeds.
 
-Do not assume a larger plan-response budget is stronger. Compare strength per unit of compute. The current evidence supports two separate uses:
+Do not assume a larger plan-response budget is stronger. Compare strength and oracle recall per unit of compute. The current evidence supports separate uses:
 
 - **2x2:** cheap baseline/regression signal;
-- **4x4:** preferred diagnostic when the question is evaluator quality or candidate recall and 2x2 may suppress tactical-intent diversity.
+- **4x4:** preferred diagnostic when evaluator quality or candidate recall is being tested and 2x2 may suppress tactical-intent diversity;
+- **6x6/8x8 or offline oracle budgets:** diagnostic/teacher tools, not automatic gameplay defaults.
 
 A faction-dominated result at 2x2 is not enough evidence to declare a fixture bad. Rerun the same frozen pair at 4x4 first. The September 2026 diagnostic showed that this distinction matters: all decisive 4x4 games favored the handwritten evaluator, eliminating the faction-tied pattern seen at 2x2.
 
@@ -96,9 +308,9 @@ A faction-dominated result at 2x2 is not enough evidence to declare a fixture ba
 
 Keep the curated counterfactual suite intentionally small and focused on obvious tactical regressions that should remain meaningful across many rule changes. Prefer roughly 4-6 stable cases over a large catalog of hand-authored strategic situations.
 
-Do not use the curated suite as the primary definition of good strategy. When rules change, update or remove a case if its old answer is no longer naturally correct. Promote a new case only when self-play, arena games, or playtesting reveals a recurring embarrassing tactical mistake worth guarding against.
+Do not use the curated suite as the primary definition of good strategy. When rules change, update or remove a case if its old answer is no longer naturally correct. Promote a new case only when self-play, arena games, oracle analysis, or playtesting reveals a recurring embarrassing tactical mistake worth guarding against.
 
-Use arena strength, self-play outcomes, held-out sibling ranking, and held-out value-model performance as the primary evolving-game measurements.
+Use arena strength, candidate-oracle recall/value gap, self-play outcomes, held-out sibling ranking, and held-out value-model performance as the primary evolving-game measurements.
 
 ## Self-play exploration policy
 
@@ -114,9 +326,19 @@ Ranking supervision must be grounded in real simulator continuations. Pair leave
 
 Use terminal outcome ordering as the primary signal. Faster wins may break ties between two wins at lower weight. Do not prefer slower losses over faster losses. Unresolved continuations remain unlabeled rather than receiving guessed preferences.
 
-Split ranking pairs by the same held-out scenario-family grouping used for the ordinary value examples so sibling states from a held-out family cannot leak into training.
+As the candidate oracle matures, increasingly source sibling pairs from oracle/refined candidates, local one-unit perturbations around strong plans, evaluator disagreements, and actual arena/self-play mistakes. Do not let the sibling dataset become a closed loop that only teaches the network to rank plans the current bounded generator already knows how to propose.
 
-## Neural promotion gate
+Split ranking pairs by the same held-out scenario-family grouping used for ordinary value examples so sibling states from a held-out family cannot leak into training.
+
+Report both overall sibling-ranking accuracy and family-specific accuracy for strategically difficult tradeoffs.
+
+## Promotion gates
+
+### Candidate-generator promotion gate
+
+A new candidate generator should improve near-oracle recall and/or reduce severe oracle value gaps without unacceptable decision-time cost. It must also preserve deterministic behavior, intent/objective coverage, and same-budget full-game strength.
+
+### Neural evaluator promotion gate
 
 The first neural gameplay milestone is not lower training loss. It is:
 
@@ -124,12 +346,92 @@ The first neural gameplay milestone is not lower training loss. It is:
 
 A neural candidate should show improvement across full-game strength, counterfactual decision quality, and held-out sibling ordering before replacing the handwritten baseline.
 
+Interpret evaluator failures only on decisions where candidate recall is adequate. If both evaluators were denied a near-oracle plan, classify the primary failure as candidate generation rather than evaluator ranking.
+
 Because 2x2 can hide evaluator-sensitive plans, a promotion candidate should also be checked at 4x4 on the frozen fast arena or another candidate-recall-controlled same-budget set before interpreting faction-tied 2x2 outcomes as evaluator equivalence.
 
-A later learned-policy milestone adds a second gate: candidate recall and strength per unit of search compute must improve before neural priors replace the handcrafted proposal/pruning baseline.
+### Learned-policy promotion gate
+
+A learned prior must improve candidate oracle recall and/or full-game strength **per unit of search compute** before replacing handcrafted proposal/pruning as the default.
+
+## Revised milestones
+
+### Milestone A — Search quality and speed foundation
+
+**AI**
+- Candidate Oracle Recall benchmark and severe-miss mining.
+- Batched neural leaf evaluation with timing breakdown.
+- Portfolio/refinement candidate generator behind a feature flag.
+
+**Backend**
+- Profile simulator hotspots.
+- Add canonical state indexes and deterministic state hash.
+- Optimize dynamic-state copying only where profiling justifies it.
+- Replace or update stale architecture/migration documentation with the current normative simulation contract.
+
+**Gate**
+- Better candidate recall/value gap at comparable compute.
+- No deterministic/regression failures.
+- Neural evaluation overhead materially reduced.
+
+### Milestone B — Better decision policy
+
+**AI**
+- Train sibling ranking from production + oracle/refined + mistake-mined siblings.
+- Add family-level sibling diagnostics.
+- Experiment with risk-aware opponent-response scoring.
+- Experiment with restricted matrix-game solving for hard AI where appropriate.
+
+**Backend**
+- Modularize `TurnExecutionCore` internals without creating a second rules engine.
+- Add ReplayV1 + deterministic replay checks.
+- Add generic objective/scenario definitions.
+
+**Gate**
+- Lower serious tactical regret.
+- Better conditional selection accuracy when a near-oracle candidate is available.
+- No increase in passive/pathological-loop behavior.
+- Same-budget arena improvement against the current champion.
+
+### Milestone C — Strategic depth
+
+**AI**
+- Selective multi-turn continuation triggers.
+- Historical champion/archetype opponent league.
+- Train value model across richer scenario families.
+
+**Backend/game**
+- Data-driven scenario/objective catalog.
+- Canonical player-observation API.
+- Add a small number of strategically distinct mechanics, prioritizing prediction, information, multi-objective pressure, and tempo-vs-production decisions.
+
+**Gate**
+- No single strategy dominates procedural scenario variants.
+- Exploit gaps against historical/archetype opponents shrink.
+- Blind playtests report multiple viable plans and readable AI behavior.
+
+### Milestone D — Learned policy and personalities
+
+**AI**
+- Distill policy priors from stronger search/oracle targets.
+- Factorized per-unit prior plus coordination/joint-plan component signal.
+- Difficulty and personality through budgets, risk, and strategic priors.
+
+**Backend/game**
+- Expand generic traits/effect operators.
+- Increase scenario/asymmetry catalog only after the objective/observation abstractions are stable.
+
+**Ship gate**
+- AI beats the previous champion at equal compute.
+- Candidate recall and tactical regret improve.
+- Turn-time budget is met.
+- Objective/fog/loop cases pass.
+- Human preference improves in blind playtests.
 
 ## Ship gate
 
 Promote a new AI only when it beats the current champion on held-out seeded full games, reduces serious tactical regret, stays inside the turn-time budget, respects fog of war and scenario objectives, avoids non-progress/pathological loops, and players prefer playing against it.
 
-**Immediate next step: land the response-controlled sibling-ranking pipeline, run the manual Value Model Experiment, let the follow-up retrain with terminal-outcome plus pairwise-ranking loss, then compare the ranked checkpoint against the value-only checkpoint on held-out sibling accuracy, counterfactual regret, and same-budget neural-vs-handwritten Arena results.**
+Do not optimize solely for win rate. A shippable opponent should make strong decisions for understandable reasons, expose the player to multiple viable strategies, and remain fair under the same information and rules available to the player.
+
+**Immediate next step: implement the Candidate Oracle Recall diagnostic first, including near-oracle recall, oracle value gap, severe-miss mining, and selection accuracy conditional on recall. In parallel, batch neural leaf evaluation so evaluator overhead is not unnecessarily consuming search budget. Then use oracle/refined candidates and mined mistakes to strengthen the response-controlled sibling-ranking dataset before deciding whether the next bottleneck is candidate generation or value ranking.**
