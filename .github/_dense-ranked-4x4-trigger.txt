@@ -1,0 +1,1 @@
+dense-ranked 4x4 arena trigger
