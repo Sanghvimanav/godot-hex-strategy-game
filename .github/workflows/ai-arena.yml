@@ -38,6 +38,7 @@ on:
       - "hex-strategy-game/src/battle/ai/**"
       - "hex-strategy-game/src/simulation/pure_state_*.gd"
       - "!hex-strategy-game/src/simulation/pure_state_counterfactual_*.gd"
+      - "!hex-strategy-game/src/simulation/pure_state_search_decision_data.gd"
       - "hex-strategy-game/tools/ai_arena.*"
       - "hex-strategy-game/tools/neural_value_runtime.py"
       - "hex-strategy-game/tools/merge_ai_arena.py"

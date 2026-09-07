@@ -14,3 +14,10 @@ godot --headless --path . res://tools/self_play_dataset.tscn -- \
   --out=user://self_play_dataset \
   --rules-version="${RULES_VERSION}" \
   "$@"
+
+# Search-decision data is a post-process so the played game and normal search
+# pruning are untouched. V1 records only fast 2x2 decisions from the generated
+# traces, retaining the full candidate x modeled-response leaf matrix.
+godot --headless --path . res://tools/search_decision_dataset.tscn -- \
+  --out=user://self_play_dataset \
+  "$@"

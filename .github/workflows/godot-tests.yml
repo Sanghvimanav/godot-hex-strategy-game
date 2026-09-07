@@ -45,10 +45,72 @@ jobs:
           set -o pipefail
           godot --headless --path . res://tests/test_runner.tscn 2>&1 | tee test-output.log
 
+      - name: Smoke-test 2x2 search-decision export
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/artifacts/search-decision-smoke"
+          cd hex-strategy-game
+
+          # The smoke preset is a one-turn game and should finish quickly. The
+          # integration path is the reliable compile/runtime check because standalone
+          # --check-only scripts do not load this project's registered class_name graph.
+          timeout --signal=TERM 60s ./tools/run_self_play_dataset.sh \
+            --preset=smoke \
+            --max-games=1 \
+            --out="${OUT}"
+          python - "${OUT}" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          rows = [
+              json.loads(line)
+              for line in (root / "search_decisions.jsonl").read_text().splitlines()
+              if line.strip()
+          ]
+          if not rows:
+              raise SystemExit("smoke self-play produced no 2x2 search decisions")
+          for row in rows:
+              if not row.get("starting_state"):
+                  raise SystemExit("search decision missing starting_state")
+              budget = row.get("budget", {})
+              if budget.get("own_max_plans") != 2 or budget.get("opponent_max_plans") != 2:
+                  raise SystemExit(f"unexpected search budget: {budget}")
+              if row.get("candidate_count") != 2 or row.get("opponent_response_count") != 2:
+                  raise SystemExit("smoke decision did not preserve the full 2x2 matrix")
+              if not row.get("complete_requested_matrix"):
+                  raise SystemExit("smoke decision marked its 2x2 matrix incomplete")
+              candidates = row.get("candidates", [])
+              if sum(bool(candidate.get("selected")) for candidate in candidates) != 1:
+                  raise SystemExit("search decision must identify exactly one selected candidate")
+              for candidate in candidates:
+                  leaves = candidate.get("responses", [])
+                  if len(leaves) != 2:
+                      raise SystemExit("candidate missing one modeled opponent response")
+                  for leaf in leaves:
+                      if not leaf.get("state_after_first_turn"):
+                          raise SystemExit("search leaf missing resulting state")
+              if "game_outcome" not in row:
+                  raise SystemExit("search decision missing eventual game outcome")
+
+          manifest = json.loads((root / "search_decisions_manifest.json").read_text())
+          if manifest.get("failed_decision_count") != 0:
+              raise SystemExit(f"search decision capture failures: {manifest}")
+          if manifest.get("selected_candidate_missing_count") != 0:
+              raise SystemExit(f"selected plan drift detected: {manifest}")
+          if manifest.get("complete_matrix_count") != manifest.get("decision_count"):
+              raise SystemExit(f"smoke matrices are incomplete: {manifest}")
+          print(f"validated {len(rows)} full 2x2 search decisions")
+          PY
+
       - name: Upload test output on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: godot-test-output
-          path: hex-strategy-game/test-output.log
+          path: |
+            hex-strategy-game/test-output.log
+            artifacts/search-decision-smoke/
           if-no-files-found: ignore

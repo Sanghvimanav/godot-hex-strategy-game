@@ -6,6 +6,16 @@
 
 This is a **Godot 4.6 hex strategy game** (`hex-strategy-game/`).
 
+### AI Work: Start Here
+
+- Read the root `AI_ROADMAP.md` before changing gameplay AI, search, self-play, value-model training, benchmarks, or arena evaluation. It is the strategic source of truth for what the AI is trying to achieve and how improvements are measured.
+- The canonical gameplay AI entry point is `hex-strategy-game/src/battle/ai/gameplay_ai.gd`. Keep gameplay callers routed through it rather than creating parallel AI entry points.
+- The handwritten evaluator is the current default/champion. Neural leaf evaluation is explicit opt-in, fail-closed when its runtime/checkpoint is unavailable, and should be compared against handwritten evaluation at the **same search budget** before promotion.
+- Treat the curated counterfactual suite as a small tactical regression guardrail, not as the primary definition of good strategy. Arena strength, self-play outcomes, and held-out value-model performance are the primary evolving-game measurements.
+- Keep training seeds separate from frozen arena evaluation seeds so training changes cannot leak into the evaluation set.
+- **CI policy:** `Godot Tests` and `Value Model Tests` are normal PR checks. `AI Arena` is the expensive gameplay/value-model check and must stay path-filtered to changes that can affect arena behavior; do not broaden it for offline data export, CI-only, docs, or other non-gameplay changes. The full `Value Model Experiment` is intentionally manual/opt-in (`workflow_dispatch`) and should be run for report-card/promotion work rather than every small PR.
+- For the latest implementation state, inspect the newest relevant `ai/*` PRs and their CI in addition to `AI_ROADMAP.md`. Do not infer current AI status from `hex-strategy-game/README.md`; that file is historical prototype context.
+
 ### Running the Game
 
 - **GUI mode**: `cd hex-strategy-game && DISPLAY=:1 godot --path .`
