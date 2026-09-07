@@ -22,7 +22,9 @@ func _run() -> void:
 	var decisions_path := abs_out.path_join("search_decisions.jsonl")
 	var manifest_path := abs_out.path_join("search_decisions_manifest.json")
 
-	var traces := _read_jsonl(traces_path)
+	# _read_jsonl can return either an Array or null on failure. Keep that
+	# explicit so warnings-as-errors does not reject Variant type inference.
+	var traces: Variant = _read_jsonl(traces_path)
 	if traces == null:
 		get_tree().quit(1)
 		return
