@@ -45,6 +45,8 @@ on:
       - "hex-strategy-game/tools/deterministic_shard.gd"
       - "ml/value_model/**"
       - "!ml/value_model/merge_search_decisions.py"
+      - "!ml/value_model/ranking.py"
+      - "!ml/value_model/train_ranked.py"
 
 permissions:
   contents: read
