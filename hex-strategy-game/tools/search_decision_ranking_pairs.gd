@@ -25,59 +25,60 @@ func _ready() -> void:
 
 
 func _run() -> void:
-	var args := _parse_cmdline_kv()
-	var out_dir := str(args.get("out", "user://self_play_dataset"))
-	var abs_out := ProjectSettings.globalize_path(out_dir)
-	var decisions_path := abs_out.path_join("search_decisions.jsonl")
-	var rejected_path := abs_out.path_join("rejected_continuations.jsonl")
-	var pairs_path := abs_out.path_join("ranking_pairs.jsonl")
-	var manifest_path := abs_out.path_join("ranking_pairs_manifest.json")
-	var continuation_turn_cap := maxi(0, int(args.get("continuation-turn-cap", 0)))
+	var args: Dictionary = _parse_cmdline_kv()
+	var out_dir: String = str(args.get("out", "user://self_play_dataset"))
+	var abs_out: String = ProjectSettings.globalize_path(out_dir)
+	var decisions_path: String = abs_out.path_join("search_decisions.jsonl")
+	var rejected_path: String = abs_out.path_join("rejected_continuations.jsonl")
+	var pairs_path: String = abs_out.path_join("ranking_pairs.jsonl")
+	var manifest_path: String = abs_out.path_join("ranking_pairs_manifest.json")
+	var continuation_turn_cap: int = maxi(0, int(args.get("continuation-turn-cap", 0)))
 
-	var decisions_variant := _read_jsonl(decisions_path)
-	var rejected_variant := _read_jsonl(rejected_path)
+	var decisions_variant: Variant = _read_jsonl(decisions_path)
+	var rejected_variant: Variant = _read_jsonl(rejected_path)
 	if decisions_variant == null or rejected_variant == null:
 		get_tree().quit(1)
 		return
-	var decisions: Array = decisions_variant
-	var rejected_rows: Array = rejected_variant
+	var decisions: Array = decisions_variant as Array
+	var rejected_rows: Array = rejected_variant as Array
 	var decision_by_key: Dictionary = {}
-	for decision_variant in decisions:
+	for decision_variant: Variant in decisions:
 		if decision_variant is Dictionary:
-			var decision: Dictionary = decision_variant
+			var decision: Dictionary = decision_variant as Dictionary
 			decision_by_key[_decision_key(decision)] = decision
 
 	var pairs: Array = []
-	var considered := 0
-	var selected_unlabeled := 0
-	var rejected_unlabeled := 0
-	var no_preference := 0
-	var invalid := 0
-	var outcome_pairs := 0
-	var faster_win_pairs := 0
+	var considered: int = 0
+	var selected_unlabeled: int = 0
+	var rejected_unlabeled: int = 0
+	var no_preference: int = 0
+	var invalid: int = 0
+	var outcome_pairs: int = 0
+	var faster_win_pairs: int = 0
 
-	for rejected_variant_row in rejected_rows:
+	for rejected_variant_row: Variant in rejected_rows:
 		if not (rejected_variant_row is Dictionary):
 			continue
-		var rejected: Dictionary = rejected_variant_row
+		var rejected: Dictionary = rejected_variant_row as Dictionary
 		considered += 1
 		if not bool(rejected.get("valid", false)) or not bool(rejected.get("labeled", false)):
 			rejected_unlabeled += 1
 			continue
-		var key := _continuation_decision_key(rejected)
+
+		var key: String = _continuation_decision_key(rejected)
 		if not decision_by_key.has(key):
 			push_error("Missing search decision for rejected continuation %s" % key)
 			invalid += 1
 			continue
-		var decision: Dictionary = decision_by_key[key]
-		var played_index := int(rejected.get("played_candidate_index", -1))
-		var rejected_index := int(rejected.get("rejected_candidate_index", -1))
-		var response_index := int(rejected.get("response_index", -1))
+		var decision: Dictionary = decision_by_key[key] as Dictionary
+		var played_index: int = int(rejected.get("played_candidate_index", -1))
+		var rejected_index: int = int(rejected.get("rejected_candidate_index", -1))
+		var response_index: int = int(rejected.get("response_index", -1))
 		if played_index < 0 or rejected_index < 0 or played_index == rejected_index:
 			invalid += 1
 			continue
 
-		var selected_result := _continue_candidate(
+		var selected_result: Dictionary = _continue_candidate(
 			decision,
 			played_index,
 			response_index,
@@ -90,27 +91,34 @@ func _run() -> void:
 			selected_unlabeled += 1
 			continue
 
-		var comparison := _compare_terminal_results(selected_result, rejected)
+		var comparison: Dictionary = _compare_terminal_results(selected_result, rejected)
 		if not bool(comparison.get("preferred", false)):
 			no_preference += 1
 			continue
-		var selected_better := bool(comparison.get("selected_better", false))
-		var pair_kind := str(comparison.get("pair_kind", ""))
-		var pair_weight := float(comparison.get("weight", 1.0))
+
+		var selected_better: bool = bool(comparison.get("selected_better", false))
+		var pair_kind: String = str(comparison.get("pair_kind", ""))
+		var pair_weight: float = float(comparison.get("weight", 1.0))
 		if pair_kind == "outcome":
 			outcome_pairs += 1
 		elif pair_kind == "faster_win":
 			faster_win_pairs += 1
 
-		var selected_state: Dictionary = selected_result.get("state_after_first_turn", {})
-		var rejected_state: Dictionary = rejected.get("state_after_first_turn", {})
-		var selected_outcome := float(selected_result.get("perspective_outcome", 0.0))
-		var rejected_outcome := float(rejected.get("perspective_outcome", 0.0))
-		var selected_turns := int(selected_result.get("turns_played_after_branch", 0))
-		var rejected_turns := int(rejected.get("turns_played_after_branch", 0))
+		var selected_state_variant: Variant = selected_result.get("state_after_first_turn", {})
+		var rejected_state_variant: Variant = rejected.get("state_after_first_turn", {})
+		if not (selected_state_variant is Dictionary) or not (rejected_state_variant is Dictionary):
+			invalid += 1
+			continue
+		var selected_state: Dictionary = selected_state_variant as Dictionary
+		var rejected_state: Dictionary = rejected_state_variant as Dictionary
+		var selected_outcome: float = float(selected_result.get("perspective_outcome", 0.0))
+		var rejected_outcome: float = float(rejected.get("perspective_outcome", 0.0))
+		var selected_turns: int = int(selected_result.get("turns_played_after_branch", 0))
+		var rejected_turns: int = int(rejected.get("turns_played_after_branch", 0))
 		var source: Dictionary = {}
-		if decision.get("source", {}) is Dictionary:
-			source = (decision.get("source", {}) as Dictionary).duplicate(true)
+		var source_variant: Variant = decision.get("source", {})
+		if source_variant is Dictionary:
+			source = (source_variant as Dictionary).duplicate(true)
 
 		pairs.append({
 			"schema_version": PAIR_SCHEMA_VERSION,
@@ -135,7 +143,7 @@ func _run() -> void:
 			"source": source,
 		})
 
-	var manifest := {
+	var manifest: Dictionary = {
 		"manifest_schema_version": MANIFEST_SCHEMA_VERSION,
 		"pair_schema_version": PAIR_SCHEMA_VERSION,
 		"source_decisions": "search_decisions.jsonl",
@@ -155,7 +163,7 @@ func _run() -> void:
 		"same_opponent_response": true,
 		"loss_vs_loss_pairs": false,
 	}
-	var ok := _write_text(pairs_path, _to_jsonl(pairs))
+	var ok: bool = _write_text(pairs_path, _to_jsonl(pairs))
 	ok = _write_text(manifest_path, JSON.stringify(manifest, "  ") + "\n") and ok
 	print("[ranking-pairs] wrote %s" % pairs_path)
 	print("[ranking-pairs] wrote %s" % manifest_path)
@@ -178,42 +186,42 @@ func _continue_candidate(
 	response_index: int,
 	continuation_turn_cap: int
 ) -> Dictionary:
-	var candidates_variant := decision.get("candidates", [])
+	var candidates_variant: Variant = decision.get("candidates", [])
 	if not (candidates_variant is Array):
 		return {"valid": false, "error": "invalid_candidates"}
-	var candidates: Array = candidates_variant
+	var candidates: Array = candidates_variant as Array
 	if candidate_index < 0 or candidate_index >= candidates.size():
 		return {"valid": false, "error": "invalid_candidate_index"}
-	var candidate_variant := candidates[candidate_index]
+	var candidate_variant: Variant = candidates[candidate_index]
 	if not (candidate_variant is Dictionary):
 		return {"valid": false, "error": "invalid_candidate"}
-	var candidate: Dictionary = candidate_variant
-	var response := _response_by_index(candidate, response_index)
+	var candidate: Dictionary = candidate_variant as Dictionary
+	var response: Dictionary = _response_by_index(candidate, response_index)
 	if response.is_empty():
 		return {"valid": false, "error": "missing_response"}
 
-	var perspective_group := str(decision.get("perspective_group", ""))
-	var opponent_group := str(decision.get("opponent_group", ""))
-	var starting_variant := decision.get("starting_state", {})
-	var leaf_variant := response.get("state_after_first_turn", {})
+	var perspective_group: String = str(decision.get("perspective_group", ""))
+	var opponent_group: String = str(decision.get("opponent_group", ""))
+	var starting_variant: Variant = decision.get("starting_state", {})
+	var leaf_variant: Variant = response.get("state_after_first_turn", {})
 	if not (starting_variant is Dictionary) or not (leaf_variant is Dictionary):
 		return {"valid": false, "error": "missing_branch_state"}
 	var starting_state: Dictionary = (starting_variant as Dictionary).duplicate(true)
 	var leaf_state: Dictionary = (leaf_variant as Dictionary).duplicate(true)
 
-	var command_hexes := PureStateCommandHexRules.ensure_command_hexes(
+	var command_hexes: Dictionary = PureStateCommandHexRules.ensure_command_hexes(
 		starting_state,
 		perspective_group,
 		opponent_group
 	)
 	leaf_state["command_hexes"] = command_hexes.duplicate(true)
-	var previous_occupants := PureStateCommandHexRules.initial_occupants(
+	var previous_occupants: Dictionary = PureStateCommandHexRules.initial_occupants(
 		starting_state,
 		perspective_group,
 		opponent_group,
 		command_hexes
 	)
-	var capture := PureStateCommandHexRules.capture_after_complete_turn(
+	var capture: Dictionary = PureStateCommandHexRules.capture_after_complete_turn(
 		leaf_state,
 		perspective_group,
 		opponent_group,
@@ -221,9 +229,10 @@ func _continue_candidate(
 		previous_occupants
 	)
 	var completed: Dictionary = {}
-	if capture.get("completed", {}) is Dictionary:
-		completed = capture.get("completed", {})
-	var immediate := _immediate_branch_outcome(
+	var completed_variant: Variant = capture.get("completed", {})
+	if completed_variant is Dictionary:
+		completed = completed_variant as Dictionary
+	var immediate: Dictionary = _immediate_branch_outcome(
 		leaf_state,
 		perspective_group,
 		opponent_group,
@@ -244,18 +253,19 @@ func _continue_candidate(
 		)
 
 	var source: Dictionary = {}
-	if decision.get("source", {}) is Dictionary:
-		source = decision.get("source", {})
-	var source_max_turns := int(source.get("max_turns", PureStateGameRollout.DEFAULT_MAX_TURNS))
-	var decision_turn_index := int(decision.get("turn_index", 0))
-	var full_remaining_turns := maxi(0, source_max_turns - decision_turn_index)
-	var remaining_turns := full_remaining_turns
+	var source_variant: Variant = decision.get("source", {})
+	if source_variant is Dictionary:
+		source = source_variant as Dictionary
+	var source_max_turns: int = int(source.get("max_turns", PureStateGameRollout.DEFAULT_MAX_TURNS))
+	var decision_turn_index: int = int(decision.get("turn_index", 0))
+	var full_remaining_turns: int = maxi(0, source_max_turns - decision_turn_index)
+	var remaining_turns: int = full_remaining_turns
 	if continuation_turn_cap > 0:
 		remaining_turns = mini(remaining_turns, continuation_turn_cap)
-	var truncated := remaining_turns < full_remaining_turns
-	var turn_limit_winner := str(source.get("turn_limit_winner", ""))
+	var truncated: bool = remaining_turns < full_remaining_turns
+	var turn_limit_winner: String = str(source.get("turn_limit_winner", ""))
 	if remaining_turns <= 0:
-		var adjudicated := not turn_limit_winner.is_empty() and not truncated
+		var adjudicated: bool = not turn_limit_winner.is_empty() and not truncated
 		return _continuation_result(
 			true,
 			adjudicated,
@@ -269,10 +279,11 @@ func _continue_candidate(
 		)
 
 	var budget: Dictionary = {}
-	if decision.get("budget", {}) is Dictionary:
-		budget = decision.get("budget", {})
-	var rollout_turn_limit_winner := "" if truncated else turn_limit_winner
-	var rollout := PureStateGameRollout.play_game(
+	var budget_variant: Variant = decision.get("budget", {})
+	if budget_variant is Dictionary:
+		budget = budget_variant as Dictionary
+	var rollout_turn_limit_winner: String = "" if truncated else turn_limit_winner
+	var rollout: Dictionary = PureStateGameRollout.play_game(
 		leaf_state,
 		perspective_group,
 		opponent_group,
@@ -285,11 +296,12 @@ func _continue_candidate(
 	)
 	if not bool(rollout.get("valid", false)):
 		return {"valid": false, "error": str(rollout.get("status", "continuation_failed"))}
-	var status := str(rollout.get("status", ""))
-	var winner := str(rollout.get("winner", ""))
+	var status: String = str(rollout.get("status", ""))
+	var winner: String = str(rollout.get("winner", ""))
 	var final_state: Dictionary = leaf_state
-	if rollout.get("final_state", leaf_state) is Dictionary:
-		final_state = (rollout.get("final_state", leaf_state) as Dictionary).duplicate(true)
+	var final_state_variant: Variant = rollout.get("final_state", leaf_state)
+	if final_state_variant is Dictionary:
+		final_state = (final_state_variant as Dictionary).duplicate(true)
 	return _continuation_result(
 		true,
 		status == "terminal",
@@ -314,7 +326,7 @@ func _continuation_result(
 	final_state: Dictionary,
 	perspective_group: String
 ) -> Dictionary:
-	var outcome := 0.0
+	var outcome: float = 0.0
 	if labeled and not winner.is_empty():
 		outcome = 1.0 if winner == perspective_group else -1.0
 	return {
@@ -331,8 +343,8 @@ func _continuation_result(
 
 
 func _compare_terminal_results(selected: Dictionary, rejected: Dictionary) -> Dictionary:
-	var selected_outcome := float(selected.get("perspective_outcome", 0.0))
-	var rejected_outcome := float(rejected.get("perspective_outcome", 0.0))
+	var selected_outcome: float = float(selected.get("perspective_outcome", 0.0))
+	var rejected_outcome: float = float(rejected.get("perspective_outcome", 0.0))
 	if not is_equal_approx(selected_outcome, rejected_outcome):
 		return {
 			"preferred": true,
@@ -342,8 +354,8 @@ func _compare_terminal_results(selected: Dictionary, rejected: Dictionary) -> Di
 		}
 	# Only break ties between wins. Delaying a loss is intentionally not rewarded.
 	if is_equal_approx(selected_outcome, 1.0):
-		var selected_turns := int(selected.get("turns_played_after_branch", 0))
-		var rejected_turns := int(rejected.get("turns_played_after_branch", 0))
+		var selected_turns: int = int(selected.get("turns_played_after_branch", 0))
+		var rejected_turns: int = int(rejected.get("turns_played_after_branch", 0))
 		if selected_turns != rejected_turns:
 			return {
 				"preferred": true,
@@ -375,8 +387,8 @@ func _immediate_branch_outcome(
 ) -> Dictionary:
 	if captured_by_perspective and captured_by_opponent:
 		return {"terminal": true, "winner": "", "termination_reason": "simultaneous_command_hex_capture"}
-	var own_alive := _living_units(state, perspective_group)
-	var opponent_alive := _living_units(state, opponent_group)
+	var own_alive: int = _living_units(state, perspective_group)
+	var opponent_alive: int = _living_units(state, opponent_group)
 	if own_alive <= 0 and opponent_alive <= 0:
 		return {"terminal": true, "winner": "", "termination_reason": "elimination"}
 	if own_alive <= 0:
@@ -391,14 +403,14 @@ func _immediate_branch_outcome(
 
 
 func _living_units(state: Dictionary, group_name: String) -> int:
-	for group_variant in state.get("groups", []):
+	for group_variant: Variant in state.get("groups", []):
 		if not (group_variant is Dictionary):
 			continue
-		var group: Dictionary = group_variant
+		var group: Dictionary = group_variant as Dictionary
 		if str(group.get("name", "")) != group_name:
 			continue
-		var count := 0
-		for unit_variant in group.get("units", []):
+		var count: int = 0
+		for unit_variant: Variant in group.get("units", []):
 			if unit_variant is Dictionary and int((unit_variant as Dictionary).get("health", 0)) > 0:
 				count += 1
 		return count
@@ -406,9 +418,9 @@ func _living_units(state: Dictionary, group_name: String) -> int:
 
 
 func _response_by_index(candidate: Dictionary, response_index: int) -> Dictionary:
-	for response_variant in candidate.get("responses", []):
+	for response_variant: Variant in candidate.get("responses", []):
 		if response_variant is Dictionary and int((response_variant as Dictionary).get("response_index", -1)) == response_index:
-			return response_variant
+			return response_variant as Dictionary
 	return {}
 
 
@@ -429,16 +441,16 @@ func _continuation_decision_key(row: Dictionary) -> String:
 
 
 func _read_jsonl(path: String) -> Variant:
-	var file := FileAccess.open(path, FileAccess.READ)
+	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		push_error("Cannot open JSONL: %s" % path)
 		return null
 	var rows: Array = []
 	while not file.eof_reached():
-		var line := file.get_line().strip_edges()
+		var line: String = file.get_line().strip_edges()
 		if line.is_empty():
 			continue
-		var parsed := JSON.parse_string(line)
+		var parsed: Variant = JSON.parse_string(line)
 		if not (parsed is Dictionary):
 			push_error("Invalid JSONL row in %s" % path)
 			file.close()
@@ -450,14 +462,14 @@ func _read_jsonl(path: String) -> Variant:
 
 func _to_jsonl(rows: Array) -> String:
 	var lines: Array[String] = []
-	for row_variant in rows:
+	for row_variant: Variant in rows:
 		if row_variant is Dictionary:
 			lines.append(JSON.stringify(row_variant))
 	return "" if lines.is_empty() else "\n".join(lines) + "\n"
 
 
 func _write_text(path: String, text: String) -> bool:
-	var file := FileAccess.open(path, FileAccess.WRITE)
+	var file: FileAccess = FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		push_error("Cannot write %s" % path)
 		return false
@@ -471,19 +483,19 @@ func _parse_cmdline_kv() -> Dictionary:
 	var raw: PackedStringArray = OS.get_cmdline_user_args()
 	if raw.is_empty():
 		raw = OS.get_cmdline_args()
-	var i := 0
+	var i: int = 0
 	while i < raw.size():
-		var arg := str(raw[i]).strip_edges()
+		var arg: String = str(raw[i]).strip_edges()
 		if arg.is_empty():
 			i += 1
 			continue
 		if arg.begins_with("--"):
 			arg = arg.substr(2)
 		if arg.contains("="):
-			var parts := arg.split("=", true, 1)
+			var parts: PackedStringArray = arg.split("=", true, 1)
 			result[parts[0]] = parts[1]
 		else:
-			var next_value := ""
+			var next_value: String = ""
 			if i + 1 < raw.size() and not str(raw[i + 1]).begins_with("-"):
 				next_value = str(raw[i + 1]).strip_edges()
 				i += 1
