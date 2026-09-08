@@ -96,6 +96,7 @@ def reweight_pairs(
         (str(row.get("game_id", "")), int(row.get("turn_index", -1))): row
         for row in divergences
     }
+    configured_focus_families = sorted(focus_families)
 
     counts = Counter()
     multiplier_histogram = Counter()
@@ -153,6 +154,7 @@ def reweight_pairs(
                 "family": family,
                 "faction": faction,
                 "reasons": reasons,
+                "configured_focus_families": configured_focus_families,
                 "neural_passive_actions": neural_passive,
                 "handwritten_passive_actions": handwritten_passive,
             }
@@ -163,7 +165,7 @@ def reweight_pairs(
     manifest = {
         "pairs_seen": len(pairs),
         "pairs_reweighted": counts["reweighted_pairs"],
-        "focus_families": sorted(focus_families),
+        "focus_families": configured_focus_families,
         "focus_faction": focus_faction,
         "family_multiplier": family_multiplier,
         "faction_multiplier": faction_multiplier,
