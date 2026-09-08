@@ -26,7 +26,7 @@ func _run() -> void:
 	var max_decisions := int(args.get("max-decisions", "0"))
 	var out_dir := str(args.get("out", "user://human_playtest_benchmark"))
 	var regret_tolerance := maxf(0.0, float(args.get("regret-tolerance", str(DEFAULT_REGRET_TOLERANCE))))
-	var games_variant := _read_jsonl(str(args.get("input-jsonl", DEFAULT_INPUT)))
+	var games_variant: Variant = _read_jsonl(str(args.get("input-jsonl", DEFAULT_INPUT)))
 	if games_variant == null:
 		get_tree().quit(1)
 		return
@@ -149,7 +149,7 @@ func _evaluate_turn(
 	var final_recalled := _has_signature(final_candidates, human_signature)
 
 	var selected_signature := PureStateCandidateOracleRecall.plan_signature(search.get("best_actions", []))
-	var selected_score = null
+	var selected_score: Variant = null
 	var best_score := -INF
 	var best_actions: Array = []
 	for candidate_variant in search.get("ranked_results", []):
@@ -264,7 +264,7 @@ func _read_jsonl(path: String) -> Variant:
 		var line := file.get_line().strip_edges()
 		if line.is_empty():
 			continue
-		var parsed = JSON.parse_string(line)
+		var parsed: Variant = JSON.parse_string(line)
 		if not (parsed is Dictionary):
 			file.close()
 			push_error("Invalid human-playtest JSONL")
