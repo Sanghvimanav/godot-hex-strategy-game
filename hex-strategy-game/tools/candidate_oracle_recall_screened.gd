@@ -1,7 +1,7 @@
 extends Node
 ## Headless two-stage Candidate Oracle Recall benchmark used by the broad baseline.
 
-const CandidateOracle = preload("res://src/simulation/pure_state_candidate_oracle_screened_recall.gd")
+const CandidateOracle = preload("res://src/simulation/pure_state_candidate_oracle_fast_recall.gd")
 const PureStateCounterfactualSuite = preload("res://src/simulation/pure_state_counterfactual_suite.gd")
 const DeterministicShard = preload("res://tools/deterministic_shard.gd")
 
@@ -90,7 +90,6 @@ func _run() -> void:
 		var analysis: Dictionary = result.get("analysis", {})
 		if bool(analysis.get("severe_miss", false)):
 			severe_rows.append(result.duplicate(true))
-		var screening: Dictionary = result.get("screening", {})
 		print("[candidate-oracle-screened] %s family=%s finalists=%d/%d recall=%s gap=%.3f severe=%s classification=%s" % [
 			str(job.get("decision_id", "")),
 			str(result.get("family", "other")),
@@ -103,6 +102,22 @@ func _run() -> void:
 		])
 
 	var summary := CandidateOracle.summarize(decision_rows)
+	var family_rows: Dictionary = {}
+	for row_variant in decision_rows:
+		if not (row_variant is Dictionary) or not bool((row_variant as Dictionary).get("valid", false)):
+			continue
+		var row: Dictionary = row_variant
+		var family := str(row.get("family", "other"))
+		if not family_rows.has(family):
+			family_rows[family] = []
+		(family_rows[family] as Array).append(row)
+	var by_family: Dictionary = {}
+	var family_names: Array = family_rows.keys()
+	family_names.sort()
+	for family_variant in family_names:
+		var family := str(family_variant)
+		by_family[family] = CandidateOracle.summarize(family_rows[family] as Array)
+
 	var manifest := {
 		"manifest_schema_version": MANIFEST_SCHEMA_VERSION,
 		"candidate_oracle_schema_version": CandidateOracle.SCHEMA_VERSION,
@@ -112,13 +127,14 @@ func _run() -> void:
 		"input_jsonl": input_jsonl,
 		"rules_version": rules_version,
 		"screening_enabled": _bool_arg(args, "screening-enabled", true),
-		"screening_semantics": "all production candidates plus screened oracle-only challengers; wide-search winner is always retained; oracle comparison is approximate when enabled",
+		"screening_semantics": "all production candidates plus oracle-only challengers ranked by the already-computed wide search; wide-search winner always retained; zero extra screening simulations; oracle comparison is approximate when enabled",
 		"decisions_considered_before_shard": jobs_before_shard,
 		"shard_index": shard_index,
 		"shard_count": shard_count,
 		"decisions_requested": jobs.size(),
 		"decisions_failed": failures.size(),
 		"summary": summary,
+		"by_family": by_family,
 		"failures": failures,
 	}
 	var write_ok := _write_text(out_dir.path_join("decisions.jsonl"), _to_jsonl(decision_rows))
@@ -197,18 +213,12 @@ func _apply_cli_overrides(config: Dictionary, args: Dictionary) -> void:
 		"oracle-value-response-max-plans": "oracle_value_response_max_plans",
 		"screening-top-oracle-candidates": "screening_top_oracle_candidates",
 		"screening-max-finalists": "screening_max_finalists",
-		"screening-max-turns": "screening_max_turns",
-		"screening-max-actions-per-unit": "screening_max_actions_per_unit",
-		"screening-own-max-plans": "screening_own_max_plans",
-		"screening-opponent-max-plans": "screening_opponent_max_plans",
 	}
 	for arg_key_variant in integer_keys.keys():
 		var arg_key := str(arg_key_variant)
 		if args.has(arg_key):
 			config[str(integer_keys[arg_key])] = maxi(1, int(args[arg_key]))
 	config["screening_enabled"] = _bool_arg(args, "screening-enabled", true)
-	if args.has("screening-value-margin"):
-		config["screening_value_margin"] = maxf(0.0, float(args["screening-value-margin"]))
 	if args.has("near-best-tolerance"):
 		config["near_best_tolerance"] = maxf(0.0, float(args["near-best-tolerance"]))
 	if args.has("severe-miss-threshold"):
