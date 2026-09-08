@@ -1,0 +1,100 @@
+name: Candidate Oracle Recall
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/candidate-oracle-recall.yml"
+      - "hex-strategy-game/src/simulation/pure_state_candidate_oracle_recall.gd"
+      - "hex-strategy-game/src/simulation/pure_state_counterfactual_*.gd"
+      - "hex-strategy-game/tests/test_pure_state_candidate_oracle_recall.gd"
+      - "hex-strategy-game/tests/run_tests.gd"
+      - "hex-strategy-game/tools/candidate_oracle_recall.*"
+      - "hex-strategy-game/tools/run_candidate_oracle_recall.sh"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: candidate-oracle-recall-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Oracle recall smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Run focused oracle recall benchmark
+        run: |
+          set -euo pipefail
+          cd hex-strategy-game
+          timeout 5m bash tools/run_candidate_oracle_recall.sh \
+            --preset=smoke \
+            --production-own-max-actions-per-unit=3 \
+            --production-own-max-plans=2 \
+            --production-opponent-max-actions-per-unit=3 \
+            --production-opponent-max-plans=1 \
+            --oracle-own-max-actions-per-unit=4 \
+            --oracle-own-max-plans=4 \
+            --oracle-opponent-max-actions-per-unit=4 \
+            --oracle-opponent-max-plans=2 \
+            --oracle-value-response-max-plans=2 \
+            --out="${GITHUB_WORKSPACE}/artifacts/candidate-oracle-smoke"
+
+      - name: Audit benchmark contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("artifacts/candidate-oracle-smoke")
+          manifest = json.loads((root / "manifest.json").read_text())
+          rows = [json.loads(line) for line in (root / "decisions.jsonl").read_text().splitlines() if line.strip()]
+          assert manifest["decisions_requested"] == 1, manifest
+          assert manifest["decisions_failed"] == 0, manifest
+          assert len(rows) == 1, rows
+          row = rows[0]
+          assert row["valid"] is True, row
+          analysis = row["analysis"]
+          for key in (
+              "candidate_recall",
+              "oracle_value_gap",
+              "severe_miss",
+              "selection_accurate_conditional_on_recall",
+          ):
+              assert key in analysis, analysis
+          assert 0.0 <= analysis["oracle_value_gap"] <= 2.0, analysis
+          assert row["production_search"]["simulations_run"] > 0, row
+          assert row["oracle_search"]["simulations_run"] > 0, row
+          summary = manifest["summary"]
+          assert summary["decision_count"] == 1, summary
+          assert 0.0 <= summary["near_oracle_candidate_recall"] <= 1.0, summary
+          assert "by_family" in manifest and manifest["by_family"], manifest
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload oracle recall smoke artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-oracle-recall-smoke-${{ github.run_number }}
+          path: artifacts/candidate-oracle-smoke/
+          if-no-files-found: warn
+          retention-days: 14
