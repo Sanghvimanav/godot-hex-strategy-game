@@ -5,10 +5,15 @@ class_name ArenaPlaytestScenario
 ## the interactive controller and training exporter can stay aligned with headless Arena.
 
 const PureStateArenaSuite = preload("res://src/simulation/pure_state_arena_suite.gd")
+const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural_evaluator.gd")
 
 const DEFAULT_PRESET := "fast"
 const DEFAULT_AGENT_PROFILE := "fast"
-const DEFAULT_EVALUATOR := "handwritten"
+const AI_VARIANT_HANDWRITTEN := "handwritten"
+const AI_VARIANT_NEURAL := "neural"
+const AI_VARIANT_LLM := "llm"
+const DEFAULT_AI_VARIANT := AI_VARIANT_HANDWRITTEN
+const DEFAULT_EVALUATOR := AI_VARIANT_HANDWRITTEN
 
 
 static func available_seeds() -> Array[int]:
@@ -22,18 +27,28 @@ static func available_agent_profiles() -> Array[String]:
 	return ["fast", "balanced", "wide", "broad"]
 
 
+static func available_ai_variants() -> Array[String]:
+	return [AI_VARIANT_HANDWRITTEN, AI_VARIANT_NEURAL, AI_VARIANT_LLM]
+
+
 static func build(
 	scenario_seed: int,
 	human_group: String = "terran",
 	agent_profile: String = DEFAULT_AGENT_PROFILE,
 	map_profile: String = PureStateArenaSuite.DEFAULT_MAP_PROFILE,
-	preset: String = DEFAULT_PRESET
+	preset: String = DEFAULT_PRESET,
+	ai_variant: String = DEFAULT_AI_VARIANT,
+	neural_checkpoint_path: String = PureStateNeuralEvaluator.DEFAULT_CHECKPOINT_PATH
 ) -> Dictionary:
 	if human_group not in ["terran", "zerg"]:
 		return {}
 	if agent_profile not in available_agent_profiles():
 		return {}
 	if map_profile not in PureStateArenaSuite.available_map_profiles():
+		return {}
+	if ai_variant not in available_ai_variants():
+		return {}
+	if ai_variant == AI_VARIANT_NEURAL and neural_checkpoint_path.strip_edges().is_empty():
 		return {}
 
 	var pure_state := PureStateArenaSuite.build_generated_state(scenario_seed, preset, map_profile)
@@ -62,16 +77,22 @@ static func build(
 			live_group.units.append(unit_spec)
 		live_groups.append(live_group)
 
-	var scenario_id := "arena_playtest_s%d_%s" % [scenario_seed, agent_profile]
+	var evaluator := ai_variant if ai_variant != AI_VARIANT_LLM else AI_VARIANT_LLM
+	var scenario_id := "arena_playtest_s%d_%s_%s" % [scenario_seed, ai_variant, agent_profile]
+	var variant_description := "canonical GameplayAI with the handwritten evaluator (%s profile)" % agent_profile
+	if ai_variant == AI_VARIANT_NEURAL:
+		variant_description = "canonical GameplayAI with the neural evaluator (%s profile)" % agent_profile
+	elif ai_variant == AI_VARIANT_LLM:
+		variant_description = "the existing single-player LLM planner"
 	return {
 		"id": scenario_id,
 		"display_name": "Arena: %s — seed %d" % [_pretty_family(family), scenario_seed],
 		"category": "arena",
 		"description": (
-			"Human vs canonical GameplayAI with the handwritten evaluator (%s profile). "
+			"Human vs %s. "
 			+ "Win by elimination or by occupying the enemy command hex through one complete turn. "
 			+ "The AI chooses from the same hidden pre-turn state as you. Playtest traces and training-ready examples are saved locally."
-		) % agent_profile,
+		) % variant_description,
 		"hex_radius": int(pure_state.get("hex_radius", 5)),
 		"groups": live_groups,
 		"tile_resources": (pure_state.get("tile_resources", {}) as Dictionary).duplicate(true),
@@ -82,8 +103,11 @@ static func build(
 			"scenario_seed": scenario_seed,
 			"base_scenario_id": family,
 			"map_profile": map_profile,
+			"ai_variant": ai_variant,
 			"agent_profile": agent_profile,
-			"evaluator": DEFAULT_EVALUATOR,
+			"search_profile_applies": ai_variant != AI_VARIANT_LLM,
+			"evaluator": evaluator,
+			"neural_checkpoint_path": neural_checkpoint_path if ai_variant == AI_VARIANT_NEURAL else "",
 			"max_turns": max_turns,
 			"arena_metadata": arena_metadata,
 			"initial_state": pure_state.duplicate(true),
