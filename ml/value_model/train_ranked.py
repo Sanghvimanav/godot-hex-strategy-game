@@ -72,6 +72,62 @@ def _next_ranking_batch(loader: DataLoader, iterator):
         return next(iterator), iterator
 
 
+def _tactical_focus_groups(pairs: list[dict]) -> set[str]:
+    groups: set[str] = set()
+    for pair in pairs:
+        source = pair.get("source", {})
+        if not isinstance(source, dict):
+            continue
+        metadata = source.get("tactical_focus_reweight", {})
+        if not isinstance(metadata, dict):
+            continue
+        configured = metadata.get("configured_focus_families", [])
+        if isinstance(configured, list):
+            groups.update(str(value) for value in configured if str(value))
+    return groups
+
+
+def _split_examples_for_training(
+    examples: list[dict],
+    args: argparse.Namespace,
+    tactical_focus_groups: set[str],
+) -> tuple[int, list[dict], list[dict]]:
+    explicit_split_seed = getattr(args, "split_seed", None)
+    if explicit_split_seed is not None:
+        split_seed = int(explicit_split_seed)
+        train_examples, validation_examples = split_examples_by_group(
+            examples,
+            validation_fraction=args.validation_fraction,
+            seed=split_seed,
+            group_key=args.split_key,
+        )
+        return split_seed, train_examples, validation_examples
+
+    start_seed = int(args.seed)
+    candidate_seeds = [start_seed]
+    if tactical_focus_groups and args.split_key == "source.base_scenario_id":
+        candidate_seeds = list(range(start_seed, start_seed + 1000))
+
+    for split_seed in candidate_seeds:
+        train_examples, validation_examples = split_examples_by_group(
+            examples,
+            validation_fraction=args.validation_fraction,
+            seed=split_seed,
+            group_key=args.split_key,
+        )
+        validation_groups = {
+            example_group_value(example, args.split_key)
+            for example in validation_examples
+        }
+        if tactical_focus_groups.isdisjoint(validation_groups):
+            return split_seed, train_examples, validation_examples
+
+    raise ValueError(
+        "unable to find a train/validation split that keeps tactical focus groups "
+        "out of validation"
+    )
+
+
 def train(args: argparse.Namespace) -> dict:
     _seed_everything(args.seed)
     all_examples = load_jsonl_examples(args.data)
@@ -81,11 +137,11 @@ def train(args: argparse.Namespace) -> dict:
     if not all_pairs:
         raise ValueError("ranking dataset is empty")
 
-    train_examples, validation_examples = split_examples_by_group(
+    tactical_focus_groups = _tactical_focus_groups(all_pairs)
+    split_seed, train_examples, validation_examples = _split_examples_for_training(
         all_examples,
-        validation_fraction=args.validation_fraction,
-        seed=args.seed,
-        group_key=args.split_key,
+        args,
+        tactical_focus_groups,
     )
     validation_group_values = {
         example_group_value(example, args.split_key) for example in validation_examples
@@ -184,6 +240,9 @@ def train(args: argparse.Namespace) -> dict:
     if baseline is None:
         baseline = _synthetic_test_baseline(nonterminal_eval)
 
+    training_config = vars(args).copy()
+    training_config["effective_split_seed"] = split_seed
+    training_config["tactical_focus_train_groups"] = sorted(tactical_focus_groups)
     checkpoint = {
         "model_state_dict": model.state_dict(),
         "model_config": {
@@ -195,7 +254,7 @@ def train(args: argparse.Namespace) -> dict:
             "max_radius": encoder.max_radius,
             "unit_types": list(encoder.unit_types),
         },
-        "training_config": vars(args),
+        "training_config": training_config,
     }
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -218,6 +277,8 @@ def train(args: argparse.Namespace) -> dict:
         "eval_ranking_accuracy": eval_ranking_metrics["accuracy"],
         "eval_ranking_loss": eval_ranking_metrics["loss"],
         "split_key": args.split_key,
+        "split_seed": split_seed,
+        "tactical_focus_train_groups": sorted(tactical_focus_groups),
         "train_split_groups": _split_groups(train_examples, args.split_key),
         "validation_split_groups": _split_groups(validation_examples, args.split_key),
         "ranking_eval_groups": sorted(
@@ -290,6 +351,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--validation-fraction", type=float, default=0.2)
     parser.add_argument("--split-key", default="game_id")
+    parser.add_argument(
+        "--split-seed",
+        type=int,
+        default=None,
+        help=(
+            "Optional seed for train/validation grouping. When omitted, tactical "
+            "focus metadata may select a different split seed while --seed still "
+            "controls model initialization and minibatch randomness."
+        ),
+    )
     parser.add_argument("--hidden-channels", type=int, default=32)
     parser.add_argument("--residual-blocks", type=int, default=2)
     parser.add_argument("--seed", type=int, default=0)
