@@ -6,6 +6,7 @@ class_name ArenaPlaytestScenario
 
 const PureStateArenaSuite = preload("res://src/simulation/pure_state_arena_suite.gd")
 const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural_evaluator.gd")
+const PureStateCommandHexRules = preload("res://src/simulation/pure_state_command_hex_rules.gd")
 
 const DEFAULT_PRESET := "fast"
 const DEFAULT_AGENT_PROFILE := "fast"
@@ -77,6 +78,18 @@ static func build(
 			live_group.units.append(unit_spec)
 		live_groups.append(live_group)
 
+	# Compute the same objective coordinates the live/headless controllers will use,
+	# but do it on a duplicate so initial_state remains the verbatim generated Arena
+	# state. Including the coordinates in the scenario description also gives the
+	# existing LLM snapshot an explicit target instead of only the abstract rule.
+	var ai_group := "zerg" if human_group == "terran" else "terran"
+	var objective_state: Dictionary = pure_state.duplicate(true)
+	var command_hexes := PureStateCommandHexRules.ensure_command_hexes(objective_state, human_group, ai_group)
+	var command_hex_text := "Terran command hex: %s. Zerg command hex: %s." % [
+		str(command_hexes.get("terran", [])),
+		str(command_hexes.get("zerg", [])),
+	]
+
 	var evaluator := ai_variant if ai_variant != AI_VARIANT_LLM else AI_VARIANT_LLM
 	var scenario_id := "arena_playtest_s%d_%s_%s" % [scenario_seed, ai_variant, agent_profile]
 	var variant_description := "canonical GameplayAI with the handwritten evaluator (%s profile)" % agent_profile
@@ -90,9 +103,10 @@ static func build(
 		"category": "arena",
 		"description": (
 			"Human vs %s. "
-			+ "Win by elimination or by occupying the enemy command hex through one complete turn. "
+			+ "Win by elimination or by occupying the enemy command hex through one complete turn. %s "
+			+ "The same living unit must remain on the enemy command hex from the start through the end of a complete resolved turn. "
 			+ "The AI chooses from the same hidden pre-turn state as you. Playtest traces and training-ready examples are saved locally."
-		) % variant_description,
+		) % [variant_description, command_hex_text],
 		"hex_radius": int(pure_state.get("hex_radius", 5)),
 		"groups": live_groups,
 		"tile_resources": (pure_state.get("tile_resources", {}) as Dictionary).duplicate(true),
@@ -108,6 +122,7 @@ static func build(
 			"search_profile_applies": ai_variant != AI_VARIANT_LLM,
 			"evaluator": evaluator,
 			"neural_checkpoint_path": neural_checkpoint_path if ai_variant == AI_VARIANT_NEURAL else "",
+			"command_hexes_preview": command_hexes.duplicate(true),
 			"max_turns": max_turns,
 			"arena_metadata": arena_metadata,
 			"initial_state": pure_state.duplicate(true),
