@@ -34,6 +34,7 @@ The measurement and baseline foundation is now substantially complete:
 - PR #54 strengthened the counterfactual answer key so opponent weights come from a pre-turn search-policy proxy, unresolved continuation mass is represented as value bounds, adversarial/best-response value is separate, and authored responses remain explicit stress cases;
 - PR #56 records the complete bounded candidate x opponent-response leaf matrix for self-play decisions so candidate-level supervision is available without changing live search;
 - PR #57 selectively continues high-value rejected candidates with the real simulator, prioritizing neural-vs-handwritten disagreement, close neural scores, and tactically large one-turn swings while leaving unresolved branches unlabeled;
+- the Candidate Oracle Recall diagnostic now compares the production candidate set against an intentionally wider offline teacher, evaluates the union under one shared counterfactual answer key, reports value-based recall/gap/severe misses/conditional selection accuracy and compute ratios, and can run on frozen suite states or exported self-play search decisions;
 - the curated counterfactual suite is intentionally a small set of stable tactical regression checks rather than an exhaustive strategy answer key;
 - the neural evaluator remains evidence rather than a gameplay upgrade, so the handwritten evaluator is still the champion/fallback.
 
@@ -55,26 +56,30 @@ Game-backend work should proceed in parallel where it unlocks faster search, ric
 
 ## AI improvements
 
-### 1. Build a Candidate Oracle Recall benchmark
+### 1. Candidate Oracle Recall benchmark — implemented
 
-Before spending more effort on the neural evaluator, measure whether the bounded production search is exposing it to good plans.
+The first Candidate Oracle Recall diagnostic is now implemented. It deliberately leaves gameplay search unchanged: production search and a wider offline teacher only source candidate plans, then their deduplicated union is evaluated under the same coverage-aware counterfactual answer key. Recall is therefore based on shared oracle-controlled value rather than exact action-array equality.
 
-- For selected frozen benchmark and self-play decision states, run an intentionally expensive **offline oracle search** with much larger candidate budgets and/or smarter candidate-generation methods.
-- The oracle is a diagnostic teacher, not the gameplay AI. It may use substantially more time and compute than is acceptable during a real turn.
-- Record the best oracle plan/value and compare each production candidate set against it.
-- Do not require an exact action-array match. Count recall when production search contains a plan whose oracle-controlled value is within an agreed near-best tolerance of the oracle winner.
-- Report at least:
-  - near-oracle candidate recall;
-  - best-production-vs-best-oracle value gap;
-  - severe-miss rate for decisions where the production candidate set omits a materially stronger plan;
-  - selection accuracy conditional on a near-oracle candidate being present.
-- Break recall down by tactical/strategic family where practical: commit, hold, reposition, disengage, objective, sacrifice, screening/blocking, focus fire, crossfire, production/tempo, and other recurring motifs.
-- Instrument where an oracle plan is lost: per-unit action pruning, joint-plan beam pruning, intent preservation, opponent conditioning, or final candidate cap.
-- Use the oracle to compare candidate generators **per unit of compute**, not merely by absolute recall.
+The benchmark supports both selected frozen counterfactual states and real exported self-play `search_decisions.jsonl` states. It emits `decisions.jsonl`, `severe_misses.jsonl`, and a manifest with aggregate and per-family summaries. Defaults use a `0.10` near-best value tolerance and a `0.50` severe-miss threshold; both are configurable. It also reports production-vs-oracle simulations and wall-clock time so future generators can be compared per unit of compute.
 
-The diagnostic question is:
+The implementation covers the roadmap contract:
+
+- run an intentionally expensive offline search with larger own/opponent candidate budgets;
+- preserve production and wider-search candidates in one evaluation pool so a production-only plan can still be the oracle winner;
+- count recall when any production candidate is within the configured value tolerance of the best union candidate;
+- report near-oracle candidate recall, best-production-vs-best-oracle value gap, severe-miss rate, and selection accuracy conditional on recall;
+- aggregate by scenario/behavior family when source metadata provides a family;
+- record production/oracle search diagnostics and exact-oracle-winner recovery probes under progressively wider final-plan, per-unit-action, and opponent-conditioning budgets to help localize candidate loss;
+- retain severe misses as a dedicated mining artifact for candidate-generator and training-data follow-up;
+- keep the oracle offline-only; no gameplay policy or default search budget changes are made by this benchmark.
+
+The loss-stage recovery probes are diagnostic rather than a causal proof: exact-plan recovery is useful for locating likely pruning pressure, while the headline recall metric remains value-based so strategically equivalent plans are not mislabeled as misses.
+
+The diagnostic question remains:
 
 > Did the AI fail because it could not generate the idea, or because it generated the idea and valued it incorrectly?
+
+Use the answer to decide whether the next experiment belongs in candidate generation/refinement or evaluator/ranking work.
 
 ### 2. Batch neural leaf evaluation before making the model larger
 
@@ -359,7 +364,7 @@ A learned prior must improve candidate oracle recall and/or full-game strength *
 ### Milestone A — Search quality and speed foundation
 
 **AI**
-- Candidate Oracle Recall benchmark and severe-miss mining.
+- Candidate Oracle Recall benchmark and severe-miss mining. **Implemented; use the benchmark to identify candidate-generation misses and mine better siblings.**
 - Batched neural leaf evaluation with timing breakdown.
 - Portfolio/refinement candidate generator behind a feature flag.
 
@@ -434,4 +439,4 @@ Promote a new AI only when it beats the current champion on held-out seeded full
 
 Do not optimize solely for win rate. A shippable opponent should make strong decisions for understandable reasons, expose the player to multiple viable strategies, and remain fair under the same information and rules available to the player.
 
-**Immediate next step: implement the Candidate Oracle Recall diagnostic first, including near-oracle recall, oracle value gap, severe-miss mining, and selection accuracy conditional on recall. In parallel, batch neural leaf evaluation so evaluator overhead is not unnecessarily consuming search budget. Then use oracle/refined candidates and mined mistakes to strengthen the response-controlled sibling-ranking dataset before deciding whether the next bottleneck is candidate generation or value ranking.**
+**Immediate next step: run the Candidate Oracle Recall diagnostic across the frozen benchmark and sampled self-play decisions, inspect the severe-miss artifact, and use those results to choose between candidate-generation/refinement work and evaluator/ranking work. In parallel, batch neural leaf evaluation so evaluator overhead is not unnecessarily consuming search budget. Then feed oracle/refined candidates and mined mistakes into the response-controlled sibling-ranking dataset.**
