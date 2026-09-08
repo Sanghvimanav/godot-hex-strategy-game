@@ -1,6 +1,11 @@
 name: Pretrained Value Transfer
 
 on:
+  pull_request:
+    paths:
+      - "ml/pretrained_value/**"
+      - "ml/tests/test_pretrained_value.py"
+      - ".github/workflows/pretrained-value-transfer.yml"
   workflow_dispatch:
     inputs:
       mode:
@@ -32,7 +37,7 @@ on:
       model_name:
         description: Pretrained base model
         required: true
-        default: Qwen/Qwen3-0.6B
+        default: Qwen/Qwen3-0.6B-Base
         type: string
       transformer_epochs:
         description: LoRA fine-tuning epochs
@@ -61,7 +66,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        fraction: ${{ fromJSON(inputs.mode == 'full' && '["0.10","0.25","0.50","1.00"]' || '["0.25"]') }}
+        fraction: ${{ fromJSON((inputs.mode || 'pilot') == 'full' && '["0.10","0.25","0.50","1.00"]' || '["0.25"]') }}
     env:
       HF_HOME: ${{ github.workspace }}/.cache/huggingface
       TOKENIZERS_PARALLELISM: "false"
@@ -78,20 +83,20 @@ jobs:
       - name: Download frozen neural-policy supervision
         uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.source_artifact }}
+          name: ${{ inputs.source_artifact || 'neural-policy-candidate-3' }}
           path: artifacts/source
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.source_run_id }}
+          run-id: ${{ inputs.source_run_id || '34240515308' }}
 
       - name: Download frozen counterfactual benchmark
         uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.counterfactual_artifact }}
+          name: ${{ inputs.counterfactual_artifact || 'value-model-experiment-81' }}
           path: artifacts/counterfactual_source
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
-          run-id: ${{ inputs.counterfactual_run_id }}
+          run-id: ${{ inputs.counterfactual_run_id || '34152473442' }}
 
       - name: Install CPU PyTorch
         run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
@@ -110,9 +115,9 @@ jobs:
             --output-dir "$OUT" \
             --training-fraction "${{ matrix.fraction }}" \
             --validation-groups baneling_finish,mixed_force,scout_kite \
-            --cnn-epochs "${{ inputs.cnn_epochs }}" \
-            --transformer-epochs "${{ inputs.transformer_epochs }}" \
-            --model-name "${{ inputs.model_name }}"
+            --cnn-epochs "${{ inputs.cnn_epochs || 60 }}" \
+            --transformer-epochs "${{ inputs.transformer_epochs || 3 }}" \
+            --model-name "${{ inputs.model_name || 'Qwen/Qwen3-0.6B-Base' }}"
 
       - name: Evaluate scratch CNN on frozen counterfactual benchmark
         shell: bash
