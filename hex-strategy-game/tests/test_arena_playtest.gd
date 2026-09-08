@@ -10,6 +10,7 @@ static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_playtest_scripts_load(tests) and ok
 	ok = _test_playable_scenario_preserves_arena_state_and_ids(tests) and ok
+	ok = _test_ai_variants_preserve_routing_config(tests) and ok
 	ok = _test_terminal_human_game_emits_policy_and_value_examples(tests) and ok
 	ok = _test_turn_limit_keeps_policy_data_without_value_labels(tests) and ok
 	return ok
@@ -40,7 +41,7 @@ static func _test_playable_scenario_preserves_arena_state_and_ids(tests: Node) -
 	if config.get("initial_state", {}) != expected_state:
 		tests._fail("playable adapter must retain the exact pure-state Arena start")
 		return false
-	if str(config.get("agent_profile", "")) != "balanced" or str(config.get("evaluator", "")) != "handwritten":
+	if str(config.get("agent_profile", "")) != "balanced" or str(config.get("evaluator", "")) != "handwritten" or str(config.get("ai_variant", "")) != "handwritten":
 		tests._fail("playable adapter should preserve selected handwritten agent config: %s" % config)
 		return false
 	var found_human := false
@@ -65,6 +66,45 @@ static func _test_playable_scenario_preserves_arena_state_and_ids(tests: Node) -
 		tests._fail("requested human faction should be human and opponent should be AI")
 		return false
 	tests._pass("Arena seed, search config, faction ownership, and stable unit IDs survive the live adapter")
+	return true
+
+
+static func _test_ai_variants_preserve_routing_config(tests: Node) -> bool:
+	tests._log("test_arena_playtest: handwritten, neural, and LLM variants stay explicit")
+	var seed := int(PureStateArenaSuite.FAST_SEEDS[0])
+	var fake_checkpoint := "res://models/test_candidate.pt"
+	var neural := ArenaPlaytestScenario.build(
+		seed,
+		"terran",
+		"wide",
+		PureStateArenaSuite.DEFAULT_MAP_PROFILE,
+		"fast",
+		ArenaPlaytestScenario.AI_VARIANT_NEURAL,
+		fake_checkpoint
+	)
+	var llm := ArenaPlaytestScenario.build(
+		seed,
+		"terran",
+		"broad",
+		PureStateArenaSuite.DEFAULT_MAP_PROFILE,
+		"fast",
+		ArenaPlaytestScenario.AI_VARIANT_LLM
+	)
+	var neural_config: Dictionary = neural.get("arena_playtest", {})
+	var llm_config: Dictionary = llm.get("arena_playtest", {})
+	if str(neural_config.get("ai_variant", "")) != "neural" or str(neural_config.get("evaluator", "")) != "neural":
+		tests._fail("neural variant should route to the neural GameplayAI evaluator: %s" % neural_config)
+		return false
+	if str(neural_config.get("neural_checkpoint_path", "")) != fake_checkpoint or not bool(neural_config.get("search_profile_applies", false)):
+		tests._fail("neural variant should preserve checkpoint and search profile: %s" % neural_config)
+		return false
+	if str(llm_config.get("ai_variant", "")) != "llm" or str(llm_config.get("evaluator", "")) != "llm":
+		tests._fail("LLM variant should stay distinct from GameplayAI evaluators: %s" % llm_config)
+		return false
+	if bool(llm_config.get("search_profile_applies", true)):
+		tests._fail("LLM variant should not claim the GameplayAI search profile applies: %s" % llm_config)
+		return false
+	tests._pass("Arena variant metadata cleanly distinguishes handwritten, neural, and existing LLM routing")
 	return true
 
 
@@ -114,7 +154,10 @@ static func _test_terminal_human_game_emits_policy_and_value_examples(tests: Nod
 	if policy_example.get("chosen_actions", []) != [human_action] or float(policy_example.get("terminal_outcome", 0.0)) != 1.0:
 		tests._fail("policy example should retain the human choice and terminal result: %s" % policy_example)
 		return false
-	tests._pass("terminal playtests reuse the value schema and preserve human choices for imitation/policy learning")
+	if str(policy_example.get("opponent_variant", "")) != "handwritten":
+		tests._fail("policy example should preserve which opponent generated the response: %s" % policy_example)
+		return false
+	tests._pass("terminal playtests reuse the value schema and preserve human choices plus opponent variant")
 	return true
 
 
@@ -160,6 +203,7 @@ static func _config() -> Dictionary:
 		"scenario_seed": int(PureStateArenaSuite.FAST_SEEDS[0]),
 		"base_scenario_id": "mixed_force",
 		"map_profile": PureStateArenaSuite.DEFAULT_MAP_PROFILE,
+		"ai_variant": "handwritten",
 		"agent_profile": "fast",
 		"evaluator": "handwritten",
 		"arena_metadata": {},
