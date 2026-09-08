@@ -349,6 +349,23 @@ jobs:
           print(json.dumps(merged, indent=2))
           PY
 
+      - name: Reweight remaining tactical gaps
+        run: |
+          set -euo pipefail
+          python -m ml.value_model.reweight_tactical_pairs \
+            --pairs artifacts/arena_hard_negatives/arena_hard_negative_pairs.jsonl \
+            --divergences artifacts/arena_hard_negatives/arena_divergences.jsonl \
+            --output artifacts/arena_hard_negatives/arena_hard_negative_pairs.reweighted.jsonl \
+            --manifest artifacts/arena_hard_negatives/tactical_reweight_manifest.json \
+            --focus-families "mixed_force,scout_kite,fester_siege" \
+            --focus-faction terran \
+            --family-multiplier 2.0 \
+            --faction-multiplier 1.5 \
+            --passivity-multiplier 1.5 \
+            --max-multiplier 4.0
+          mv artifacts/arena_hard_negatives/arena_hard_negative_pairs.reweighted.jsonl \
+            artifacts/arena_hard_negatives/arena_hard_negative_pairs.jsonl
+
       - name: Run value-model tests
         run: python -m unittest discover -s ml/tests -v
 
@@ -418,6 +435,10 @@ jobs:
                   1 for row in pairs
                   if row.get("source", {}).get("data_origin") == "arena_divergence_hard_negative"
               ),
+              "tactical_reweighted_pairs": sum(
+                  1 for row in pairs
+                  if row.get("source", {}).get("tactical_focus_reweight")
+              ),
               "ranking_pair_kinds": dict(Counter(row.get("pair_kind", "") for row in pairs)),
           }
           Path("artifacts/combined/supervision_manifest.json").write_text(
@@ -465,6 +486,7 @@ jobs:
           neural = cf["evaluators"]["neural_value_model"]
           sibling = json.loads(Path("artifacts/self_play/neural_ranking_pairs_manifest.json").read_text())
           hard = json.loads(Path("artifacts/arena_hard_negatives/arena_hard_negative_manifest.json").read_text())
+          tactical = json.loads(Path("artifacts/arena_hard_negatives/tactical_reweight_manifest.json").read_text())
           summary = f"""## Neural-policy supervision follow-up
 
           | Metric | Result |
@@ -474,6 +496,7 @@ jobs:
           | Combined ranking pairs | {supervision['ranking_pairs']} |
           | Neural-continuation sibling pairs | {sibling['pairs_written']} |
           | Arena hard-negative pairs | {hard['pairs_written']} |
+          | Tactical reweighted hard negatives | {tactical['pairs_reweighted']} |
           | Teacher-recovery hard negatives | {hard.get('teacher_recovery_pairs', 0)} |
           | Held-out nonterminal winner accuracy | {float(metrics['neural_eval_sign_accuracy_nonterminal']):.1%} |
           | Held-out sibling ranking accuracy | {float(metrics['eval_ranking_accuracy']):.1%} |
@@ -486,6 +509,7 @@ jobs:
           **Mined Arena run:** {os.environ['ARENA_RUN']}  
           **Mined Arena artifact pattern:** `{os.environ['ARENA_PATTERN']}`  
           **Mined Arena map profile:** `{hard.get('arena_map_profile', 'legacy_v1')}`  
+          **Tactical focus:** families `{tactical['focus_families']}`, faction `{tactical['focus_faction']}`, passivity gaps `{tactical['passivity_gap_pairs']}`  
           **Ranking policies:** `{supervision['ranking_pairs_by_continuation_policy']}`
           """
           Path("artifacts/training_summary.md").write_text(summary)
@@ -520,6 +544,7 @@ jobs:
             artifacts/arena_hard_negatives/arena_hard_negative_pairs.jsonl
             artifacts/arena_hard_negatives/arena_hard_negative_manifest.json
             artifacts/arena_hard_negatives/arena_divergences.jsonl
+            artifacts/arena_hard_negatives/tactical_reweight_manifest.json
           if-no-files-found: error
           retention-days: 14
 
