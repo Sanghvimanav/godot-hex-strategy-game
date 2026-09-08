@@ -14,8 +14,8 @@ const PureStateCounterfactualAnswerKey = preload("res://src/simulation/pure_stat
 
 const SCHEMA_VERSION := Base.SCHEMA_VERSION
 const BENCHMARK_VERSION := 2
-const DEFAULT_TOP_ORACLE_CANDIDATES := 4
-const DEFAULT_MAX_FINALISTS := 8
+const DEFAULT_TOP_ORACLE_CANDIDATES := 2
+const DEFAULT_MAX_FINALISTS := 4
 
 
 static func evaluate_decision(
