@@ -57,8 +57,6 @@ static func search(
 	if not _has_group(game_state, group_name) or not _has_group(game_state, opponent_group_name):
 		return invalid
 
-	# Generate modeled opponent responses first. Their movement destinations become
-	# hypotheses our own proposal generator should be capable of countering.
 	var opponent_pool_limit := maxi(opponent_max_plans, opponent_max_plans * SOURCE_POOL_MULTIPLIER)
 	var opponent_pool := PureStatePlans.get_candidate_plans(
 		game_state,
@@ -77,8 +75,6 @@ static func search(
 		opponent_candidates = [{"actions": [], "proposal_score": 0.0, "intent": PureStatePlanIntents.HOLD}]
 	var counter_condition_cells := PureStateCounterConditioning.get_condition_cells(opponent_candidates)
 
-	# Generate our normal intent-diverse pool, then inject legal damaging actions
-	# whose real footprint covers modeled opponent movement destinations.
 	var own_pool_limit := maxi(own_max_plans, own_max_plans * SOURCE_POOL_MULTIPLIER)
 	var own_base_pool := PureStatePlans.get_candidate_plans(
 		game_state,
@@ -109,6 +105,15 @@ static func search(
 	var best_full: Dictionary = {}
 	var simulations_run := 0
 	var pruned_candidates := 0
+	var use_neural_batch := (
+		evaluator_mode == EVALUATOR_NEURAL
+		and bool(evaluator_settings.get("batch_evaluation", true))
+	)
+	var neural_batch_calls := 0
+	var neural_batch_leaf_requests := 0
+	var neural_unique_runtime_states := 0
+	var neural_cache_hits := 0
+	var neural_runtime_ms := 0.0
 
 	for own_variant in own_candidates:
 		if not (own_variant is Dictionary):
@@ -120,60 +125,136 @@ static func search(
 		var worst_result: Dictionary = {}
 		var pruned := false
 
-		for opponent_variant in opponent_candidates:
-			if not (opponent_variant is Dictionary):
-				continue
-			var opponent: Dictionary = opponent_variant
-			var opponent_actions: Array = opponent.get("actions", []).duplicate(true)
-			var submitted := _build_player_actions(
-				game_state,
+		if use_neural_batch:
+			var leaf_entries: Array = []
+			var leaf_states: Array = []
+			for opponent_variant in opponent_candidates:
+				if not (opponent_variant is Dictionary):
+					continue
+				var opponent: Dictionary = opponent_variant
+				var opponent_actions: Array = opponent.get("actions", []).duplicate(true)
+				var submitted := _build_player_actions(
+					game_state,
+					group_name,
+					own_actions,
+					opponent_group_name,
+					opponent_actions,
+					fixed_other_group_actions
+				)
+				var simulation := PureStateSimulator.simulate_turn(game_state, submitted)
+				var next_state: Dictionary = simulation.get("next_state", {})
+				leaf_entries.append({
+					"opponent": opponent,
+					"opponent_actions": opponent_actions,
+					"next_state": next_state,
+					"recording": simulation.get("recording", {}),
+				})
+				leaf_states.append(next_state)
+
+			var breakdowns := PureStateNeuralEvaluator.evaluate_many_breakdowns(
+				leaf_states,
 				group_name,
-				own_actions,
 				opponent_group_name,
-				opponent_actions,
-				fixed_other_group_actions
-			)
-			var simulation := PureStateSimulator.simulate_turn(game_state, submitted)
-			var next_state: Dictionary = simulation.get("next_state", {})
-			var breakdown := _evaluate_leaf(
-				next_state,
-				group_name,
-				opponent_group_name,
-				evaluator_mode,
 				evaluator_settings
 			)
-			if not bool(breakdown.get("valid", false)):
+			neural_batch_calls += 1
+			neural_batch_leaf_requests += leaf_states.size()
+			if breakdowns.size() != leaf_entries.size():
 				invalid["error"] = "evaluation_failed"
-				invalid["evaluation_error"] = str(breakdown.get("error", ""))
-				invalid["simulations_run"] = simulations_run + 1
+				invalid["evaluation_error"] = "neural_batch_size_mismatch"
+				invalid["simulations_run"] = simulations_run
 				invalid["elapsed_ms"] = float(Time.get_ticks_usec() - started_usec) / 1000.0
 				return invalid
-			var evaluation := float(breakdown.get("total", 0.0))
-			var response := {
-				"evaluation_score": evaluation,
-				"opponent_actions": opponent_actions,
-				"opponent_proposal_score": float(opponent.get("proposal_score", 0.0)),
-				"opponent_intent": str(opponent.get("intent", "")),
-				"evaluation_breakdown": breakdown,
-			}
-			response_count += 1
-			simulations_run += 1
-			sum_evaluation += evaluation
+			if not breakdowns.is_empty() and breakdowns[0] is Dictionary:
+				var batch_diag: Dictionary = (breakdowns[0] as Dictionary).get("neural_batch", {})
+				neural_unique_runtime_states += int(batch_diag.get("unique_runtime_states", 0))
+				neural_cache_hits += int(batch_diag.get("cache_hits", 0))
+				var runtime_timing: Dictionary = batch_diag.get("runtime_timing_ms", {})
+				neural_runtime_ms += float(runtime_timing.get("total_ms", 0.0))
 
-			if worst_result.is_empty() or _response_is_worse(response, worst_result):
-				worst_result = response.duplicate(true)
-				worst_result["next_state"] = next_state
-				worst_result["recording"] = simulation.get("recording", {})
-
-			# Safe minimax cutoff: once this candidate has a response strictly worse
-			# than the best completed candidate's worst case, it cannot recover.
-			if not best_full.is_empty():
-				var current_worst := float(worst_result.get("evaluation_score", 0.0))
-				var best_worst := float(best_full.get("worst_case_score", 0.0))
-				if current_worst < best_worst and not is_equal_approx(current_worst, best_worst):
-					pruned = true
-					pruned_candidates += 1
-					break
+			for leaf_index in range(leaf_entries.size()):
+				var entry: Dictionary = leaf_entries[leaf_index]
+				var breakdown: Dictionary = breakdowns[leaf_index]
+				if not bool(breakdown.get("valid", false)):
+					invalid["error"] = "evaluation_failed"
+					invalid["evaluation_error"] = str(breakdown.get("error", ""))
+					invalid["simulations_run"] = simulations_run + 1
+					invalid["elapsed_ms"] = float(Time.get_ticks_usec() - started_usec) / 1000.0
+					return invalid
+				var opponent: Dictionary = entry.get("opponent", {})
+				var evaluation := float(breakdown.get("total", 0.0))
+				var response := {
+					"evaluation_score": evaluation,
+					"opponent_actions": (entry.get("opponent_actions", []) as Array).duplicate(true),
+					"opponent_proposal_score": float(opponent.get("proposal_score", 0.0)),
+					"opponent_intent": str(opponent.get("intent", "")),
+					"evaluation_breakdown": breakdown,
+				}
+				response_count += 1
+				simulations_run += 1
+				sum_evaluation += evaluation
+				if worst_result.is_empty() or _response_is_worse(response, worst_result):
+					worst_result = response.duplicate(true)
+					worst_result["next_state"] = (entry.get("next_state", {}) as Dictionary).duplicate(true)
+					worst_result["recording"] = entry.get("recording", {})
+				if not best_full.is_empty():
+					var current_worst := float(worst_result.get("evaluation_score", 0.0))
+					var best_worst := float(best_full.get("worst_case_score", 0.0))
+					if current_worst < best_worst and not is_equal_approx(current_worst, best_worst):
+						pruned = true
+						pruned_candidates += 1
+						break
+		else:
+			for opponent_variant in opponent_candidates:
+				if not (opponent_variant is Dictionary):
+					continue
+				var opponent: Dictionary = opponent_variant
+				var opponent_actions: Array = opponent.get("actions", []).duplicate(true)
+				var submitted := _build_player_actions(
+					game_state,
+					group_name,
+					own_actions,
+					opponent_group_name,
+					opponent_actions,
+					fixed_other_group_actions
+				)
+				var simulation := PureStateSimulator.simulate_turn(game_state, submitted)
+				var next_state: Dictionary = simulation.get("next_state", {})
+				var breakdown := _evaluate_leaf(
+					next_state,
+					group_name,
+					opponent_group_name,
+					evaluator_mode,
+					evaluator_settings
+				)
+				if not bool(breakdown.get("valid", false)):
+					invalid["error"] = "evaluation_failed"
+					invalid["evaluation_error"] = str(breakdown.get("error", ""))
+					invalid["simulations_run"] = simulations_run + 1
+					invalid["elapsed_ms"] = float(Time.get_ticks_usec() - started_usec) / 1000.0
+					return invalid
+				var evaluation := float(breakdown.get("total", 0.0))
+				var response := {
+					"evaluation_score": evaluation,
+					"opponent_actions": opponent_actions,
+					"opponent_proposal_score": float(opponent.get("proposal_score", 0.0)),
+					"opponent_intent": str(opponent.get("intent", "")),
+					"evaluation_breakdown": breakdown,
+				}
+				response_count += 1
+				simulations_run += 1
+				sum_evaluation += evaluation
+				if worst_result.is_empty() or _response_is_worse(response, worst_result):
+					worst_result = response.duplicate(true)
+					worst_result["next_state"] = next_state
+					worst_result["recording"] = simulation.get("recording", {})
+				if not best_full.is_empty():
+					var current_worst := float(worst_result.get("evaluation_score", 0.0))
+					var best_worst := float(best_full.get("worst_case_score", 0.0))
+					if current_worst < best_worst and not is_equal_approx(current_worst, best_worst):
+						pruned = true
+						pruned_candidates += 1
+						break
 
 		if response_count <= 0 or worst_result.is_empty():
 			continue
@@ -225,6 +306,12 @@ static func search(
 		"simulations_run": simulations_run,
 		"pruned_candidates": pruned_candidates,
 		"elapsed_ms": elapsed_ms,
+		"neural_batch_evaluation": use_neural_batch,
+		"neural_batch_calls": neural_batch_calls,
+		"neural_batch_leaf_requests": neural_batch_leaf_requests,
+		"neural_unique_runtime_states": neural_unique_runtime_states,
+		"neural_cache_hits": neural_cache_hits,
+		"neural_runtime_ms": neural_runtime_ms,
 		"best_actions": (best_full.get("actions", []) as Array).duplicate(true),
 		"best_intent": str(best_full.get("intent", "")),
 		"best_counter_conditioned": bool(best_full.get("counter_conditioned", false)),
@@ -366,6 +453,12 @@ static func _empty_result(
 		"simulations_run": 0,
 		"pruned_candidates": 0,
 		"elapsed_ms": 0.0,
+		"neural_batch_evaluation": false,
+		"neural_batch_calls": 0,
+		"neural_batch_leaf_requests": 0,
+		"neural_unique_runtime_states": 0,
+		"neural_cache_hits": 0,
+		"neural_runtime_ms": 0.0,
 		"best_actions": [],
 		"best_intent": "",
 		"best_counter_conditioned": false,
