@@ -1,13 +1,10 @@
 extends Node
-## Mine bounded hard negatives from decisive Arena losses.
+## Mine policy-aligned hard negatives from decisive Arena losses.
 ##
-## For each game the neural challenger actually lost, reconstruct the trace until
-## the first turn where the neural action differs from what the handwritten
-## evaluator would have chosen. The recorded Arena result already tells us the
-## neural branch lost, so only simulate the handwritten alternative from that
-## same state while holding the opponent's simultaneous action fixed. This keeps
-## mining policy-aligned without launching two full 4x4 continuations at every
-## disagreement.
+## Games can be sharded across independent workers. Within each selected loss,
+## test only a small bounded number of neural/handwritten divergences. The
+## recorded Arena result supplies the neural branch loss, so each tested
+## divergence needs only one full continuation for the handwritten alternative.
 
 const LegacyMiner = preload("res://tools/arena_divergence_pairs.gd")
 const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
@@ -19,6 +16,7 @@ const PolicyContinuation = preload("res://tools/policy_continuation.gd")
 const PAIR_SCHEMA_VERSION := 2
 const MANIFEST_SCHEMA_VERSION := 1
 const DEFAULT_MAX_PAIRS := 16
+const DEFAULT_MAX_DIVERGENCES_PER_GAME := 3
 
 
 func _ready() -> void:
@@ -33,8 +31,18 @@ func _run() -> void:
 	var checkpoint: String = str(args.get("neural-checkpoint", ""))
 	var profile: String = str(args.get("profile", "balanced"))
 	var max_pairs: int = maxi(1, int(args.get("max-pairs", DEFAULT_MAX_PAIRS)))
+	var max_divergences_per_game: int = maxi(
+		1,
+		int(args.get("max-divergences-per-game", DEFAULT_MAX_DIVERGENCES_PER_GAME))
+	)
+	var shard_index: int = int(args.get("shard-index", 0))
+	var shard_count: int = maxi(1, int(args.get("shard-count", 1)))
 	if arena_root.is_empty() or checkpoint.is_empty():
 		push_error("--arena-root and --neural-checkpoint are required")
+		get_tree().quit(1)
+		return
+	if shard_index < 0 or shard_index >= shard_count:
+		push_error("--shard-index must be in [0, --shard-count)")
 		get_tree().quit(1)
 		return
 	if DirAccess.make_dir_recursive_absolute(out_dir) != OK:
@@ -86,8 +94,14 @@ func _run() -> void:
 			var job: Dictionary = job_variant as Dictionary
 			job_by_id[str(job.get("game_id", ""))] = job
 
-	var handwritten_settings: Dictionary = PureStateArenaSuite.agent_settings(profile, GameplayAI.EVALUATOR_HANDWRITTEN)
-	var neural_settings: Dictionary = PureStateArenaSuite.agent_settings(profile, GameplayAI.EVALUATOR_NEURAL)
+	var handwritten_settings: Dictionary = PureStateArenaSuite.agent_settings(
+		profile,
+		GameplayAI.EVALUATOR_HANDWRITTEN
+	)
+	var neural_settings: Dictionary = PureStateArenaSuite.agent_settings(
+		profile,
+		GameplayAI.EVALUATOR_NEURAL
+	)
 	if handwritten_settings.is_empty() or neural_settings.is_empty():
 		push_error("Unknown Arena profile '%s'" % profile)
 		get_tree().quit(1)
@@ -106,6 +120,7 @@ func _run() -> void:
 	var branch_unlabeled: int = 0
 	var no_preference: int = 0
 	var invalid: int = 0
+	var decisive_losses_seen: int = 0
 
 	var game_ids: Array = trace_by_game.keys()
 	game_ids.sort()
@@ -117,9 +132,12 @@ func _run() -> void:
 			invalid += 1
 			continue
 		var summary: Dictionary = game_summary_by_id[game_id] as Dictionary
-		# Hard negatives should come from known neural failures. Draws/unresolved
-		# games do not provide a recorded worse terminal outcome.
 		if str(summary.get("winner_agent", "")) != "champion":
+			continue
+
+		var loss_index: int = decisive_losses_seen
+		decisive_losses_seen += 1
+		if loss_index % shard_count != shard_index:
 			continue
 
 		var trace: Dictionary = trace_by_game[game_id] as Dictionary
@@ -135,6 +153,8 @@ func _run() -> void:
 		state["command_hexes"] = command_hexes.duplicate(true)
 		var max_turns: int = int(job.get("max_turns", 10))
 		var history: Array = trace.get("history", []) as Array
+		var divergences_in_game: int = 0
+		var pair_found: bool = false
 		games_considered += 1
 
 		for turn_offset: int in range(history.size()):
@@ -165,10 +185,16 @@ func _run() -> void:
 			if not bool(handwritten_decision.get("valid", false)):
 				invalid += 1
 				break
-			var handwritten_actions: Array = (handwritten_decision.get("actions", []) as Array).duplicate(true)
+			var handwritten_actions: Array = (
+				handwritten_decision.get("actions", []) as Array
+			).duplicate(true)
 
 			if JSON.stringify(neural_actions) != JSON.stringify(handwritten_actions):
+				if divergences_in_game >= max_divergences_per_game:
+					break
+				divergences_in_game += 1
 				divergences_considered += 1
+
 				var neural_leaf_variant: Variant = legacy._simulate_branch(
 					state,
 					neural_group,
@@ -190,7 +216,17 @@ func _run() -> void:
 					break
 
 				var remaining_turns: int = maxi(0, max_turns - (turn_offset + 1))
-				print("[arena-hard-negatives] game=%s first_divergence_turn=%d remaining_turns=%d" % [game_id, turn_offset, remaining_turns])
+				print(
+					"[arena-hard-negatives] shard=%d/%d game=%s divergence=%d turn=%d remaining_turns=%d"
+					% [
+						shard_index,
+						shard_count,
+						game_id,
+						divergences_in_game,
+						turn_offset,
+						remaining_turns,
+					]
+				)
 				var handwritten_result: Dictionary = helper.continue_from_leaf(
 					state,
 					handwritten_leaf_variant as Dictionary,
@@ -208,7 +244,9 @@ func _run() -> void:
 				if not bool(handwritten_result.get("labeled", false)):
 					branch_unlabeled += 1
 				else:
-					var handwritten_outcome: float = float(handwritten_result.get("perspective_outcome", 0.0))
+					var handwritten_outcome: float = float(
+						handwritten_result.get("perspective_outcome", 0.0)
+					)
 					if handwritten_outcome <= -1.0:
 						no_preference += 1
 					else:
@@ -233,21 +271,37 @@ func _run() -> void:
 							"weight": 1.0,
 							"better_candidate_index": -1,
 							"worse_candidate_index": -1,
-							"better_state": (handwritten_result.get("state_after_first_turn", {}) as Dictionary).duplicate(true),
+							"better_state": (
+								handwritten_result.get("state_after_first_turn", {}) as Dictionary
+							).duplicate(true),
 							"worse_state": (neural_leaf_variant as Dictionary).duplicate(true),
 							"better_outcome": handwritten_outcome,
 							"worse_outcome": -1.0,
-							"better_turns_after_branch": int(handwritten_result.get("turns_played_after_branch", 0)),
-							"worse_turns_after_branch": maxi(0, int(summary.get("turns_played", 0)) - (turn_offset + 1)),
-							"better_leaf_terminal": bool(handwritten_result.get("leaf_terminal", false)),
-							"worse_leaf_terminal": turn_offset + 1 >= int(summary.get("turns_played", 0)),
+							"better_turns_after_branch": int(
+								handwritten_result.get("turns_played_after_branch", 0)
+							),
+							"worse_turns_after_branch": maxi(
+								0,
+								int(summary.get("turns_played", 0)) - (turn_offset + 1)
+							),
+							"better_leaf_terminal": bool(
+								handwritten_result.get("leaf_terminal", false)
+							),
+							"worse_leaf_terminal": (
+								turn_offset + 1 >= int(summary.get("turns_played", 0))
+							),
 							"continuation_policy": PolicyContinuation.POLICY_NEURAL_VS_HANDWRITTEN,
-							"priority_reasons": ["arena_first_divergence", "recorded_neural_loss", "handwritten_alternative_better"],
+							"priority_reasons": [
+								"arena_bounded_divergence",
+								"recorded_neural_loss",
+								"handwritten_alternative_better",
+							],
 							"source": source,
 						})
 						diagnostics.append({
 							"game_id": game_id,
 							"turn_index": turn_offset,
+							"divergence_index": divergences_in_game,
 							"neural_group": neural_group,
 							"neural_actions": neural_actions,
 							"handwritten_actions": handwritten_actions,
@@ -256,9 +310,10 @@ func _run() -> void:
 							"handwritten_outcome": handwritten_outcome,
 							"pair_kind": "outcome",
 						})
-				# Always stop after the first disagreement in this game. This is the
-				# key bound that the original miner was missing.
-				break
+						pair_found = true
+
+				if pair_found or divergences_in_game >= max_divergences_per_game:
+					break
 
 			var actual_next_variant: Variant = legacy._simulate_branch(
 				state,
@@ -278,7 +333,10 @@ func _run() -> void:
 		"pair_schema_version": PAIR_SCHEMA_VERSION,
 		"arena_preset": preset,
 		"arena_profile": profile,
+		"shard_index": shard_index,
+		"shard_count": shard_count,
 		"games_considered": games_considered,
+		"decisive_losses_seen": decisive_losses_seen,
 		"divergences_considered": divergences_considered,
 		"pairs_written": pairs.size(),
 		"branch_unlabeled": branch_unlabeled,
@@ -287,23 +345,34 @@ func _run() -> void:
 		"invalid": invalid,
 		"continuation_policy": PolicyContinuation.POLICY_NEURAL_VS_HANDWRITTEN,
 		"same_actual_opponent_action": true,
-		"first_divergence_per_game": true,
+		"bounded_divergences_per_game": max_divergences_per_game,
 		"recorded_neural_loss_reused": true,
-		"max_full_continuations_per_game": 1,
+		"max_full_continuations_per_game": max_divergences_per_game,
 	}
-	var ok: bool = legacy._write_text(out_dir.path_join("arena_hard_negative_pairs.jsonl"), legacy._to_jsonl(pairs))
-	ok = legacy._write_text(out_dir.path_join("arena_divergences.jsonl"), legacy._to_jsonl(diagnostics)) and ok
+	var ok: bool = legacy._write_text(
+		out_dir.path_join("arena_hard_negative_pairs.jsonl"),
+		legacy._to_jsonl(pairs)
+	)
+	ok = legacy._write_text(
+		out_dir.path_join("arena_divergences.jsonl"),
+		legacy._to_jsonl(diagnostics)
+	) and ok
 	ok = legacy._write_text(
 		out_dir.path_join("arena_hard_negative_manifest.json"),
 		JSON.stringify(manifest, "  ") + "\n"
 	) and ok
-	print("[arena-hard-negatives] games=%d first_divergences=%d pairs=%d unlabeled=%d no_preference=%d invalid=%d" % [
-		games_considered,
-		divergences_considered,
-		pairs.size(),
-		branch_unlabeled,
-		no_preference,
-		invalid,
-	])
+	print(
+		"[arena-hard-negatives] shard=%d/%d games=%d divergences=%d pairs=%d unlabeled=%d no_preference=%d invalid=%d"
+		% [
+			shard_index,
+			shard_count,
+			games_considered,
+			divergences_considered,
+			pairs.size(),
+			branch_unlabeled,
+			no_preference,
+			invalid,
+		]
+	)
 	PureStateNeuralEvaluator.shutdown()
 	get_tree().quit(0 if ok and invalid == 0 else 1)
