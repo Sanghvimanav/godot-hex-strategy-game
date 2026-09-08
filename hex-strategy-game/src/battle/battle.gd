@@ -4,12 +4,14 @@ extends Node2D
 @onready var units: UnitsContainer = %units
 @onready var camera: Camera2D = $Camera2D
 
+const ArenaPlaytestController = preload("res://src/battle/arena_playtest_controller.gd")
 const SCROLL_SPEED := 200.0
 const ZOOM_MIN := 1.5
 const ZOOM_MAX := 4.0
 const ZOOM_STEP := 0.1
 
 var _panning := false
+var _arena_playtest_controller: ArenaPlaytestController
 
 func _ready() -> void:
 	# Navigation is initialized by hex_map._ready() (runs before units)
@@ -29,10 +31,23 @@ func _ready() -> void:
 	else:
 		var scenario := Scenarios.get_selected_scenario()
 		if not scenario.is_empty():
+			var arena_config_variant = scenario.get("arena_playtest", {})
+			var arena_enabled := arena_config_variant is Dictionary and bool((arena_config_variant as Dictionary).get("enabled", false))
+			if arena_enabled:
+				# Arena map profiles use the exact compact radius from the benchmark.
+				# Configure Navigation before spawning units so their scene positions are
+				# derived from the same board geometry as pure-state search.
+				ArenaPlaytestController.configure_map_for_scenario(hex_map, units, scenario)
 			var scenario_resources = scenario.get("tile_resources", {})
 			if scenario_resources is Dictionary and not scenario_resources.is_empty() and hex_map and hex_map.has_method("apply_tile_resource_state"):
 				hex_map.apply_tile_resource_state(scenario_resources)
 			units.apply_scenario(scenario)
+			if arena_enabled:
+				_arena_playtest_controller = ArenaPlaytestController.new()
+				_arena_playtest_controller.name = "ArenaPlaytestController"
+				add_child(_arena_playtest_controller)
+				if not _arena_playtest_controller.setup(scenario, units, hex_map):
+					push_error("Failed to initialize Arena playtest controller")
 		units.multiplayer_my_group = Scenarios.get_human_group_name_for_local_battle()
 		units.start_battle()
 

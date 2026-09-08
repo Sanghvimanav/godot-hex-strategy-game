@@ -30,6 +30,7 @@ func _ready() -> void:
 	var TestPureStateSelfPlaySuite = load("res://tests/test_pure_state_self_play_suite.gd") as GDScript
 	var TestPureStateSelfPlayDiversity = load("res://tests/test_pure_state_self_play_diversity.gd") as GDScript
 	var TestPureStateArena = load("res://tests/test_pure_state_arena.gd") as GDScript
+	var TestArenaPlaytest = load("res://tests/test_arena_playtest.gd") as GDScript
 	var TestDeterministicShard = load("res://tests/test_deterministic_shard.gd") as GDScript
 	var TestPureStateCounterfactualBenchmark = load("res://tests/test_pure_state_counterfactual_benchmark.gd") as GDScript
 	var TestPureStateCounterfactualAnswerKey = load("res://tests/test_pure_state_counterfactual_answer_key.gd") as GDScript
@@ -133,6 +134,10 @@ func _ready() -> void:
 	else:
 		_pass_count += 1
 	if not TestPureStateArena.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestArenaPlaytest.run_all(self):
 		_fail_count += 1
 	else:
 		_pass_count += 1
