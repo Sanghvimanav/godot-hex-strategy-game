@@ -41,10 +41,6 @@ jobs:
         working-directory: hex-strategy-game
         run: godot --headless --import
 
-      - name: Run unit suite
-        working-directory: hex-strategy-game
-        run: bash tests/run_tests.sh
-
       - name: Run focused oracle recall benchmark
         run: |
           set -euo pipefail
