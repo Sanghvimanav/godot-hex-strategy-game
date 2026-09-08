@@ -1,0 +1,651 @@
+name: Candidate Oracle Baseline
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/candidate-oracle-baseline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: candidate-oracle-baseline-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SELF_PLAY_TARGET: 40
+  SOURCE_SHARDS: 4
+  ORACLE_SHARDS: 5
+
+jobs:
+  self-play-source:
+    name: Build self-play decisions shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Generate diverse self-play shard
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/artifacts/self_play"
+          cd hex-strategy-game
+          ./tools/run_self_play_dataset.sh \
+            --preset=diverse \
+            --out="${OUT}" \
+            --shard-index="${{ matrix.shard }}" \
+            --shard-count="${SOURCE_SHARDS}"
+
+      - name: Capture fast and balanced search decisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="${GITHUB_WORKSPACE}/artifacts"
+          FAST="${ROOT}/decisions_fast"
+          BALANCED="${ROOT}/decisions_balanced"
+          mkdir -p "${FAST}" "${BALANCED}"
+          cp "${ROOT}/self_play/traces.jsonl" "${FAST}/traces.jsonl"
+          cp "${ROOT}/self_play/traces.jsonl" "${BALANCED}/traces.jsonl"
+          cd hex-strategy-game
+
+          godot --headless --path . res://tools/search_decision_dataset_v2.tscn -- \
+            --out="${FAST}" \
+            --decision-source-own-max-plans=2 \
+            --decision-source-opponent-max-plans=2 \
+            --decision-own-max-plans=2 \
+            --decision-opponent-max-plans=2
+
+          godot --headless --path . res://tools/search_decision_dataset_v2.tscn -- \
+            --out="${BALANCED}" \
+            --decision-source-own-max-plans=4 \
+            --decision-source-opponent-max-plans=4 \
+            --decision-own-max-plans=4 \
+            --decision-opponent-max-plans=4
+
+          cat "${FAST}/search_decisions.jsonl" "${BALANCED}/search_decisions.jsonl" \
+            > "${ROOT}/search_decisions.jsonl"
+
+      - name: Upload source decisions
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-source-decisions-${{ matrix.shard }}
+          path: |
+            artifacts/search_decisions.jsonl
+            artifacts/self_play/manifest.json
+          if-no-files-found: error
+          retention-days: 7
+
+  sample-self-play:
+    name: Select balanced 40-decision sample
+    needs: self-play-source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: oracle-source-decisions-*
+          path: artifacts/source_shards
+          merge-multiple: false
+
+      - name: Build deterministic family-balanced sample
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/sample
+          python - <<'PY'
+          import json
+          from collections import defaultdict, Counter
+          from pathlib import Path
+
+          rows = []
+          for path in sorted(Path("artifacts/source_shards").glob("*/search_decisions.jsonl")):
+              for line in path.read_text().splitlines():
+                  if line.strip():
+                      rows.append(json.loads(line))
+
+          dedup = {}
+          for row in rows:
+              source = row.setdefault("source", {})
+              family = str(
+                  source.get("family")
+                  or source.get("scenario_family")
+                  or source.get("base_scenario_id")
+                  or source.get("scenario_id")
+                  or "self_play"
+              )
+              source["family"] = family
+              decision_id = f"{row.get('game_id','game')}|turn_{int(row.get('turn_index',0)):03d}|{row.get('perspective_group','')}"
+              dedup[decision_id] = row
+
+          by_family = defaultdict(list)
+          for decision_id, row in sorted(dedup.items()):
+              by_family[row["source"]["family"]].append((decision_id, row))
+
+          families = sorted(by_family)
+          if len(families) < 8:
+              raise SystemExit(f"expected at least 8 strategic families, got {families}")
+
+          target = 40
+          minimum_each = min(3, target // len(families))
+          selected = []
+          selected_ids = set()
+          for family in families:
+              for decision_id, row in by_family[family][:minimum_each]:
+                  selected.append((decision_id, row))
+                  selected_ids.add(decision_id)
+
+          cursor = {family: minimum_each for family in families}
+          while len(selected) < target:
+              progressed = False
+              for family in families:
+                  index = cursor[family]
+                  if index >= len(by_family[family]):
+                      continue
+                  decision_id, row = by_family[family][index]
+                  cursor[family] += 1
+                  if decision_id in selected_ids:
+                      continue
+                  selected.append((decision_id, row))
+                  selected_ids.add(decision_id)
+                  progressed = True
+                  if len(selected) >= target:
+                      break
+              if not progressed:
+                  break
+
+          if len(selected) < target:
+              raise SystemExit(f"only found {len(selected)} unique decisions; need {target}")
+
+          selected = selected[:target]
+          counts = Counter(row["source"]["family"] for _, row in selected)
+          out = Path("artifacts/sample/search_decisions.jsonl")
+          out.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for _, row in selected))
+          manifest = {
+              "target_decisions": target,
+              "selected_decisions": len(selected),
+              "available_families": families,
+              "family_counts": dict(sorted(counts.items())),
+              "decision_ids": [decision_id for decision_id, _ in selected],
+          }
+          Path("artifacts/sample/sample_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+          print(json.dumps(manifest, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload balanced sample
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-balanced-self-play-sample
+          path: artifacts/sample/
+          if-no-files-found: error
+          retention-days: 14
+
+  curated-oracle:
+    name: Curated ${{ matrix.profile }} shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [2x2, 4x4]
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Run curated oracle shard
+        shell: bash
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          case "${PROFILE}" in
+            2x2) PLANS=2 ;;
+            4x4) PLANS=4 ;;
+            *) exit 2 ;;
+          esac
+          OUT="${GITHUB_WORKSPACE}/artifacts/curated-${PROFILE}-${{ matrix.shard }}"
+          cd hex-strategy-game
+          timeout 40m bash tools/run_candidate_oracle_recall.sh \
+            --preset=curated \
+            --shard-index="${{ matrix.shard }}" \
+            --shard-count=4 \
+            --production-own-max-actions-per-unit=8 \
+            --production-own-max-plans="${PLANS}" \
+            --production-opponent-max-actions-per-unit=8 \
+            --production-opponent-max-plans="${PLANS}" \
+            --oracle-own-max-actions-per-unit=12 \
+            --oracle-own-max-plans=32 \
+            --oracle-opponent-max-actions-per-unit=12 \
+            --oracle-opponent-max-plans=10 \
+            --oracle-value-opponent-max-plans=10 \
+            --oracle-value-response-max-plans=8 \
+            --out="${OUT}"
+
+      - name: Upload curated result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: curated-oracle-${{ matrix.profile }}-${{ matrix.shard }}
+          path: artifacts/curated-${{ matrix.profile }}-${{ matrix.shard }}/
+          if-no-files-found: warn
+          retention-days: 14
+
+  self-play-oracle:
+    name: Self-play ${{ matrix.profile }} shard ${{ matrix.shard }}
+    needs: sample-self-play
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [2x2, 4x4]
+        shard: [0, 1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Download balanced sample
+        uses: actions/download-artifact@v4
+        with:
+          name: oracle-balanced-self-play-sample
+          path: artifacts/sample
+
+      - name: Run self-play oracle shard
+        shell: bash
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          case "${PROFILE}" in
+            2x2) PLANS=2 ;;
+            4x4) PLANS=4 ;;
+            *) exit 2 ;;
+          esac
+          OUT="${GITHUB_WORKSPACE}/artifacts/selfplay-${PROFILE}-${{ matrix.shard }}"
+          cd hex-strategy-game
+          timeout 55m bash tools/run_candidate_oracle_recall.sh \
+            --input-jsonl="${GITHUB_WORKSPACE}/artifacts/sample/search_decisions.jsonl" \
+            --shard-index="${{ matrix.shard }}" \
+            --shard-count="${ORACLE_SHARDS}" \
+            --production-own-max-actions-per-unit=8 \
+            --production-own-max-plans="${PLANS}" \
+            --production-opponent-max-actions-per-unit=8 \
+            --production-opponent-max-plans="${PLANS}" \
+            --oracle-own-max-actions-per-unit=12 \
+            --oracle-own-max-plans=24 \
+            --oracle-opponent-max-actions-per-unit=12 \
+            --oracle-opponent-max-plans=8 \
+            --oracle-value-opponent-max-plans=8 \
+            --oracle-value-response-max-plans=8 \
+            --out="${OUT}"
+
+      - name: Upload self-play result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selfplay-oracle-${{ matrix.profile }}-${{ matrix.shard }}
+          path: artifacts/selfplay-${{ matrix.profile }}-${{ matrix.shard }}/
+          if-no-files-found: warn
+          retention-days: 14
+
+  aggregate:
+    name: Aggregate baseline and isolate 4x4 misses
+    needs: [sample-self-play, self-play-oracle, curated-oracle]
+    if: always() && needs.sample-self-play.result == 'success' && needs.self-play-oracle.result == 'success' && needs.curated-oracle.result == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      miss_count: ${{ steps.aggregate.outputs.miss_count }}
+    steps:
+      - name: Download balanced sample
+        uses: actions/download-artifact@v4
+        with:
+          name: oracle-balanced-self-play-sample
+          path: artifacts/sample
+
+      - name: Download oracle results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*-oracle-*"
+          path: artifacts/results
+          merge-multiple: false
+
+      - name: Aggregate metrics and misses
+        id: aggregate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/aggregate
+          python - <<'PY'
+          import json
+          from collections import defaultdict
+          from pathlib import Path
+
+          def load_rows(pattern):
+              rows = []
+              for path in sorted(Path("artifacts/results").glob(pattern)):
+                  decision_path = path / "decisions.jsonl"
+                  if not decision_path.exists():
+                      continue
+                  rows.extend(json.loads(line) for line in decision_path.read_text().splitlines() if line.strip())
+              return rows
+
+          def summarize(rows):
+              valid = [r for r in rows if r.get("valid")]
+              recalled = [r for r in valid if r.get("analysis", {}).get("candidate_recall")]
+              severe = [r for r in valid if r.get("analysis", {}).get("severe_miss")]
+              ranking = [r for r in valid if r.get("analysis", {}).get("ranking_failure")]
+              gaps = [float(r.get("analysis", {}).get("oracle_value_gap", 0.0)) for r in valid]
+              conditional = [r for r in recalled if r.get("analysis", {}).get("selection_accurate_conditional_on_recall") is not None]
+              conditional_ok = [r for r in conditional if r.get("analysis", {}).get("selection_accurate_conditional_on_recall") is True]
+              prod_sims = sum(int(r.get("production_search", {}).get("simulations_run", 0)) for r in valid)
+              oracle_sims = sum(int(r.get("oracle_search", {}).get("simulations_run", 0)) for r in valid)
+              return {
+                  "decisions": len(valid),
+                  "failed": len(rows) - len(valid),
+                  "recall": len(recalled) / len(valid) if valid else 0.0,
+                  "mean_gap": sum(gaps) / len(gaps) if gaps else 0.0,
+                  "max_gap": max(gaps) if gaps else 0.0,
+                  "severe_misses": len(severe),
+                  "candidate_generation_failures": sum(bool(r.get("analysis", {}).get("candidate_generation_failure")) for r in valid),
+                  "ranking_failures": len(ranking),
+                  "conditional_selection_accuracy": len(conditional_ok) / len(conditional) if conditional else None,
+                  "production_simulations": prod_sims,
+                  "oracle_simulations": oracle_sims,
+                  "oracle_to_production_sim_ratio": oracle_sims / prod_sims if prod_sims else None,
+              }
+
+          datasets = {}
+          for kind in ("selfplay", "curated"):
+              for profile in ("2x2", "4x4"):
+                  rows = load_rows(f"{kind}-oracle-{profile}-*/")
+                  datasets[f"{kind}_{profile}"] = {"rows": rows, "summary": summarize(rows)}
+
+          sample_rows = [json.loads(line) for line in Path("artifacts/sample/search_decisions.jsonl").read_text().splitlines() if line.strip()]
+          sample_by_id = {
+              f"{row.get('game_id','game')}|turn_{int(row.get('turn_index',0)):03d}|{row.get('perspective_group','')}": row
+              for row in sample_rows
+          }
+
+          four = datasets["selfplay_4x4"]["rows"]
+          four_misses = [r for r in four if r.get("valid") and r.get("analysis", {}).get("candidate_generation_failure")]
+          four_miss_ids = {r["decision_id"] for r in four_misses}
+          missing_source = sorted(four_miss_ids - sample_by_id.keys())
+          if missing_source:
+              raise SystemExit(f"missing source rows for 4x4 misses: {missing_source}")
+          miss_input = [sample_by_id[i] for i in sorted(four_miss_ids)]
+          Path("artifacts/aggregate/miss_input_4x4.jsonl").write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in miss_input))
+
+          misses = []
+          for key in ("selfplay_2x2", "selfplay_4x4"):
+              profile = key.split("_")[1]
+              for row in datasets[key]["rows"]:
+                  analysis = row.get("analysis", {})
+                  if not row.get("valid") or not analysis.get("candidate_generation_failure"):
+                      continue
+                  misses.append({
+                      "profile": profile,
+                      "decision_id": row.get("decision_id"),
+                      "family": row.get("family"),
+                      "gap": analysis.get("oracle_value_gap"),
+                      "severe": analysis.get("severe_miss"),
+                      "oracle_best_value": analysis.get("oracle_best_value"),
+                      "best_production_value": analysis.get("best_production_value"),
+                      "oracle_best_actions": analysis.get("oracle_best_actions"),
+                      "best_production_plan_signature": analysis.get("best_production_plan_signature"),
+                      "selected_plan_signature": analysis.get("selected_plan_signature"),
+                      "loss_stage_probes": row.get("loss_stage_probes"),
+                  })
+          Path("artifacts/aggregate/misses.jsonl").write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in misses))
+
+          # Recovery from 2x2 -> 4x4 on the same decision states.
+          two_by_id = {r.get("decision_id"): r for r in datasets["selfplay_2x2"]["rows"] if r.get("valid")}
+          four_by_id = {r.get("decision_id"): r for r in datasets["selfplay_4x4"]["rows"] if r.get("valid")}
+          recovered = []
+          for decision_id, row2 in two_by_id.items():
+              row4 = four_by_id.get(decision_id)
+              if not row4:
+                  continue
+              if (not row2.get("analysis", {}).get("candidate_recall")) and row4.get("analysis", {}).get("candidate_recall"):
+                  recovered.append(decision_id)
+
+          by_family = {}
+          for profile in ("2x2", "4x4"):
+              groups = defaultdict(list)
+              for row in datasets[f"selfplay_{profile}"]["rows"]:
+                  if row.get("valid"):
+                      groups[str(row.get("family", "other"))].append(row)
+              by_family[profile] = {family: summarize(rows) for family, rows in sorted(groups.items())}
+
+          aggregate = {
+              "selfplay_2x2": datasets["selfplay_2x2"]["summary"],
+              "selfplay_4x4": datasets["selfplay_4x4"]["summary"],
+              "curated_2x2": datasets["curated_2x2"]["summary"],
+              "curated_4x4": datasets["curated_4x4"]["summary"],
+              "selfplay_by_family": by_family,
+              "two_to_four_recovered_decision_ids": sorted(recovered),
+              "two_to_four_recovered_count": len(recovered),
+              "four_by_four_generation_miss_count": len(four_misses),
+          }
+          Path("artifacts/aggregate/aggregate.json").write_text(json.dumps(aggregate, indent=2, sort_keys=True) + "\n")
+
+          lines = ["## Candidate Oracle broad baseline", ""]
+          lines.append("| Dataset/profile | Decisions | Recall | Mean gap | Max gap | Severe misses | Ranking failures | Conditional selection | Oracle/prod sims |")
+          lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+          for key, label in (("curated_2x2","Curated 2x2"),("curated_4x4","Curated 4x4"),("selfplay_2x2","Self-play 2x2"),("selfplay_4x4","Self-play 4x4")):
+              s = aggregate[key]
+              cond = "n/a" if s["conditional_selection_accuracy"] is None else f"{s['conditional_selection_accuracy']:.1%}"
+              ratio = "n/a" if s["oracle_to_production_sim_ratio"] is None else f"{s['oracle_to_production_sim_ratio']:.2f}x"
+              lines.append(f"| {label} | {s['decisions']} | {s['recall']:.1%} | {s['mean_gap']:.3f} | {s['max_gap']:.3f} | {s['severe_misses']} | {s['ranking_failures']} | {cond} | {ratio} |")
+          lines += ["", f"2x2 generation misses recovered by 4x4: **{len(recovered)}**", f"Generation misses still present at 4x4: **{len(four_misses)}**", ""]
+          lines.append("### Self-play family recall")
+          lines.append("")
+          lines.append("| Family | 2x2 recall | 4x4 recall | 2x2 mean gap | 4x4 mean gap |")
+          lines.append("| --- | ---: | ---: | ---: | ---: |")
+          families = sorted(set(by_family["2x2"]) | set(by_family["4x4"]))
+          for family in families:
+              a = by_family["2x2"].get(family, {})
+              b = by_family["4x4"].get(family, {})
+              lines.append(f"| {family} | {a.get('recall',0):.1%} | {b.get('recall',0):.1%} | {a.get('mean_gap',0):.3f} | {b.get('mean_gap',0):.3f} |")
+          report = "\n".join(lines) + "\n"
+          Path("artifacts/aggregate/report.md").write_text(report)
+          print(report)
+          print(f"MISS_COUNT={len(four_misses)}")
+          with Path("miss_count.txt").open("w") as handle:
+              handle.write(str(len(four_misses)))
+          PY
+          echo "miss_count=$(cat miss_count.txt)" >> "$GITHUB_OUTPUT"
+          cat artifacts/aggregate/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload aggregate
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-oracle-baseline-aggregate
+          path: artifacts/aggregate/
+          if-no-files-found: error
+          retention-days: 14
+
+  followup-6x6:
+    name: 6x6 follow-up shard ${{ matrix.shard }}
+    needs: aggregate
+    if: needs.aggregate.outputs.miss_count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Download 4x4 miss input
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-oracle-baseline-aggregate
+          path: artifacts/aggregate
+
+      - name: Run 6x6 on remaining misses
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/artifacts/followup-6x6-${{ matrix.shard }}"
+          cd hex-strategy-game
+          timeout 55m bash tools/run_candidate_oracle_recall.sh \
+            --input-jsonl="${GITHUB_WORKSPACE}/artifacts/aggregate/miss_input_4x4.jsonl" \
+            --shard-index="${{ matrix.shard }}" \
+            --shard-count=4 \
+            --production-own-max-actions-per-unit=8 \
+            --production-own-max-plans=6 \
+            --production-opponent-max-actions-per-unit=8 \
+            --production-opponent-max-plans=6 \
+            --oracle-own-max-actions-per-unit=12 \
+            --oracle-own-max-plans=24 \
+            --oracle-opponent-max-actions-per-unit=12 \
+            --oracle-opponent-max-plans=8 \
+            --oracle-value-opponent-max-plans=8 \
+            --oracle-value-response-max-plans=8 \
+            --out="${OUT}"
+
+      - name: Upload 6x6 result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selfplay-oracle-6x6-${{ matrix.shard }}
+          path: artifacts/followup-6x6-${{ matrix.shard }}/
+          if-no-files-found: warn
+          retention-days: 14
+
+  final-report:
+    name: Final baseline report
+    needs: [aggregate, followup-6x6]
+    if: always() && needs.aggregate.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download aggregate
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-oracle-baseline-aggregate
+          path: artifacts/aggregate
+
+      - name: Download 6x6 follow-up
+        if: needs.aggregate.outputs.miss_count != '0' && needs.followup-6x6.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: selfplay-oracle-6x6-*
+          path: artifacts/followup
+          merge-multiple: false
+
+      - name: Add 6x6 recovery and per-miss detail
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          aggregate_path = Path("artifacts/aggregate/aggregate.json")
+          aggregate = json.loads(aggregate_path.read_text())
+          miss_rows = [json.loads(line) for line in Path("artifacts/aggregate/misses.jsonl").read_text().splitlines() if line.strip()]
+          follow = []
+          follow_root = Path("artifacts/followup")
+          if follow_root.exists():
+              for path in sorted(follow_root.glob("*/decisions.jsonl")):
+                  follow.extend(json.loads(line) for line in path.read_text().splitlines() if line.strip())
+
+          six_by_id = {r.get("decision_id"): r for r in follow if r.get("valid")}
+          four_misses = [r for r in miss_rows if r.get("profile") == "4x4"]
+          six_recovered = [
+              r["decision_id"] for r in four_misses
+              if six_by_id.get(r["decision_id"], {}).get("analysis", {}).get("candidate_recall")
+          ]
+          aggregate["six_by_six_followup_decisions"] = len(six_by_id)
+          aggregate["four_to_six_recovered_count"] = len(six_recovered)
+          aggregate["four_to_six_recovered_decision_ids"] = sorted(six_recovered)
+          aggregate_path.write_text(json.dumps(aggregate, indent=2, sort_keys=True) + "\n")
+
+          report = Path("artifacts/aggregate/report.md").read_text()
+          report += "\n### 6x6 follow-up\n\n"
+          if four_misses:
+              report += f"4x4 misses tested at 6x6: **{len(six_by_id)}**; recovered at 6x6: **{len(six_recovered)}**.\n\n"
+          else:
+              report += "No 4x4 candidate-generation misses remained, so 6x6 follow-up was unnecessary.\n\n"
+
+          report += "### Candidate-generation misses\n\n"
+          if not miss_rows:
+              report += "No candidate-generation misses in the 40-decision self-play sample.\n"
+          else:
+              report += "| Profile | Family | Decision | Gap | Severe | First recovery probe | 6x6 recall |\n"
+              report += "| --- | --- | --- | ---: | --- | --- | --- |\n"
+              for row in sorted(miss_rows, key=lambda r: (r.get("profile",""), r.get("family",""), r.get("decision_id",""))):
+                  probes = row.get("loss_stage_probes") or {}
+                  first = probes.get("first_recovery_probe", "n/a")
+                  six = six_by_id.get(row.get("decision_id"))
+                  six_recall = "n/a" if six is None else str(bool(six.get("analysis", {}).get("candidate_recall")))
+                  report += f"| {row.get('profile')} | {row.get('family')} | `{row.get('decision_id')}` | {float(row.get('gap',0)):.3f} | {row.get('severe')} | {first} | {six_recall} |\n"
+
+          Path("artifacts/aggregate/report.md").write_text(report)
+          print(report)
+          PY
+          cat artifacts/aggregate/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload final baseline report
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-oracle-baseline-final
+          path: artifacts/aggregate/
+          if-no-files-found: error
+          retention-days: 14
