@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -68,19 +69,27 @@ def request_example(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def score_request(
+def score_requests(
     model: HexValueNet,
     encoder: HexStateEncoder,
-    request: dict[str, Any],
+    requests: list[dict[str, Any]],
     device: torch.device,
-) -> float:
-    encoded = encoder.encode(request_example(request))
+) -> tuple[list[float], dict[str, float]]:
+    started = time.perf_counter()
+    encoded = [encoder.encode(request_example(request)) for request in requests]
+    encoded_done = time.perf_counter()
+    if not encoded:
+        return [], {"encode_ms": 0.0, "inference_ms": 0.0, "total_ms": 0.0}
+    boards = torch.stack([item.board for item in encoded], dim=0).to(device)
+    globals_ = torch.stack([item.global_features for item in encoded], dim=0).to(device)
     with torch.no_grad():
-        value = model(
-            encoded.board.unsqueeze(0).to(device),
-            encoded.global_features.unsqueeze(0).to(device),
-        )
-    return float(value.item())
+        values = model(boards, globals_).reshape(-1)
+    inference_done = time.perf_counter()
+    return [float(value.item()) for value in values], {
+        "encode_ms": (encoded_done - started) * 1000.0,
+        "inference_ms": (inference_done - encoded_done) * 1000.0,
+        "total_ms": (inference_done - started) * 1000.0,
+    }
 
 
 def main() -> int:
@@ -97,7 +106,7 @@ def main() -> int:
         return 2
 
     print(
-        json.dumps({"ready": True, "board_channels": encoder.board_channels, "global_features": encoder.global_features}),
+        json.dumps({"ready": True, "board_channels": encoder.board_channels, "global_features": encoder.global_features, "batch_protocol": 1}),
         flush=True,
     )
     for raw_line in sys.stdin:
@@ -108,7 +117,25 @@ def main() -> int:
             request = json.loads(raw_line)
             if not isinstance(request, dict):
                 raise ValueError("request must be an object")
-            response = {"ok": True, "value": score_request(model, encoder, request, device)}
+            batch = request.get("requests")
+            if batch is not None:
+                if not isinstance(batch, list) or not all(isinstance(item, dict) for item in batch):
+                    raise ValueError("requests must be an array of objects")
+                values, timing = score_requests(model, encoder, batch, device)
+                response = {
+                    "ok": True,
+                    "values": values,
+                    "batch_size": len(values),
+                    "timing_ms": timing,
+                }
+            else:
+                values, timing = score_requests(model, encoder, [request], device)
+                response = {
+                    "ok": True,
+                    "value": values[0],
+                    "batch_size": 1,
+                    "timing_ms": timing,
+                }
         except Exception as exc:
             response = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         print(json.dumps(response, separators=(",", ":")), flush=True)
