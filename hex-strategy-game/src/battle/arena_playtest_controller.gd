@@ -1,20 +1,25 @@
 extends Node2D
 class_name ArenaPlaytestController
 ## Interactive bridge between the existing battle UI and the canonical pure-state
-## Arena AI. The AI plan is computed at planning-start from an immutable pre-turn
-## state, before the human chooses anything, preserving simultaneous-turn fairness.
+## Arena AI. GameplayAI variants are computed at planning-start from an immutable
+## pre-turn state. The LLM variant reuses the existing batch planner, whose snapshot
+## is likewise created before the human can commit the simultaneous turn.
 
 const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
 const PureStateArenaSuite = preload("res://src/simulation/pure_state_arena_suite.gd")
 const PureStateCommandHexRules = preload("res://src/simulation/pure_state_command_hex_rules.gd")
 const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd")
+const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural_evaluator.gd")
 const ArenaPlaytestData = preload("res://src/battle/arena_playtest_data.gd")
+const ArenaPlaytestScenario = preload("res://src/battle/arena_playtest_scenario.gd")
+const LlmAiSettings = preload("res://src/llm_ai/llm_settings.gd")
 
 var _units: UnitsContainer
 var _hex_map: Node
 var _arena_config: Dictionary = {}
 var _human_group := ""
 var _ai_group := ""
+var _ai_variant := ArenaPlaytestScenario.DEFAULT_AI_VARIANT
 var _ai_settings: Dictionary = {}
 var _current_state: Dictionary = {}
 var _command_hexes: Dictionary = {}
@@ -68,12 +73,33 @@ func setup(scenario: Dictionary, units: UnitsContainer, hex_map: Node) -> bool:
 	if _human_group.is_empty() or _ai_group.is_empty() or _human_group == _ai_group:
 		return false
 
-	_ai_settings = PureStateArenaSuite.agent_settings(
-		str(_arena_config.get("agent_profile", "fast")),
-		str(_arena_config.get("evaluator", GameplayAI.EVALUATOR_HANDWRITTEN))
-	)
-	if _ai_settings.is_empty():
+	_ai_variant = str(_arena_config.get("ai_variant", _arena_config.get("evaluator", ArenaPlaytestScenario.DEFAULT_AI_VARIANT)))
+	if _ai_variant not in ArenaPlaytestScenario.available_ai_variants():
 		return false
+	if _ai_variant == ArenaPlaytestScenario.AI_VARIANT_LLM:
+		var llm_settings := LlmAiSettings.new()
+		llm_settings.load_from_disk()
+		if not llm_settings.has_configured_key() or llm_settings.model.strip_edges().is_empty():
+			return false
+		_ai_settings = _llm_settings_metadata(llm_settings)
+		_arena_config["llm_model"] = llm_settings.model.strip_edges()
+		_arena_config["llm_prompt_version"] = llm_settings.planning_prompt_version
+	else:
+		var evaluator := GameplayAI.EVALUATOR_NEURAL if _ai_variant == ArenaPlaytestScenario.AI_VARIANT_NEURAL else GameplayAI.EVALUATOR_HANDWRITTEN
+		_ai_settings = PureStateArenaSuite.agent_settings(
+			str(_arena_config.get("agent_profile", "fast")),
+			evaluator
+		)
+		if _ai_settings.is_empty():
+			return false
+		if _ai_variant == ArenaPlaytestScenario.AI_VARIANT_NEURAL:
+			var checkpoint_path := str(_arena_config.get("neural_checkpoint_path", PureStateNeuralEvaluator.DEFAULT_CHECKPOINT_PATH))
+			if checkpoint_path.is_empty() or not FileAccess.file_exists(checkpoint_path):
+				return false
+			var evaluator_settings: Dictionary = (_ai_settings.get("evaluator_settings", {}) as Dictionary).duplicate(true)
+			evaluator_settings["checkpoint_path"] = checkpoint_path
+			_ai_settings["evaluator_settings"] = evaluator_settings
+
 	var initial_variant = _arena_config.get("initial_state", {})
 	if not (initial_variant is Dictionary) or (initial_variant as Dictionary).is_empty():
 		return false
@@ -85,9 +111,10 @@ func setup(scenario: Dictionary, units: UnitsContainer, hex_map: Node) -> bool:
 		_ai_group,
 		_command_hexes
 	)
-	_game_id = "arena-playtest-s%d-%s-%d" % [
+	_game_id = "arena-playtest-s%d-%s-%s-%d" % [
 		int(_arena_config.get("scenario_seed", 0)),
 		_human_group,
+		_ai_variant,
 		int(Time.get_unix_time_from_system()),
 	]
 
@@ -114,10 +141,12 @@ func _on_planning_started() -> void:
 		return
 	var live_turn := int(_units.turn_number)
 	# Single-player currently begins planning once from the animation path and once
-	# from its authoritative state resync. Reuse the exact same hidden Arena choice
-	# on a duplicate planning-start rather than giving the AI another search roll.
-	if live_turn == _planned_turn_number and not _pending_ai_decision.is_empty():
-		_apply_ai_actions_to_scene(_pending_ai_decision.get("actions", []) as Array)
+	# from its authoritative state resync. GameplayAI variants reuse their exact
+	# hidden choice. The LLM batch path may be restarted by UnitsContainer, but its
+	# snapshot is still the same untouched start-of-turn scene.
+	if live_turn == _planned_turn_number:
+		if _ai_variant != ArenaPlaytestScenario.AI_VARIANT_LLM and not _pending_ai_decision.is_empty():
+			_apply_ai_actions_to_scene(_pending_ai_decision.get("actions", []) as Array)
 		return
 
 	_planned_turn_number = live_turn
@@ -126,6 +155,15 @@ func _on_planning_started() -> void:
 	_pending_simulation.clear()
 	_pending_state_before = _current_state.duplicate(true)
 	_pending_state_before["command_hexes"] = _command_hexes.duplicate(true)
+	_pending_ai_decision.clear()
+
+	if _ai_variant == ArenaPlaytestScenario.AI_VARIANT_LLM:
+		# ArenaUnitsContainer enables the existing deferred single-player LLM batch
+		# immediately after this planning_started signal returns. Do not run a second
+		# planner here; capture its validated live submission in planning_complete.
+		_update_hud(live_turn)
+		return
+
 	_pending_ai_decision = GameplayAI.choose_actions(
 		_pending_state_before,
 		_ai_group,
@@ -148,6 +186,20 @@ func _on_planning_complete() -> void:
 	if not submitted.has(_human_group) or not submitted.has(_ai_group):
 		return
 	_pending_player_actions = submitted.duplicate(true)
+	if _ai_variant == ArenaPlaytestScenario.AI_VARIANT_LLM:
+		var submitted_ai_actions: Array = (_pending_player_actions.get(_ai_group, []) as Array).duplicate(true)
+		_pending_ai_decision = {
+			"valid": true,
+			"error": "",
+			"actions": submitted_ai_actions,
+			"policy": "llm_batch",
+			"evaluator": "llm",
+			"settings": _ai_settings.duplicate(true),
+			"diagnostics": {
+				"source": "existing_single_player_llm_batch",
+				"validated_llm_plan_seen_in_match": bool(_units.match_had_llm_validated_plan),
+			},
+		}
 	_pending_simulation = PureStateSimulator.simulate_turn(_pending_state_before, _pending_player_actions)
 	var next_state_variant = _pending_simulation.get("next_state", {})
 	if not (next_state_variant is Dictionary) or (next_state_variant as Dictionary).is_empty():
@@ -196,6 +248,7 @@ func _commit_pending_turn() -> void:
 		"command_hexes": _command_hexes.duplicate(true),
 		"command_hex_occupants_after": _command_occupants.duplicate(true),
 		"command_hex_capture_completed": capture_completed,
+		"ai_variant": _ai_variant,
 		"ai_policy": str(_pending_ai_decision.get("policy", "")),
 		"ai_evaluator": str(_pending_ai_decision.get("evaluator", "")),
 		"ai_settings": (_pending_ai_decision.get("settings", {}) as Dictionary).duplicate(true),
@@ -318,6 +371,26 @@ func _find_group_name(scenario: Dictionary, ai: bool) -> String:
 	return ""
 
 
+func _llm_settings_metadata(settings: RefCounted) -> Dictionary:
+	return {
+		"policy": "llm_batch",
+		"evaluator": "llm",
+		"model": str(settings.get("model")),
+		"base_url": str(settings.call("get_effective_base_url")),
+		"use_responses_api": bool(settings.get("use_responses_api")),
+		"reasoning_effort": str(settings.get("reasoning_effort")),
+		"planning_max_tokens": int(settings.get("planning_max_tokens")),
+		"planning_prompt_version": str(settings.get("planning_prompt_version")),
+		"use_two_call_planning": bool(settings.get("use_two_call_planning")),
+	}
+
+
+func _opponent_label() -> String:
+	if _ai_variant == ArenaPlaytestScenario.AI_VARIANT_LLM:
+		return "LLM/%s" % str(_ai_settings.get("model", "configured model"))
+	return "%s/%s" % [_ai_variant, str(_arena_config.get("agent_profile", "fast"))]
+
+
 func _build_hud() -> void:
 	_hud_canvas = CanvasLayer.new()
 	_hud_canvas.layer = 20
@@ -336,9 +409,9 @@ func _build_hud() -> void:
 func _update_hud(turn_number: int) -> void:
 	if _hud_label == null:
 		return
-	_hud_label.text = "Arena Playtest • You: %s • AI: handwritten/%s • Turn %d/%d\nEliminate the opponent or hold their command hex through one complete turn." % [
+	_hud_label.text = "Arena Playtest • You: %s • AI: %s • Turn %d/%d\nEliminate the opponent or hold their command hex through one complete turn." % [
 		_human_group.capitalize(),
-		str(_arena_config.get("agent_profile", "fast")),
+		_opponent_label(),
 		turn_number,
 		int(_arena_config.get("max_turns", 12)),
 	]
@@ -399,7 +472,7 @@ func _show_finish_overlay(status: String, winner: String, termination_reason: St
 	if status == "terminal" and winner == _human_group:
 		title.text = "Human Victory"
 	elif status == "terminal" and winner == _ai_group:
-		title.text = "Handwritten AI Victory"
+		title.text = "%s AI Victory" % _ai_variant.capitalize()
 	elif status == "terminal":
 		title.text = "Draw"
 	elif status == "turn_limit":
