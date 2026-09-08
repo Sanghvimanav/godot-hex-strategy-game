@@ -12,6 +12,13 @@ func _ready() -> void:
 		join_btn.pressed.connect(_on_join_pressed)
 	if single_btn:
 		single_btn.pressed.connect(_on_single_pressed)
+	var arena_btn := Button.new()
+	arena_btn.name = "ArenaPlaytestButton"
+	arena_btn.text = "Arena Playtest"
+	arena_btn.tooltip_text = "Play official Arena seeds yourself against the handwritten GameplayAI."
+	arena_btn.custom_minimum_size.y = 44
+	$VBox.add_child(arena_btn)
+	arena_btn.pressed.connect(_on_arena_playtest_pressed)
 
 
 func _on_host_pressed() -> void:
@@ -24,3 +31,7 @@ func _on_join_pressed() -> void:
 
 func _on_single_pressed() -> void:
 	get_tree().change_scene_to_file("res://src/battle/scenario_picker.tscn")
+
+
+func _on_arena_playtest_pressed() -> void:
+	get_tree().change_scene_to_file("res://src/battle/arena_playtest_picker.tscn")
