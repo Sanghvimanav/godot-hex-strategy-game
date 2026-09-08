@@ -38,7 +38,7 @@ func _run() -> void:
 	var source_kind := "counterfactual_suite"
 	if not input_jsonl.is_empty():
 		source_kind = "search_decision_jsonl"
-		var rows_variant := _read_jsonl(input_jsonl)
+		var rows_variant: Variant = _read_jsonl(input_jsonl)
 		if rows_variant == null:
 			get_tree().quit(1)
 			return
