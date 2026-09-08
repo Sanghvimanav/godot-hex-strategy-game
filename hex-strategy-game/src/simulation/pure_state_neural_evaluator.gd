@@ -3,15 +3,16 @@ class_name PureStateNeuralEvaluator
 ## Experimental neural leaf evaluator for pure-state search.
 ##
 ## The model remains opt-in. A persistent Python subprocess hosts the tiny PyTorch
-## value network so search can score many leaves without reloading the checkpoint
-## for every simulation. Any runtime/configuration failure fails closed; callers
-## must never silently fall back to the handwritten evaluator.
+## value network. evaluate_many_breakdowns batches unique leaf states into one
+## inference call and caches identical states so repeated search leaves do not cross
+## the Godot/Python boundary again. Runtime/configuration failures still fail closed.
 
 const PureStateEvaluator = preload("res://src/simulation/pure_state_evaluator.gd")
 
 const DEFAULT_CHECKPOINT_PATH := "res://models/objective_aware_candidate_v1.pt"
 const DEFAULT_RUNTIME_SCRIPT_PATH := "res://tools/neural_value_runtime.py"
 const DEFAULT_PYTHON_EXECUTABLE := "python3"
+const DEFAULT_CACHE_MAX_ENTRIES := 4096
 const MODEL_VALUE_SCALE := 1000.0
 
 static var _stdio: FileAccess = null
@@ -19,6 +20,7 @@ static var _stderr: FileAccess = null
 static var _pid := -1
 static var _runtime_key := ""
 static var _last_error := ""
+static var _value_cache: Dictionary = {}
 
 
 static func evaluate_breakdown(
@@ -27,43 +29,124 @@ static func evaluate_breakdown(
 	opponent_group_name: String,
 	settings: Dictionary = {}
 ) -> Dictionary:
-	var exact := PureStateEvaluator.evaluate_breakdown(game_state, group_name)
-	if not bool(exact.get("valid", false)):
-		return _invalid("invalid_game_state")
+	var results := evaluate_many_breakdowns([game_state], group_name, opponent_group_name, settings)
+	if results.is_empty():
+		return _invalid("neural_batch_empty_response")
+	return results[0] as Dictionary
+
+
+static func evaluate_many_breakdowns(
+	game_states: Array,
+	group_name: String,
+	opponent_group_name: String,
+	settings: Dictionary = {}
+) -> Array:
+	var results: Array = []
+	if game_states.is_empty():
+		return results
 	if group_name.is_empty() or opponent_group_name.is_empty() or group_name == opponent_group_name:
-		return _invalid("invalid_groups")
+		for _state in game_states:
+			results.append(_invalid("invalid_groups"))
+		return results
 
 	var checkpoint_path := str(settings.get("checkpoint_path", ""))
 	if checkpoint_path.is_empty():
-		return _invalid("neural_checkpoint_required")
+		for _state in game_states:
+			results.append(_invalid("neural_checkpoint_required"))
+		return results
 	var python_executable := str(settings.get("python_executable", DEFAULT_PYTHON_EXECUTABLE))
 	var runtime_script_path := str(settings.get("runtime_script_path", DEFAULT_RUNTIME_SCRIPT_PATH))
 	if not _ensure_runtime(checkpoint_path, python_executable, runtime_script_path):
-		return _invalid(_last_error)
+		for _state in game_states:
+			results.append(_invalid(_last_error))
+		return results
 
-	var terminal_component := float(exact.get("terminal", 0.0))
-	var request := {
-		"state": game_state,
-		"perspective_group": group_name,
-		"opponent_group": opponent_group_name,
-		"turn_index": int(settings.get("turn_index", game_state.get("turn_index", 0))),
-		"terminal": not is_zero_approx(terminal_component),
-	}
-	var response := _request_value(request)
-	if not bool(response.get("ok", false)):
-		return _invalid(str(response.get("error", "neural_runtime_request_failed")))
+	var cache_max_entries := maxi(0, int(settings.get("cache_max_entries", DEFAULT_CACHE_MAX_ENTRIES)))
+	if cache_max_entries == 0:
+		_value_cache.clear()
+	elif _value_cache.size() > cache_max_entries:
+		# A simple bounded cache is sufficient here; search-state locality makes a
+		# wholesale reset inexpensive and deterministic.
+		_value_cache.clear()
 
-	var model_value := clampf(float(response.get("value", 0.0)), -1.0, 1.0)
-	var model_component := model_value * MODEL_VALUE_SCALE
-	return {
-		"valid": true,
-		"evaluator": "neural",
-		"total": terminal_component + model_component,
-		"terminal": terminal_component,
-		"model_value": model_value,
-		"model_component": model_component,
-		"checkpoint_path": checkpoint_path,
-	}
+	var exact_breakdowns: Array = []
+	var cache_keys: Array = []
+	var pending_requests: Array = []
+	var pending_keys: Array = []
+	var pending_key_set: Dictionary = {}
+	var cache_hits := 0
+	for state_variant in game_states:
+		if not (state_variant is Dictionary):
+			exact_breakdowns.append(_invalid("invalid_game_state"))
+			cache_keys.append("")
+			continue
+		var game_state: Dictionary = state_variant
+		var exact := PureStateEvaluator.evaluate_breakdown(game_state, group_name)
+		exact_breakdowns.append(exact)
+		if not bool(exact.get("valid", false)):
+			cache_keys.append("")
+			continue
+		var turn_index := int(settings.get("turn_index", game_state.get("turn_index", 0)))
+		var key := _state_cache_key(game_state, group_name, opponent_group_name, turn_index)
+		cache_keys.append(key)
+		if cache_max_entries > 0 and _value_cache.has(key):
+			cache_hits += 1
+			continue
+		if pending_key_set.has(key):
+			continue
+		pending_key_set[key] = true
+		pending_keys.append(key)
+		pending_requests.append({
+			"state": game_state,
+			"perspective_group": group_name,
+			"opponent_group": opponent_group_name,
+			"turn_index": turn_index,
+			"terminal": not is_zero_approx(float(exact.get("terminal", 0.0))),
+		})
+
+	var runtime_timing: Dictionary = {}
+	if not pending_requests.is_empty():
+		var response := _request_values(pending_requests)
+		if not bool(response.get("ok", false)):
+			for _state in game_states:
+				results.append(_invalid(str(response.get("error", "neural_runtime_request_failed"))))
+			return results
+		var values: Array = response.get("values", []) as Array
+		if values.size() != pending_keys.size():
+			for _state in game_states:
+				results.append(_invalid("neural_runtime_batch_size_mismatch"))
+			return results
+		runtime_timing = (response.get("timing_ms", {}) as Dictionary).duplicate(true)
+		for index in range(pending_keys.size()):
+			var model_value := clampf(float(values[index]), -1.0, 1.0)
+			_value_cache[str(pending_keys[index])] = model_value
+
+	for index in range(game_states.size()):
+		var exact: Dictionary = exact_breakdowns[index]
+		var key := str(cache_keys[index])
+		if not bool(exact.get("valid", false)) or key.is_empty() or not _value_cache.has(key):
+			results.append(_invalid("invalid_game_state" if key.is_empty() else "neural_value_missing"))
+			continue
+		var model_value := clampf(float(_value_cache[key]), -1.0, 1.0)
+		var model_component := model_value * MODEL_VALUE_SCALE
+		var terminal_component := float(exact.get("terminal", 0.0))
+		results.append({
+			"valid": true,
+			"evaluator": "neural",
+			"total": terminal_component + model_component,
+			"terminal": terminal_component,
+			"model_value": model_value,
+			"model_component": model_component,
+			"checkpoint_path": checkpoint_path,
+			"neural_batch": {
+				"requested_states": game_states.size(),
+				"unique_runtime_states": pending_requests.size(),
+				"cache_hits": cache_hits,
+				"cache_entries": _value_cache.size(),
+				"runtime_timing_ms": runtime_timing.duplicate(true),
+			},
+		})
+	return results
 
 
 static func shutdown() -> void:
@@ -77,10 +160,15 @@ static func shutdown() -> void:
 		OS.kill(_pid)
 	_pid = -1
 	_runtime_key = ""
+	_value_cache.clear()
 
 
 static func last_error() -> String:
 	return _last_error
+
+
+static func clear_cache() -> void:
+	_value_cache.clear()
 
 
 static func _ensure_runtime(
@@ -134,12 +222,12 @@ static func _ensure_runtime(
 	return true
 
 
-static func _request_value(request: Dictionary) -> Dictionary:
+static func _request_values(requests: Array) -> Dictionary:
 	if _stdio == null or _pid <= 0 or not OS.is_process_running(_pid):
 		_last_error = "neural_runtime_not_running"
 		shutdown()
 		return {"ok": false, "error": _last_error}
-	_stdio.store_line(JSON.stringify(request))
+	_stdio.store_line(JSON.stringify({"requests": requests}))
 	_stdio.flush()
 	var line := _stdio.get_line()
 	var parsed = JSON.parse_string(line)
@@ -151,6 +239,20 @@ static func _request_value(request: Dictionary) -> Dictionary:
 	if not bool(response.get("ok", false)):
 		_last_error = str(response.get("error", "neural_runtime_request_failed"))
 	return response
+
+
+static func _state_cache_key(
+	game_state: Dictionary,
+	group_name: String,
+	opponent_group_name: String,
+	turn_index: int
+) -> String:
+	return JSON.stringify({
+		"state": game_state,
+		"perspective_group": group_name,
+		"opponent_group": opponent_group_name,
+		"turn_index": turn_index,
+	})
 
 
 static func _globalize(path: String) -> String:
