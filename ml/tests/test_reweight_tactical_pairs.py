@@ -1,6 +1,8 @@
 import unittest
+from argparse import Namespace
 
 from ml.value_model.reweight_tactical_pairs import reweight_pairs
+from ml.value_model.train_ranked import _split_examples_for_training
 
 
 class TacticalPairReweightTests(unittest.TestCase):
@@ -54,6 +56,10 @@ class TacticalPairReweightTests(unittest.TestCase):
         metadata = output[0]["source"]["tactical_focus_reweight"]
         self.assertEqual(metadata["original_weight"], 1.0)
         self.assertEqual(metadata["multiplier"], 4.0)
+        self.assertEqual(
+            metadata["configured_focus_families"],
+            ["fester_siege", "mixed_force", "scout_kite"],
+        )
 
     def test_non_focus_pair_remains_unchanged(self):
         pairs = [
@@ -112,6 +118,49 @@ class TacticalPairReweightTests(unittest.TestCase):
         self.assertEqual(output[0]["weight"], 2.0)
         self.assertEqual(manifest["focus_family_pairs"], 1)
         self.assertEqual(manifest["focus_faction_pairs"], 0)
+
+    def test_focus_families_are_kept_out_of_validation(self):
+        groups = [
+            "attrition",
+            "baneling_finish",
+            "baneling_flank",
+            "collapse",
+            "fester_siege",
+            "hydra_crossfire",
+            "marine_spread",
+            "medic_hold",
+            "mixed_force",
+            "scout_kite",
+            "worker_screen",
+        ]
+        examples = [
+            {"source": {"base_scenario_id": group}}
+            for group in groups
+        ]
+        args = Namespace(
+            seed=0,
+            split_seed=None,
+            validation_fraction=0.25,
+            split_key="source.base_scenario_id",
+        )
+        focus = {"mixed_force", "scout_kite", "fester_siege"}
+
+        split_seed, train_examples, validation_examples = _split_examples_for_training(
+            examples,
+            args,
+            focus,
+        )
+
+        train_groups = {
+            row["source"]["base_scenario_id"] for row in train_examples
+        }
+        validation_groups = {
+            row["source"]["base_scenario_id"] for row in validation_examples
+        }
+        self.assertEqual(split_seed, 2)
+        self.assertTrue(focus.issubset(train_groups))
+        self.assertTrue(focus.isdisjoint(validation_groups))
+        self.assertEqual(validation_groups, {"collapse", "medic_hold", "worker_screen"})
 
 
 if __name__ == "__main__":
