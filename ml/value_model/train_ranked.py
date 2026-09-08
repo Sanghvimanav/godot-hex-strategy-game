@@ -81,10 +81,12 @@ def train(args: argparse.Namespace) -> dict:
     if not all_pairs:
         raise ValueError("ranking dataset is empty")
 
+    split_seed_arg = getattr(args, "split_seed", None)
+    split_seed = args.seed if split_seed_arg is None else int(split_seed_arg)
     train_examples, validation_examples = split_examples_by_group(
         all_examples,
         validation_fraction=args.validation_fraction,
-        seed=args.seed,
+        seed=split_seed,
         group_key=args.split_key,
     )
     validation_group_values = {
@@ -218,6 +220,7 @@ def train(args: argparse.Namespace) -> dict:
         "eval_ranking_accuracy": eval_ranking_metrics["accuracy"],
         "eval_ranking_loss": eval_ranking_metrics["loss"],
         "split_key": args.split_key,
+        "split_seed": split_seed,
         "train_split_groups": _split_groups(train_examples, args.split_key),
         "validation_split_groups": _split_groups(validation_examples, args.split_key),
         "ranking_eval_groups": sorted(
@@ -290,6 +293,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--validation-fraction", type=float, default=0.2)
     parser.add_argument("--split-key", default="game_id")
+    parser.add_argument(
+        "--split-seed",
+        type=int,
+        default=None,
+        help="Optional seed for train/validation grouping; defaults to --seed.",
+    )
     parser.add_argument("--hidden-channels", type=int, default=32)
     parser.add_argument("--residual-blocks", type=int, default=2)
     parser.add_argument("--seed", type=int, default=0)
