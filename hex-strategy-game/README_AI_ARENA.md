@@ -8,10 +8,21 @@ From the Godot main menu choose **Arena Playtest** to play one side of the offic
 
 1. Pick one of the eight frozen fast seeds.
 2. Choose Terran or Zerg.
-3. Choose the handwritten AI search budget: `fast` (2x2), `balanced` (4x4), `wide` (6x6), or `broad` (8x8).
-4. Play with the normal simultaneous-turn battle UI.
+3. Choose the opponent variant: **Handwritten**, **Neural**, or **LLM**.
+4. For Handwritten or Neural, choose the search budget: `fast` (2x2), `balanced` (4x4), `wide` (6x6), or `broad` (8x8). The search budget does not apply to the LLM planner.
+5. Play with the normal simultaneous-turn battle UI.
 
-The opponent uses the same canonical `GameplayAI` + handwritten evaluator as the headless Arena. Its whole turn is chosen from the frozen pre-turn pure state before the human commits any actions, so it cannot inspect the human's simultaneous plan.
+**Handwritten** and **Neural** both use the canonical `GameplayAI` opponent-response search. Handwritten uses the existing heuristic leaf evaluator; Neural swaps in the neural leaf evaluator while keeping the selected search budget constant.
+
+**LLM** reuses the existing single-player batch LLM planner, including its saved API key/model, prompt profile, legal-option validation, retry behavior, and action application. Configure the normal LLM AI settings before selecting this variant. The Arena picker will refuse to launch LLM play if its key or model is missing.
+
+The Neural variant currently expects the canonical local checkpoint at:
+
+`res://models/objective_aware_candidate_v1.pt`
+
+The picker refuses to launch Neural play when that checkpoint is absent rather than silently falling back to Handwritten. This keeps human comparisons honest about which evaluator actually played the match.
+
+For every variant, the opponent plans from the untouched start-of-turn position before the human simultaneous plan is resolved. GameplayAI variants are computed directly from that frozen pure state. The existing LLM batch planner takes its normal planning snapshot immediately after `planning_started`, before a human turn can be committed.
 
 Interactive Arena also uses the headless Arena's compact board radius and command-hex rule: win by eliminating the opponent or by keeping the same living unit on the enemy command hex across one complete resolved turn. Command hexes are marked in the battle view.
 
@@ -21,9 +32,9 @@ Each completed match writes a local session under:
 
 The session contains:
 
-- `manifest.json` — outcome, provenance, Arena seed/family, search profile/evaluator, faction ownership, and example counts;
-- `trace.json` — every pre/post-turn pure state, both submitted simultaneous plans, command-hex state, execution recording, and the AI search diagnostics;
-- `human_policy_examples.jsonl` — one human demonstration per completed turn for future imitation/policy training; the opponent's simultaneous action is retained only as an analysis field, not as an input feature;
+- `manifest.json` — outcome, provenance, Arena seed/family, opponent variant, search profile/evaluator or LLM model/prompt metadata, faction ownership, and example counts;
+- `trace.json` — every pre/post-turn pure state, both submitted simultaneous plans, command-hex state, execution recording, and available AI diagnostics;
+- `human_policy_examples.jsonl` — one human demonstration per completed turn for future imitation/policy training; the opponent variant is tagged and its simultaneous action is retained only as an analysis field, not as an input feature;
 - `value_examples.jsonl` — terminal state-value examples using the existing `PureStateTrainingData` schema.
 
 Turn-limit games still produce human-policy demonstrations and full traces, but intentionally produce no value labels because the eventual winner is unknown.
