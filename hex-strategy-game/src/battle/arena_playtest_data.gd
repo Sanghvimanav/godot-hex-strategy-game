@@ -105,8 +105,12 @@ static func build_source_metadata(
 		"scenario_seed": int(arena_config.get("scenario_seed", 0)),
 		"base_scenario_id": str(arena_config.get("base_scenario_id", "")),
 		"map_profile": str(arena_config.get("map_profile", "")),
+		"ai_variant": str(arena_config.get("ai_variant", arena_config.get("evaluator", "handwritten"))),
 		"ai_agent_profile": str(arena_config.get("agent_profile", "fast")),
 		"ai_evaluator": str(arena_config.get("evaluator", "handwritten")),
+		"ai_model": str(arena_config.get("llm_model", "")),
+		"ai_prompt_version": str(arena_config.get("llm_prompt_version", "")),
+		"neural_checkpoint_path": str(arena_config.get("neural_checkpoint_path", "")),
 		"human_group": human_group,
 		"ai_group": ai_group,
 		"godot_version": Engine.get_version_info(),
@@ -176,6 +180,7 @@ static func _build_human_policy_examples(
 			"turn_index": turn_index,
 			"perspective_group": human_group,
 			"opponent_group": ai_group,
+			"opponent_variant": str(source.get("ai_variant", "handwritten")),
 			"chosen_actions": (turn.get("human_actions", []) as Array).duplicate(true),
 			# Stored for offline analysis/counterfactual labeling only. A policy model
 			# must not receive this simultaneous opponent choice as an input feature.
