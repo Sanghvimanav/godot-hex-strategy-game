@@ -151,6 +151,10 @@ static func search(
 				})
 				leaf_states.append(next_state)
 
+			# Batched neural evaluation simulates every opponent leaf before minimax
+			# pruning is examined. Count the actual simulations performed, not only
+			# the responses later consumed by the ranking loop.
+			simulations_run += leaf_states.size()
 			var breakdowns := PureStateNeuralEvaluator.evaluate_many_breakdowns(
 				leaf_states,
 				group_name,
@@ -178,7 +182,7 @@ static func search(
 				if not bool(breakdown.get("valid", false)):
 					invalid["error"] = "evaluation_failed"
 					invalid["evaluation_error"] = str(breakdown.get("error", ""))
-					invalid["simulations_run"] = simulations_run + 1
+					invalid["simulations_run"] = simulations_run
 					invalid["elapsed_ms"] = float(Time.get_ticks_usec() - started_usec) / 1000.0
 					return invalid
 				var opponent: Dictionary = entry.get("opponent", {})
@@ -191,7 +195,6 @@ static func search(
 					"evaluation_breakdown": breakdown,
 				}
 				response_count += 1
-				simulations_run += 1
 				sum_evaluation += evaluation
 				if worst_result.is_empty() or _response_is_worse(response, worst_result):
 					worst_result = response.duplicate(true)
