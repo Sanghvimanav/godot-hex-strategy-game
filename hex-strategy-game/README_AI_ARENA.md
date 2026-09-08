@@ -12,7 +12,7 @@ From the Godot main menu choose **Arena Playtest** to play one side of the offic
 4. For Handwritten or Neural, choose the search budget: `fast` (2x2), `balanced` (4x4), `wide` (6x6), or `broad` (8x8). The search budget does not apply to the LLM planner.
 5. Play with the normal simultaneous-turn battle UI.
 
-**Handwritten** and **Neural** both use the canonical `GameplayAI` opponent-response search. Handwritten uses the existing heuristic leaf evaluator; Neural swaps in the neural leaf evaluator while keeping the selected search budget constant.
+**Handwritten** and **Neural** both use the canonical `GameplayAI` opponent-response search. Handwritten uses the existing heuristic leaf evaluator; Neural swaps in the canonical neural leaf evaluator while keeping the selected search budget constant, so improvements such as batched neural leaf evaluation are automatically shared with the playtest.
 
 **LLM** reuses the existing single-player batch LLM planner, including its saved API key/model, prompt profile, legal-option validation, retry behavior, and action application. Configure the normal LLM AI settings before selecting this variant. The Arena picker will refuse to launch LLM play if its key or model is missing.
 
