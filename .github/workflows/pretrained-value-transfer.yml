@@ -55,22 +55,13 @@ concurrency:
 
 jobs:
   compare:
-    name: Compare at ${{ matrix.label }} data
-    if: ${{ inputs.mode == 'full' || matrix.label == '25%' }}
+    name: Compare at ${{ matrix.fraction }} data
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - fraction: 0.10
-            label: 10%
-          - fraction: 0.25
-            label: 25%
-          - fraction: 0.50
-            label: 50%
-          - fraction: 1.00
-            label: 100%
+        fraction: ${{ fromJSON(inputs.mode == 'full' && '["0.10","0.25","0.50","1.00"]' || '["0.25"]') }}
     env:
       HF_HOME: ${{ github.workspace }}/.cache/huggingface
       TOKENIZERS_PARALLELISM: "false"
@@ -146,7 +137,7 @@ jobs:
       - name: Upload fraction result
         uses: actions/upload-artifact@v4
         with:
-          name: pretrained-transfer-${{ matrix.label }}
+          name: pretrained-transfer-${{ matrix.fraction }}
           path: artifacts/fraction-${{ matrix.fraction }}/
           if-no-files-found: error
           retention-days: 14
