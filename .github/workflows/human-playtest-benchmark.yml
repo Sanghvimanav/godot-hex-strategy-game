@@ -76,6 +76,7 @@ jobs:
           manifest = json.loads((root / "manifest.json").read_text())
           rows = [json.loads(line) for line in (root / "decisions.jsonl").read_text().splitlines() if line.strip()]
           assert manifest["benchmark_id"] == "human_playtest_v1", manifest
+          assert manifest["benchmark_version"] == 2, manifest
           assert manifest["split"] == "evaluation_holdout", manifest
           assert manifest["training_allowed"] is False, manifest
           assert manifest["decisions_failed"] == 0, manifest
@@ -83,13 +84,21 @@ jobs:
           assert len(rows) >= 1, rows
           summary = manifest["summary"]
           for key in (
-              "human_response_source_recall_rate",
-              "human_response_recall_rate",
+              "source_downside_coverage_rate",
+              "final_downside_coverage_rate",
               "selected_near_best_against_human_rate",
+              "consequential_plan_regret_rate",
+              "consequential_downside_coverage_gap_rate",
               "mean_actual_response_regret",
-              "consequential_response_miss_rate",
+              "human_response_exact_source_recall_rate",
+              "human_response_exact_final_recall_rate",
           ):
               assert key in summary, summary
+          for row in rows:
+              assert "source_downside_covered" in row, row
+              assert "final_downside_covered" in row, row
+              assert "actual_response_regret" in row, row
+              assert "human_response_exact_final_recalled" in row, row
           print(json.dumps(summary, indent=2, sort_keys=True))
           PY
 
