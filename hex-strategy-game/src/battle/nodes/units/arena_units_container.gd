@@ -8,7 +8,7 @@ func apply_scenario(scenario: Dictionary) -> void:
 	var arena_variant = scenario.get("arena_playtest", {})
 	var arena_enabled := arena_variant is Dictionary and bool((arena_variant as Dictionary).get("enabled", false))
 	set_meta("arena_playtest_enabled", arena_enabled)
-	super.apply_scenario(scenario)
+	super(scenario)
 	if arena_enabled:
 		_restore_stable_unit_ids(scenario)
 
@@ -16,7 +16,7 @@ func apply_scenario(scenario: Dictionary) -> void:
 func _should_run_llm_batch_for_sp() -> bool:
 	if bool(get_meta("arena_playtest_enabled", false)):
 		return false
-	return super._should_run_llm_batch_for_sp()
+	return super()
 
 
 func _restore_stable_unit_ids(scenario: Dictionary) -> void:
