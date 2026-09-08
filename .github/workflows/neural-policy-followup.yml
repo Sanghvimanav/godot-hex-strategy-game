@@ -15,6 +15,11 @@ on:
         description: Prior neural-vs-handwritten Arena run whose traces will be mined
         required: true
         type: string
+      arena_artifact_pattern:
+        description: Artifact glob for prior Arena shard artifacts in arena_run_id
+        required: true
+        default: "dense-ranked-4x4-shard-*"
+        type: string
       policy_preset:
         description: Frozen Arena state set used to collect neural-policy states
         required: true
@@ -33,9 +38,9 @@ on:
         default: "16"
         type: string
       max_arena_divergences_per_game:
-        description: Bounded Arena divergences tested per decisive neural loss
+        description: Bounded Arena divergences tested per decisive neural loss before one teacher-recovery fallback
         required: true
-        default: "3"
+        default: "2"
         type: string
       epochs:
         description: Ranked retraining epochs
@@ -149,7 +154,7 @@ jobs:
       - name: Download prior Arena shards
         uses: actions/download-artifact@v4
         with:
-          pattern: "dense-ranked-4x4-shard-*"
+          pattern: "${{ inputs.arena_artifact_pattern }}"
           path: artifacts/prior_arena_shards
           merge-multiple: false
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -316,6 +321,10 @@ jobs:
                   "pairs_written",
                   "branch_unlabeled",
                   "no_preference",
+                  "teacher_recovery_attempts",
+                  "teacher_recovery_pairs",
+                  "teacher_recovery_unlabeled",
+                  "teacher_recovery_no_preference",
                   "invalid",
               )
           }
@@ -324,6 +333,7 @@ jobs:
               "pair_schema_version": manifests[0].get("pair_schema_version", 2),
               "arena_preset": manifests[0].get("arena_preset", ""),
               "arena_profile": manifests[0].get("arena_profile", ""),
+              "arena_map_profile": manifests[0].get("arena_map_profile", "legacy_v1"),
               "shard_count": len(manifests),
               "bounded_divergences_per_game": max(
                   int(m.get("bounded_divergences_per_game", 1)) for m in manifests
@@ -464,6 +474,7 @@ jobs:
           | Combined ranking pairs | {supervision['ranking_pairs']} |
           | Neural-continuation sibling pairs | {sibling['pairs_written']} |
           | Arena hard-negative pairs | {hard['pairs_written']} |
+          | Teacher-recovery hard negatives | {hard.get('teacher_recovery_pairs', 0)} |
           | Held-out nonterminal winner accuracy | {float(metrics['neural_eval_sign_accuracy_nonterminal']):.1%} |
           | Held-out sibling ranking accuracy | {float(metrics['eval_ranking_accuracy']):.1%} |
           | Counterfactual candidate ranking | {float(neural['candidate_ranking_accuracy']):.1%} |
@@ -473,6 +484,8 @@ jobs:
           **Source checkpoint run:** {os.environ['CHECKPOINT_RUN']}  
           **Source experiment run:** {os.environ['EXPERIMENT_RUN']}  
           **Mined Arena run:** {os.environ['ARENA_RUN']}  
+          **Mined Arena artifact pattern:** `{os.environ['ARENA_PATTERN']}`  
+          **Mined Arena map profile:** `{hard.get('arena_map_profile', 'legacy_v1')}`  
           **Ranking policies:** `{supervision['ranking_pairs_by_continuation_policy']}`
           """
           Path("artifacts/training_summary.md").write_text(summary)
@@ -484,6 +497,7 @@ jobs:
           CHECKPOINT_RUN: ${{ inputs.checkpoint_run_id }}
           EXPERIMENT_RUN: ${{ inputs.source_experiment_run_id }}
           ARENA_RUN: ${{ inputs.arena_run_id }}
+          ARENA_PATTERN: ${{ inputs.arena_artifact_pattern }}
 
       - name: Preserve source rejected-continuation priorities
         run: cp artifacts/self_play/rejected_continuations.jsonl artifacts/combined/rejected_continuations.jsonl
@@ -555,6 +569,7 @@ jobs:
         run: |
           godot --headless --path . res://tools/ai_arena.tscn -- \
             --preset=fast \
+            --map-profile=compact_v1 \
             --champion-profile="${{ inputs.search_profile }}" \
             --challenger-profile="${{ inputs.search_profile }}" \
             --champion-evaluator=handwritten \
