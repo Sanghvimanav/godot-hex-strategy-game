@@ -57,7 +57,7 @@ jobs:
       - name: Run human response benchmark
         env:
           QUALITY: ${{ github.event_name == 'pull_request' && 'adversarial' || inputs.quality }}
-          MAX_DECISIONS: ${{ github.event_name == 'pull_request' && '1' || inputs.max_decisions }}
+          MAX_DECISIONS: ${{ github.event_name == 'pull_request' && '0' || inputs.max_decisions }}
         run: |
           set -euo pipefail
           cd hex-strategy-game
