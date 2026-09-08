@@ -1,0 +1,2 @@
+transformers>=4.56,<5
+peft>=0.17,<1
