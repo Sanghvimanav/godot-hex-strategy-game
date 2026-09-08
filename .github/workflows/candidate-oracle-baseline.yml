@@ -14,14 +14,13 @@ concurrency:
   group: candidate-oracle-baseline-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  ORACLE_SHARDS: 8
-
 jobs:
   prepare-sample:
     name: Select 40 real self-play decisions
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    outputs:
+      matrix: ${{ steps.sample.outputs.matrix }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -44,7 +43,8 @@ jobs:
             unzip -q "artifacts/source_shards/${shard}.zip" -d "artifacts/source_shards/${shard}"
           done
 
-      - name: Build deterministic eight-family sample
+      - name: Build deterministic eight-family sample and job matrix
+        id: sample
         shell: bash
         run: |
           set -euo pipefail
@@ -109,6 +109,7 @@ jobs:
 
           if len(selected) != 40:
               raise SystemExit(f"expected 40 decisions, got {len(selected)}")
+
           Path("artifacts/sample/search_decisions.jsonl").write_text(
               "".join(json.dumps(row, sort_keys=True) + "\n" for _, row in selected)
           )
@@ -123,9 +124,26 @@ jobs:
               "decision_ids": [decision_id for decision_id, _ in selected],
               "note": "States are reused; production and oracle search rerun with current branch code.",
           }
-          Path("artifacts/sample/sample_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+          Path("artifacts/sample/sample_manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+          )
+
+          include = []
+          for slot, (decision_id, _) in enumerate(selected):
+              for profile in ("2x2", "4x4"):
+                  include.append({
+                      "slot": f"{slot:02d}",
+                      "profile": profile,
+                      "decision_id": decision_id,
+                  })
+          matrix = {"include": include}
+          Path("artifacts/sample/job_matrix.json").write_text(
+              json.dumps(matrix, separators=(",", ":")) + "\n"
+          )
           print(json.dumps(manifest, indent=2, sort_keys=True))
+          print(f"Prepared {len(include)} one-decision jobs")
           PY
+          echo "matrix=$(cat artifacts/sample/job_matrix.json)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -181,15 +199,13 @@ jobs:
           retention-days: 14
 
   self-play-oracle:
-    name: Self-play ${{ matrix.profile }} shard ${{ matrix.shard }}
+    name: Self-play ${{ matrix.profile }} decision ${{ matrix.slot }}
     needs: prepare-sample
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      matrix:
-        profile: [2x2, 4x4]
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+      matrix: ${{ fromJSON(needs.prepare-sample.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -205,18 +221,20 @@ jobs:
         with:
           name: oracle-balanced-self-play-sample
           path: artifacts/sample
-      - name: Run self-play oracle shard
+      - name: Run one self-play oracle decision
         shell: bash
         env:
           PROFILE: ${{ matrix.profile }}
+          DECISION_ID: ${{ matrix.decision_id }}
+          SLOT: ${{ matrix.slot }}
         run: |
           set -euo pipefail
           case "${PROFILE}" in 2x2) PLANS=2 ;; 4x4) PLANS=4 ;; *) exit 2 ;; esac
-          OUT="${GITHUB_WORKSPACE}/artifacts/selfplay-${PROFILE}-${{ matrix.shard }}"
+          OUT="${GITHUB_WORKSPACE}/artifacts/selfplay-${PROFILE}-${SLOT}"
           cd hex-strategy-game
           timeout 40m bash tools/run_candidate_oracle_recall.sh \
             --input-jsonl="${GITHUB_WORKSPACE}/artifacts/sample/search_decisions.jsonl" \
-            --shard-index="${{ matrix.shard }}" --shard-count="${ORACLE_SHARDS}" \
+            --decision-id="${DECISION_ID}" \
             --production-own-max-actions-per-unit=8 --production-own-max-plans="${PLANS}" \
             --production-opponent-max-actions-per-unit=8 --production-opponent-max-plans="${PLANS}" \
             --oracle-own-max-actions-per-unit=12 --oracle-own-max-plans=16 \
@@ -226,8 +244,8 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: selfplay-oracle-${{ matrix.profile }}-${{ matrix.shard }}
-          path: artifacts/selfplay-${{ matrix.profile }}-${{ matrix.shard }}/
+          name: selfplay-oracle-${{ matrix.profile }}-${{ matrix.slot }}
+          path: artifacts/selfplay-${{ matrix.profile }}-${{ matrix.slot }}/
           if-no-files-found: warn
           retention-days: 14
 
@@ -263,27 +281,41 @@ jobs:
               rows = []
               for path in sorted(Path("artifacts/results").glob(pattern)):
                   p = path / "decisions.jsonl"
-                  if p.exists(): rows.extend(json.loads(line) for line in p.read_text().splitlines() if line.strip())
+                  if p.exists():
+                      rows.extend(json.loads(line) for line in p.read_text().splitlines() if line.strip())
               return rows
 
           def summarize(rows):
               valid = [r for r in rows if r.get("valid")]
               recalled = [r for r in valid if r.get("analysis", {}).get("candidate_recall")]
               gaps = [float(r.get("analysis", {}).get("oracle_value_gap", 0.0)) for r in valid]
-              conditional = [r for r in recalled if r.get("analysis", {}).get("selection_accurate_conditional_on_recall") is not None]
+              conditional = [
+                  r for r in recalled
+                  if r.get("analysis", {}).get("selection_accurate_conditional_on_recall") is not None
+              ]
               prod = sum(int(r.get("production_search", {}).get("simulations_run", 0)) for r in valid)
               oracle = sum(int(r.get("oracle_search", {}).get("simulations_run", 0)) for r in valid)
               return {
-                  "decisions": len(valid), "failed": len(rows)-len(valid),
-                  "recall": len(recalled)/len(valid) if valid else 0.0,
-                  "mean_gap": sum(gaps)/len(gaps) if gaps else 0.0,
+                  "decisions": len(valid),
+                  "failed": len(rows) - len(valid),
+                  "recall": len(recalled) / len(valid) if valid else 0.0,
+                  "mean_gap": sum(gaps) / len(gaps) if gaps else 0.0,
                   "max_gap": max(gaps) if gaps else 0.0,
                   "severe_misses": sum(bool(r.get("analysis", {}).get("severe_miss")) for r in valid),
-                  "candidate_generation_failures": sum(bool(r.get("analysis", {}).get("candidate_generation_failure")) for r in valid),
+                  "candidate_generation_failures": sum(
+                      bool(r.get("analysis", {}).get("candidate_generation_failure")) for r in valid
+                  ),
                   "ranking_failures": sum(bool(r.get("analysis", {}).get("ranking_failure")) for r in valid),
-                  "conditional_selection_accuracy": (sum(r.get("analysis", {}).get("selection_accurate_conditional_on_recall") is True for r in conditional)/len(conditional) if conditional else None),
-                  "production_simulations": prod, "oracle_simulations": oracle,
-                  "oracle_to_production_sim_ratio": oracle/prod if prod else None,
+                  "conditional_selection_accuracy": (
+                      sum(
+                          r.get("analysis", {}).get("selection_accurate_conditional_on_recall") is True
+                          for r in conditional
+                      ) / len(conditional)
+                      if conditional else None
+                  ),
+                  "production_simulations": prod,
+                  "oracle_simulations": oracle,
+                  "oracle_to_production_sim_ratio": oracle / prod if prod else None,
               }
 
           datasets = {}
@@ -292,12 +324,25 @@ jobs:
                   rows = load_rows(f"{kind}-oracle-{profile}-*")
                   datasets[f"{kind}_{profile}"] = {"rows": rows, "summary": summarize(rows)}
 
-          sample_rows = [json.loads(line) for line in Path("artifacts/sample/search_decisions.jsonl").read_text().splitlines() if line.strip()]
-          sample_by_id = {f"{r.get('game_id','game')}|turn_{int(r.get('turn_index',0)):03d}|{r.get('perspective_group','')}": r for r in sample_rows}
+          sample_rows = [
+              json.loads(line)
+              for line in Path("artifacts/sample/search_decisions.jsonl").read_text().splitlines()
+              if line.strip()
+          ]
+          sample_by_id = {
+              f"{r.get('game_id','game')}|turn_{int(r.get('turn_index',0)):03d}|{r.get('perspective_group','')}": r
+              for r in sample_rows
+          }
+
           four = datasets["selfplay_4x4"]["rows"]
-          four_misses = [r for r in four if r.get("valid") and r.get("analysis", {}).get("candidate_generation_failure")]
+          four_misses = [
+              r for r in four
+              if r.get("valid") and r.get("analysis", {}).get("candidate_generation_failure")
+          ]
           four_ids = {r["decision_id"] for r in four_misses}
-          Path("artifacts/aggregate/miss_input_4x4.jsonl").write_text("".join(json.dumps(sample_by_id[i], sort_keys=True)+"\n" for i in sorted(four_ids)))
+          Path("artifacts/aggregate/miss_input_4x4.jsonl").write_text(
+              "".join(json.dumps(sample_by_id[i], sort_keys=True) + "\n" for i in sorted(four_ids))
+          )
 
           misses = []
           for key in ("selfplay_2x2", "selfplay_4x4"):
@@ -306,42 +351,103 @@ jobs:
                   a = row.get("analysis", {})
                   if row.get("valid") and a.get("candidate_generation_failure"):
                       misses.append({
-                          "profile": profile, "decision_id": row.get("decision_id"), "family": row.get("family"),
-                          "gap": a.get("oracle_value_gap"), "severe": a.get("severe_miss"),
-                          "oracle_best_value": a.get("oracle_best_value"), "best_production_value": a.get("best_production_value"),
+                          "profile": profile,
+                          "decision_id": row.get("decision_id"),
+                          "family": row.get("family"),
+                          "gap": a.get("oracle_value_gap"),
+                          "severe": a.get("severe_miss"),
+                          "oracle_best_value": a.get("oracle_best_value"),
+                          "best_production_value": a.get("best_production_value"),
                           "oracle_best_actions": a.get("oracle_best_actions"),
                           "best_production_plan_signature": a.get("best_production_plan_signature"),
                           "selected_plan_signature": a.get("selected_plan_signature"),
                           "loss_stage_probes": row.get("loss_stage_probes"),
                       })
-          Path("artifacts/aggregate/misses.jsonl").write_text("".join(json.dumps(r, sort_keys=True)+"\n" for r in misses))
+          Path("artifacts/aggregate/misses.jsonl").write_text(
+              "".join(json.dumps(r, sort_keys=True) + "\n" for r in misses)
+          )
 
-          two = {r.get("decision_id"): r for r in datasets["selfplay_2x2"]["rows"] if r.get("valid")}
-          four_map = {r.get("decision_id"): r for r in datasets["selfplay_4x4"]["rows"] if r.get("valid")}
-          recovered = sorted(d for d,r in two.items() if d in four_map and not r.get("analysis",{}).get("candidate_recall") and four_map[d].get("analysis",{}).get("candidate_recall"))
+          two = {
+              r.get("decision_id"): r for r in datasets["selfplay_2x2"]["rows"] if r.get("valid")
+          }
+          four_map = {
+              r.get("decision_id"): r for r in datasets["selfplay_4x4"]["rows"] if r.get("valid")
+          }
+          recovered = sorted(
+              d for d, r in two.items()
+              if d in four_map
+              and not r.get("analysis", {}).get("candidate_recall")
+              and four_map[d].get("analysis", {}).get("candidate_recall")
+          )
+
           by_family = {}
           for profile in ("2x2", "4x4"):
               groups = defaultdict(list)
               for row in datasets[f"selfplay_{profile}"]["rows"]:
-                  if row.get("valid"): groups[str(row.get("family","other"))].append(row)
-              by_family[profile] = {f:summarize(rs) for f,rs in sorted(groups.items())}
+                  if row.get("valid"):
+                      groups[str(row.get("family", "other"))].append(row)
+              by_family[profile] = {f: summarize(rs) for f, rs in sorted(groups.items())}
 
           aggregate = {
-              "selfplay_2x2": datasets["selfplay_2x2"]["summary"], "selfplay_4x4": datasets["selfplay_4x4"]["summary"],
-              "curated_2x2": datasets["curated_2x2"]["summary"], "curated_4x4": datasets["curated_4x4"]["summary"],
-              "selfplay_by_family": by_family, "two_to_four_recovered_count": len(recovered),
-              "two_to_four_recovered_decision_ids": recovered, "four_by_four_generation_miss_count": len(four_misses),
+              "selfplay_2x2": datasets["selfplay_2x2"]["summary"],
+              "selfplay_4x4": datasets["selfplay_4x4"]["summary"],
+              "curated_2x2": datasets["curated_2x2"]["summary"],
+              "curated_4x4": datasets["curated_4x4"]["summary"],
+              "selfplay_by_family": by_family,
+              "two_to_four_recovered_count": len(recovered),
+              "two_to_four_recovered_decision_ids": recovered,
+              "four_by_four_generation_miss_count": len(four_misses),
           }
-          Path("artifacts/aggregate/aggregate.json").write_text(json.dumps(aggregate, indent=2, sort_keys=True)+"\n")
-          lines=["## Candidate Oracle broad baseline","","| Dataset/profile | Decisions | Recall | Mean gap | Max gap | Severe misses | Ranking failures | Conditional selection | Oracle/prod sims |","| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
-          for key,label in (("curated_2x2","Curated 2x2"),("curated_4x4","Curated 4x4"),("selfplay_2x2","Self-play 2x2"),("selfplay_4x4","Self-play 4x4")):
-              s=aggregate[key]; cond="n/a" if s["conditional_selection_accuracy"] is None else f"{s['conditional_selection_accuracy']:.1%}"; ratio="n/a" if s["oracle_to_production_sim_ratio"] is None else f"{s['oracle_to_production_sim_ratio']:.2f}x"
-              lines.append(f"| {label} | {s['decisions']} | {s['recall']:.1%} | {s['mean_gap']:.3f} | {s['max_gap']:.3f} | {s['severe_misses']} | {s['ranking_failures']} | {cond} | {ratio} |")
-          lines += ["",f"2x2 generation misses recovered by 4x4: **{len(recovered)}**",f"Generation misses still present at 4x4: **{len(four_misses)}**","","### Self-play family recall","","| Family | 2x2 recall | 4x4 recall | 2x2 mean gap | 4x4 mean gap |","| --- | ---: | ---: | ---: | ---: |"]
-          for family in sorted(set(by_family["2x2"])|set(by_family["4x4"])):
-              a=by_family["2x2"].get(family,{}); b=by_family["4x4"].get(family,{})
-              lines.append(f"| {family} | {a.get('recall',0):.1%} | {b.get('recall',0):.1%} | {a.get('mean_gap',0):.3f} | {b.get('mean_gap',0):.3f} |")
-          Path("artifacts/aggregate/report.md").write_text("\n".join(lines)+"\n")
+          Path("artifacts/aggregate/aggregate.json").write_text(
+              json.dumps(aggregate, indent=2, sort_keys=True) + "\n"
+          )
+
+          lines = [
+              "## Candidate Oracle broad baseline",
+              "",
+              "| Dataset/profile | Decisions | Recall | Mean gap | Max gap | Severe misses | Ranking failures | Conditional selection | Oracle/prod sims |",
+              "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+          ]
+          for key, label in (
+              ("curated_2x2", "Curated 2x2"),
+              ("curated_4x4", "Curated 4x4"),
+              ("selfplay_2x2", "Self-play 2x2"),
+              ("selfplay_4x4", "Self-play 4x4"),
+          ):
+              s = aggregate[key]
+              cond = (
+                  "n/a"
+                  if s["conditional_selection_accuracy"] is None
+                  else f"{s['conditional_selection_accuracy']:.1%}"
+              )
+              ratio = (
+                  "n/a"
+                  if s["oracle_to_production_sim_ratio"] is None
+                  else f"{s['oracle_to_production_sim_ratio']:.2f}x"
+              )
+              lines.append(
+                  f"| {label} | {s['decisions']} | {s['recall']:.1%} | {s['mean_gap']:.3f} | "
+                  f"{s['max_gap']:.3f} | {s['severe_misses']} | {s['ranking_failures']} | "
+                  f"{cond} | {ratio} |"
+              )
+          lines += [
+              "",
+              f"2x2 generation misses recovered by 4x4: **{len(recovered)}**",
+              f"Generation misses still present at 4x4: **{len(four_misses)}**",
+              "",
+              "### Self-play family recall",
+              "",
+              "| Family | 2x2 recall | 4x4 recall | 2x2 mean gap | 4x4 mean gap |",
+              "| --- | ---: | ---: | ---: | ---: |",
+          ]
+          for family in sorted(set(by_family["2x2"]) | set(by_family["4x4"])):
+              a = by_family["2x2"].get(family, {})
+              b = by_family["4x4"].get(family, {})
+              lines.append(
+                  f"| {family} | {a.get('recall',0):.1%} | {b.get('recall',0):.1%} | "
+                  f"{a.get('mean_gap',0):.3f} | {b.get('mean_gap',0):.3f} |"
+              )
+          Path("artifacts/aggregate/report.md").write_text("\n".join(lines) + "\n")
           Path("miss_count.txt").write_text(str(len(four_misses)))
           print(Path("artifacts/aggregate/report.md").read_text())
           PY
@@ -425,26 +531,64 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          ap=Path("artifacts/aggregate/aggregate.json"); aggregate=json.loads(ap.read_text())
-          misses=[json.loads(line) for line in Path("artifacts/aggregate/misses.jsonl").read_text().splitlines() if line.strip()]
-          follow=[]; root=Path("artifacts/followup")
+
+          ap = Path("artifacts/aggregate/aggregate.json")
+          aggregate = json.loads(ap.read_text())
+          misses = [
+              json.loads(line)
+              for line in Path("artifacts/aggregate/misses.jsonl").read_text().splitlines()
+              if line.strip()
+          ]
+          follow = []
+          root = Path("artifacts/followup")
           if root.exists():
-              for path in sorted(root.glob("*/decisions.jsonl")): follow.extend(json.loads(line) for line in path.read_text().splitlines() if line.strip())
-          six={r.get("decision_id"):r for r in follow if r.get("valid")}
-          four=[r for r in misses if r.get("profile")=="4x4"]
-          recovered=[r["decision_id"] for r in four if six.get(r["decision_id"],{}).get("analysis",{}).get("candidate_recall")]
-          aggregate["six_by_six_followup_decisions"]=len(six); aggregate["four_to_six_recovered_count"]=len(recovered); aggregate["four_to_six_recovered_decision_ids"]=sorted(recovered)
-          ap.write_text(json.dumps(aggregate,indent=2,sort_keys=True)+"\n")
-          report=Path("artifacts/aggregate/report.md").read_text()+"\n### 6x6 follow-up\n\n"
-          report += (f"4x4 misses tested at 6x6: **{len(six)}**; recovered at 6x6: **{len(recovered)}**.\n\n" if four else "No 4x4 generation misses remained; 6x6 was unnecessary.\n\n")
+              for path in sorted(root.glob("*/decisions.jsonl")):
+                  follow.extend(
+                      json.loads(line) for line in path.read_text().splitlines() if line.strip()
+                  )
+          six = {r.get("decision_id"): r for r in follow if r.get("valid")}
+          four = [r for r in misses if r.get("profile") == "4x4"]
+          recovered = [
+              r["decision_id"]
+              for r in four
+              if six.get(r["decision_id"], {}).get("analysis", {}).get("candidate_recall")
+          ]
+          aggregate["six_by_six_followup_decisions"] = len(six)
+          aggregate["four_to_six_recovered_count"] = len(recovered)
+          aggregate["four_to_six_recovered_decision_ids"] = sorted(recovered)
+          ap.write_text(json.dumps(aggregate, indent=2, sort_keys=True) + "\n")
+
+          report = Path("artifacts/aggregate/report.md").read_text() + "\n### 6x6 follow-up\n\n"
+          report += (
+              f"4x4 misses tested at 6x6: **{len(six)}**; recovered at 6x6: **{len(recovered)}**.\n\n"
+              if four
+              else "No 4x4 generation misses remained; 6x6 was unnecessary.\n\n"
+          )
           report += "### Candidate-generation misses\n\n"
-          if not misses: report += "No candidate-generation misses in the 40-decision self-play sample.\n"
+          if not misses:
+              report += "No candidate-generation misses in the 40-decision self-play sample.\n"
           else:
-              report += "| Profile | Family | Decision | Gap | Severe | First recovery probe | 6x6 recall |\n| --- | --- | --- | ---: | --- | --- | --- |\n"
-              for row in sorted(misses,key=lambda r:(r.get("profile",""),r.get("family",""),r.get("decision_id",""))):
-                  first=(row.get("loss_stage_probes") or {}).get("first_recovery_probe","n/a"); sr=six.get(row.get("decision_id")); six_recall="n/a" if sr is None else str(bool(sr.get("analysis",{}).get("candidate_recall")))
-                  report += f"| {row.get('profile')} | {row.get('family')} | `{row.get('decision_id')}` | {float(row.get('gap',0)):.3f} | {row.get('severe')} | {first} | {six_recall} |\n"
-          Path("artifacts/aggregate/report.md").write_text(report); print(report)
+              report += (
+                  "| Profile | Family | Decision | Gap | Severe | First recovery probe | 6x6 recall |\n"
+                  "| --- | --- | --- | ---: | --- | --- | --- |\n"
+              )
+              for row in sorted(
+                  misses,
+                  key=lambda r: (r.get("profile", ""), r.get("family", ""), r.get("decision_id", "")),
+              ):
+                  first = (row.get("loss_stage_probes") or {}).get("first_recovery_probe", "n/a")
+                  sr = six.get(row.get("decision_id"))
+                  six_recall = (
+                      "n/a"
+                      if sr is None
+                      else str(bool(sr.get("analysis", {}).get("candidate_recall")))
+                  )
+                  report += (
+                      f"| {row.get('profile')} | {row.get('family')} | `{row.get('decision_id')}` | "
+                      f"{float(row.get('gap',0)):.3f} | {row.get('severe')} | {first} | {six_recall} |\n"
+                  )
+          Path("artifacts/aggregate/report.md").write_text(report)
+          print(report)
           PY
           cat artifacts/aggregate/report.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
