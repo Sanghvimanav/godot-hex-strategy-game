@@ -13,6 +13,7 @@ func _ready() -> void:
 	var TestEventBus = load("res://tests/test_event_bus.gd") as GDScript
 	var TestTurnExecutionCore = load("res://tests/test_turn_execution_core.gd") as GDScript
 	var TestPureStateSimulator = load("res://tests/test_pure_state_simulator.gd") as GDScript
+	var TestPureStateReplayV1 = load("res://tests/test_pure_state_replay_v1.gd") as GDScript
 	var TestPureStateLegalActions = load("res://tests/test_pure_state_legal_actions.gd") as GDScript
 	var TestPureStatePlans = load("res://tests/test_pure_state_plans.gd") as GDScript
 	var TestPureStatePlanIntents = load("res://tests/test_pure_state_plan_intents.gd") as GDScript
@@ -30,7 +31,6 @@ func _ready() -> void:
 	var TestPureStateSelfPlaySuite = load("res://tests/test_pure_state_self_play_suite.gd") as GDScript
 	var TestPureStateSelfPlayDiversity = load("res://tests/test_pure_state_self_play_diversity.gd") as GDScript
 	var TestPureStateArena = load("res://tests/test_pure_state_arena.gd") as GDScript
-	var TestArenaPlaytest = load("res://tests/test_arena_playtest.gd") as GDScript
 	var TestDeterministicShard = load("res://tests/test_deterministic_shard.gd") as GDScript
 	var TestPureStateCounterfactualBenchmark = load("res://tests/test_pure_state_counterfactual_benchmark.gd") as GDScript
 	var TestPureStateCounterfactualAnswerKey = load("res://tests/test_pure_state_counterfactual_answer_key.gd") as GDScript
@@ -66,6 +66,10 @@ func _ready() -> void:
 	else:
 		_pass_count += 1
 	if not TestPureStateSimulator.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestPureStateReplayV1.run_all(self):
 		_fail_count += 1
 	else:
 		_pass_count += 1
@@ -134,10 +138,6 @@ func _ready() -> void:
 	else:
 		_pass_count += 1
 	if not TestPureStateArena.run_all(self):
-		_fail_count += 1
-	else:
-		_pass_count += 1
-	if not TestArenaPlaytest.run_all(self):
 		_fail_count += 1
 	else:
 		_pass_count += 1
