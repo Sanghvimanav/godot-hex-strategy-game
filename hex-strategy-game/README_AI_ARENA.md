@@ -2,6 +2,32 @@
 
 The AI Arena is the reproducible head-to-head test for comparing two search/evaluator configurations on frozen mirrored scenarios.
 
+## Interactive human playtest
+
+From the Godot main menu choose **Arena Playtest** to play one side of the official frozen `fast` Arena seeds yourself.
+
+1. Pick one of the eight frozen fast seeds.
+2. Choose Terran or Zerg.
+3. Choose the handwritten AI search budget: `fast` (2x2), `balanced` (4x4), `wide` (6x6), or `broad` (8x8).
+4. Play with the normal simultaneous-turn battle UI.
+
+The opponent uses the same canonical `GameplayAI` + handwritten evaluator as the headless Arena. Its whole turn is chosen from the frozen pre-turn pure state before the human commits any actions, so it cannot inspect the human's simultaneous plan.
+
+Interactive Arena also uses the headless Arena's compact board radius and command-hex rule: win by eliminating the opponent or by keeping the same living unit on the enemy command hex across one complete resolved turn. Command hexes are marked in the battle view.
+
+Each completed match writes a local session under:
+
+`user://arena_playtests/<game-id>/`
+
+The session contains:
+
+- `manifest.json` — outcome, provenance, Arena seed/family, search profile/evaluator, faction ownership, and example counts;
+- `trace.json` — every pre/post-turn pure state, both submitted simultaneous plans, command-hex state, execution recording, and the AI search diagnostics;
+- `human_policy_examples.jsonl` — one human demonstration per completed turn for future imitation/policy training; the opponent's simultaneous action is retained only as an analysis field, not as an input feature;
+- `value_examples.jsonl` — terminal state-value examples using the existing `PureStateTrainingData` schema.
+
+Turn-limit games still produce human-policy demonstrations and full traces, but intentionally produce no value labels because the eventual winner is unknown.
+
 ## Manual model promotion run
 
 In **Actions → AI Arena → Run workflow**:
