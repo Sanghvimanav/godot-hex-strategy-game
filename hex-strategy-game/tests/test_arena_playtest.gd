@@ -8,10 +8,24 @@ const PureStateSelfPlaySuite = preload("res://src/simulation/pure_state_self_pla
 
 static func run_all(tests: Node) -> bool:
 	var ok := true
+	ok = _test_playtest_scripts_load(tests) and ok
 	ok = _test_playable_scenario_preserves_arena_state_and_ids(tests) and ok
 	ok = _test_terminal_human_game_emits_policy_and_value_examples(tests) and ok
 	ok = _test_turn_limit_keeps_policy_data_without_value_labels(tests) and ok
 	return ok
+
+
+static func _test_playtest_scripts_load(tests: Node) -> bool:
+	tests._log("test_arena_playtest: integration scripts and picker scene load")
+	var controller := load("res://src/battle/arena_playtest_controller.gd") as GDScript
+	var picker := load("res://src/battle/arena_playtest_picker.gd") as GDScript
+	var arena_units := load("res://src/battle/nodes/units/arena_units_container.gd") as GDScript
+	var picker_scene := load("res://src/battle/arena_playtest_picker.tscn") as PackedScene
+	if controller == null or picker == null or arena_units == null or picker_scene == null:
+		tests._fail("Arena playtest integration scripts/scenes should all parse and load")
+		return false
+	tests._pass("Arena controller, picker, UnitsContainer layer, and picker scene all load")
+	return true
 
 
 static func _test_playable_scenario_preserves_arena_state_and_ids(tests: Node) -> bool:
