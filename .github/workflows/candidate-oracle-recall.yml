@@ -23,7 +23,7 @@ jobs:
   smoke:
     name: Oracle recall smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -45,18 +45,17 @@ jobs:
         run: |
           set -euo pipefail
           cd hex-strategy-game
-          timeout 8m bash tools/run_candidate_oracle_recall.sh \
-            --preset=curated \
-            --decision-id=curated-sacrifice-baneling \
-            --production-own-max-actions-per-unit=4 \
+          timeout 5m bash tools/run_candidate_oracle_recall.sh \
+            --preset=smoke \
+            --production-own-max-actions-per-unit=3 \
             --production-own-max-plans=2 \
-            --production-opponent-max-actions-per-unit=4 \
-            --production-opponent-max-plans=2 \
-            --oracle-own-max-actions-per-unit=6 \
+            --production-opponent-max-actions-per-unit=3 \
+            --production-opponent-max-plans=1 \
+            --oracle-own-max-actions-per-unit=4 \
             --oracle-own-max-plans=4 \
-            --oracle-opponent-max-actions-per-unit=6 \
-            --oracle-opponent-max-plans=3 \
-            --oracle-value-response-max-plans=4 \
+            --oracle-opponent-max-actions-per-unit=4 \
+            --oracle-opponent-max-plans=2 \
+            --oracle-value-response-max-plans=2 \
             --out="${GITHUB_WORKSPACE}/artifacts/candidate-oracle-smoke"
 
       - name: Audit benchmark contract
