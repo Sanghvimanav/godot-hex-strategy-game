@@ -32,6 +32,11 @@ on:
         required: true
         default: "16"
         type: string
+      max_arena_divergences_per_game:
+        description: Bounded Arena divergences tested per decisive neural loss
+        required: true
+        default: "3"
+        type: string
       epochs:
         description: Ranked retraining epochs
         required: true
@@ -114,11 +119,89 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  arena-hard-negatives:
+    name: Arena hard-negative shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Download source checkpoint artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          path: artifacts/source_candidate
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.checkpoint_run_id }}
+
+      - name: Download prior Arena shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "dense-ranked-4x4-shard-*"
+          path: artifacts/prior_arena_shards
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.arena_run_id }}
+
+      - name: Resolve ranked checkpoint
+        run: |
+          set -euo pipefail
+          checkpoint="$(find artifacts/source_candidate -type f -name ranked_value_model.pt -print -quit)"
+          if [[ -z "$checkpoint" ]]; then
+            echo "ranked_value_model.pt not found in run ${{ inputs.checkpoint_run_id }}" >&2
+            exit 1
+          fi
+          mkdir -p artifacts/checkpoint
+          cp "$checkpoint" artifacts/checkpoint/ranked_value_model.pt
+
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Mine bounded Arena divergences
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/arena_divergence_pairs.tscn -- \
+            --arena-root="${GITHUB_WORKSPACE}/artifacts/prior_arena_shards" \
+            --neural-checkpoint="${GITHUB_WORKSPACE}/artifacts/checkpoint/ranked_value_model.pt" \
+            --profile="${{ inputs.search_profile }}" \
+            --out="${GITHUB_WORKSPACE}/artifacts/arena_hard_negatives" \
+            --max-pairs=16 \
+            --max-divergences-per-game="${{ inputs.max_arena_divergences_per_game }}" \
+            --shard-index="${{ matrix.shard }}" \
+            --shard-count=4
+
+      - name: Upload hard-negative shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: arena-hard-negative-shard-${{ matrix.shard }}
+          path: artifacts/arena_hard_negatives/
+          if-no-files-found: error
+          retention-days: 7
+
   retrain:
     name: Build policy-aligned supervision and retrain
-    needs: neural-policy-data
+    needs: [neural-policy-data, arena-hard-negatives]
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -169,14 +252,12 @@ jobs:
           path: artifacts/neural_policy_shards
           merge-multiple: false
 
-      - name: Download prior Arena shards
+      - name: Download Arena hard-negative shards
         uses: actions/download-artifact@v4
         with:
-          pattern: "dense-ranked-4x4-shard-*"
-          path: artifacts/prior_arena_shards
+          pattern: arena-hard-negative-shard-*
+          path: artifacts/arena_hard_negative_shards
           merge-multiple: false
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ inputs.arena_run_id }}
 
       - name: Resolve source checkpoint and sibling metadata
         run: |
@@ -197,6 +278,67 @@ jobs:
             --root artifacts/self_play_shards \
             --output artifacts/self_play
 
+      - name: Merge Arena hard-negative shards
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/arena_hard_negatives
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("artifacts/arena_hard_negative_shards")
+          out = Path("artifacts/arena_hard_negatives")
+
+          def concatenate(name: str) -> None:
+              paths = sorted(root.rglob(name))
+              with (out / name).open("w") as handle:
+                  for path in paths:
+                      text = path.read_text()
+                      if text:
+                          handle.write(text)
+                          if not text.endswith("\n"):
+                              handle.write("\n")
+
+          concatenate("arena_hard_negative_pairs.jsonl")
+          concatenate("arena_divergences.jsonl")
+
+          manifests = [
+              json.loads(path.read_text())
+              for path in sorted(root.rglob("arena_hard_negative_manifest.json"))
+          ]
+          if not manifests:
+              raise SystemExit("No Arena hard-negative manifests downloaded")
+          summed = {
+              key: sum(int(m.get(key, 0)) for m in manifests)
+              for key in (
+                  "games_considered",
+                  "divergences_considered",
+                  "pairs_written",
+                  "branch_unlabeled",
+                  "no_preference",
+                  "invalid",
+              )
+          }
+          merged = {
+              "manifest_schema_version": manifests[0].get("manifest_schema_version", 1),
+              "pair_schema_version": manifests[0].get("pair_schema_version", 2),
+              "arena_preset": manifests[0].get("arena_preset", ""),
+              "arena_profile": manifests[0].get("arena_profile", ""),
+              "shard_count": len(manifests),
+              "bounded_divergences_per_game": max(
+                  int(m.get("bounded_divergences_per_game", 1)) for m in manifests
+              ),
+              "continuation_policy": manifests[0].get("continuation_policy", ""),
+              "same_actual_opponent_action": True,
+              "recorded_neural_loss_reused": True,
+              **summed,
+          }
+          (out / "arena_hard_negative_manifest.json").write_text(
+              json.dumps(merged, indent=2) + "\n"
+          )
+          print(json.dumps(merged, indent=2))
+          PY
+
       - name: Run value-model tests
         run: python -m unittest discover -s ml/tests -v
 
@@ -211,16 +353,6 @@ jobs:
             --out="${GITHUB_WORKSPACE}/artifacts/self_play" \
             --neural-checkpoint="${GITHUB_WORKSPACE}/artifacts/checkpoint/ranked_value_model.pt" \
             --max-decisions="${{ inputs.max_sibling_decisions }}"
-
-      - name: Mine prior Arena divergences as hard negatives
-        working-directory: hex-strategy-game
-        run: |
-          godot --headless --path . res://tools/arena_divergence_pairs.tscn -- \
-            --arena-root="${GITHUB_WORKSPACE}/artifacts/prior_arena_shards" \
-            --neural-checkpoint="${GITHUB_WORKSPACE}/artifacts/checkpoint/ranked_value_model.pt" \
-            --profile="${{ inputs.search_profile }}" \
-            --out="${GITHUB_WORKSPACE}/artifacts/arena_hard_negatives" \
-            --max-pairs=16
 
       - name: Merge policy-aligned value and ranking supervision
         run: |
@@ -286,6 +418,7 @@ jobs:
 
       - name: Train fresh policy-aligned ranked model
         run: |
+          set -euo pipefail
           python -m ml.value_model.train_ranked \
             --data artifacts/combined/combined_examples.jsonl \
             --ranking-data artifacts/combined/combined_ranking_pairs.jsonl \
@@ -300,8 +433,8 @@ jobs:
             --split-key source.base_scenario_id \
             --seed 0 \
             --device cpu \
-            --handwritten-baseline artifacts/experiment/handwritten_baseline.json \
             | tee artifacts/ranked_metrics.json
+          test -s artifacts/ranked_value_model.pt
 
       - name: Evaluate candidate on frozen counterfactual benchmark
         run: |
