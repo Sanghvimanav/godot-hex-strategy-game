@@ -33,6 +33,7 @@ func _ready() -> void:
 	var TestDeterministicShard = load("res://tests/test_deterministic_shard.gd") as GDScript
 	var TestPureStateCounterfactualBenchmark = load("res://tests/test_pure_state_counterfactual_benchmark.gd") as GDScript
 	var TestPureStateCounterfactualAnswerKey = load("res://tests/test_pure_state_counterfactual_answer_key.gd") as GDScript
+	var TestPureStateCandidateOracleRecall = load("res://tests/test_pure_state_candidate_oracle_recall.gd") as GDScript
 	var TestServerTurnExecutor = load("res://tests/test_server_turn_executor.gd") as GDScript
 	var TestUnifiedPipeline = load("res://tests/test_unified_pipeline.gd") as GDScript
 	var TestStunEffects = load("res://tests/test_stun_effects.gd") as GDScript
@@ -144,6 +145,10 @@ func _ready() -> void:
 	else:
 		_pass_count += 1
 	if not TestPureStateCounterfactualAnswerKey.run_all(self):
+		_fail_count += 1
+	else:
+		_pass_count += 1
+	if not TestPureStateCandidateOracleRecall.run_all(self):
 		_fail_count += 1
 	else:
 		_pass_count += 1
