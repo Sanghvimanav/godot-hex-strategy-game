@@ -16,6 +16,17 @@ This is a **Godot 4.6 hex strategy game** (`hex-strategy-game/`).
 - **CI policy:** `Godot Tests` and `Value Model Tests` are normal PR checks. `AI Arena` is the expensive gameplay/value-model check and must stay path-filtered to changes that can affect arena behavior; do not broaden it for offline data export, CI-only, docs, or other non-gameplay changes. The full `Value Model Experiment` is intentionally manual/opt-in (`workflow_dispatch`) and should be run for report-card/promotion work rather than every small PR.
 - For the latest implementation state, inspect the newest relevant `ai/*` PRs and their CI in addition to `AI_ROADMAP.md`. Do not infer current AI status from `hex-strategy-game/README.md`; that file is historical prototype context.
 
+### Human Playtest Escalation
+
+- Automated tests, counterfactual benchmarks, candidate-oracle diagnostics, and headless Arena runs remain the default evidence. Do not substitute casual manual play for reproducible automated checks.
+- When automated metrics cannot explain a qualitative weakness, a suspected exploit/dominant strategy, a candidate-recall vs evaluator disagreement, or whether a benchmark improvement actually feels stronger, the agent may explicitly ask the user for a **small targeted Arena Playtest batch** (normally 3–10 games).
+- Make the request specific: name the opponent AI variant, search profile, human faction, seed/family when relevant, and the behavior or hypothesis to probe. Prefer mirrored/repeated seeds when they create a useful controlled comparison.
+- Ask the user to upload the resulting `arena_playtests` folder or zip. Analyze the saved pre-turn states, both simultaneous plans, search diagnostics, terminal outcomes, and human-policy examples instead of relying only on the user's summary of the games.
+- Treat human actions as **adversarial evidence, not perfect ground truth**. A human move can expose a real search/evaluation weakness without being globally optimal.
+- Keep frozen human evaluation sets out of training and tuning. `human_playtest_v1` is the first frozen holdout: all 7 games / 40 turns are retained, while the default exploit benchmark scores the 35 post-discovery `adversarial` turns and marks the first 5 turns `exploratory` because the command-hex rule was still being learned.
+- Run the frozen human-response benchmark with `cd hex-strategy-game && bash tools/run_human_playtest_benchmark.sh --quality=adversarial --out=user://human_playtest_benchmark`. It reports whether the exact human response was absent from the source pool, generated then dropped from the final opponent set, or retained but still led to material selected-plan regret.
+- For neural training, collect a **separate** human-playtest batch. Human policy examples can be modestly weighted imitation/policy data; actual human responses are especially valuable hard examples for opponent-response proposal/ranking; terminal-only value examples may feed the value model. Split/hold out by whole game/seed/family rather than random turns, and do not let a small human batch dominate self-play data.
+
 ### Running the Game
 
 - **GUI mode**: `cd hex-strategy-game && DISPLAY=:1 godot --path .`
