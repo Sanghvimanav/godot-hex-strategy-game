@@ -1,0 +1,1 @@
+run randomized current-policy self-play scale experiment

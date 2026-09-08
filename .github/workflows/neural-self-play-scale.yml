@@ -1,0 +1,389 @@
+name: Neural Self-Play Scale
+
+on:
+  workflow_dispatch:
+    inputs:
+      checkpoint_run_id:
+        description: Run containing the current champion ranked_value_model.pt
+        required: true
+        default: "34240515308"
+        type: string
+      source_experiment_run_id:
+        description: Value Model Experiment run containing the frozen counterfactual benchmark
+        required: true
+        default: "34152473442"
+        type: string
+      game_count:
+        description: Randomized full-game current-policy self-play games
+        required: true
+        default: "480"
+        type: string
+      replay_examples:
+        description: Maximum recent-policy value examples retained for training
+        required: true
+        default: "5000"
+        type: string
+      search_profile:
+        description: Search budget used during self-play and frozen Arena
+        required: true
+        default: balanced
+        type: choice
+        options: [balanced, fast]
+      epochs:
+        description: Ranked retraining epochs
+        required: true
+        default: "60"
+        type: string
+  push:
+    branches:
+      - ai/scale-self-play-5000
+    paths:
+      - .github/self-play-scale-trigger
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: neural-self-play-scale-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CHECKPOINT_RUN_ID: ${{ inputs.checkpoint_run_id || '34240515308' }}
+  SOURCE_EXPERIMENT_RUN_ID: ${{ inputs.source_experiment_run_id || '34152473442' }}
+  GAME_COUNT: ${{ inputs.game_count || '480' }}
+  REPLAY_EXAMPLES: ${{ inputs.replay_examples || '5000' }}
+  SEARCH_PROFILE: ${{ inputs.search_profile || 'balanced' }}
+  EPOCHS: ${{ inputs.epochs || '60' }}
+  SELF_PLAY_SHARDS: "20"
+  SELF_PLAY_SEED_BASE: "900001"
+
+jobs:
+  self-play:
+    name: Current-policy self-play shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Download current champion candidate
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-policy-candidate-*
+          path: artifacts/source_candidate
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.CHECKPOINT_RUN_ID }}
+      - name: Resolve current checkpoint
+        run: |
+          set -euo pipefail
+          checkpoint="$(find artifacts/source_candidate -type f -name ranked_value_model.pt -print -quit)"
+          if [[ -z "$checkpoint" ]]; then
+            echo "ranked_value_model.pt not found in run ${CHECKPOINT_RUN_ID}" >&2
+            exit 1
+          fi
+          mkdir -p artifacts/checkpoint
+          cp "$checkpoint" artifacts/checkpoint/ranked_value_model.pt
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Generate randomized current-policy self-play
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/neural_self_play_dataset.tscn -- \
+            --profile="${SEARCH_PROFILE}" \
+            --map-profile=compact_v1 \
+            --checkpoint="${GITHUB_WORKSPACE}/artifacts/checkpoint/ranked_value_model.pt" \
+            --game-count="${GAME_COUNT}" \
+            --seed-base="${SELF_PLAY_SEED_BASE}" \
+            --out="${GITHUB_WORKSPACE}/artifacts/self_play" \
+            --shard-index="${{ matrix.shard }}" \
+            --shard-count="${SELF_PLAY_SHARDS}"
+      - name: Upload self-play shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: neural-self-play-shard-${{ matrix.shard }}
+          path: artifacts/self_play/
+          if-no-files-found: error
+          retention-days: 7
+
+  retrain:
+    name: Build recent replay buffer and retrain
+    needs: self-play
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Download current champion candidate
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-policy-candidate-*
+          path: artifacts/source_candidate
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.CHECKPOINT_RUN_ID }}
+      - name: Download frozen counterfactual source
+        uses: actions/download-artifact@v4
+        with:
+          pattern: value-model-experiment-*
+          path: artifacts/experiment
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.SOURCE_EXPERIMENT_RUN_ID }}
+      - name: Download fresh self-play shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-self-play-shard-*
+          path: artifacts/self_play_shards
+          merge-multiple: false
+      - name: Aggregate self-play manifests
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+          paths = sorted(Path("artifacts/self_play_shards").rglob("manifest.json"))
+          manifests = [json.loads(path.read_text()) for path in paths]
+          if not manifests:
+              raise SystemExit("No self-play manifests found")
+          outcomes = Counter()
+          families = Counter()
+          for manifest in manifests:
+              outcomes.update({k: int(v) for k, v in manifest.get("outcomes", {}).items()})
+              families.update({k: int(v) for k, v in manifest.get("family_counts", {}).items()})
+          merged = {
+              "shards": len(manifests),
+              "games_requested": sum(int(m.get("games_requested", 0)) for m in manifests),
+              "games_labeled": sum(int(m.get("games_labeled", 0)) for m in manifests),
+              "games_unlabeled": sum(int(m.get("games_unlabeled", 0)) for m in manifests),
+              "games_failed": sum(int(m.get("games_failed", 0)) for m in manifests),
+              "examples_generated": sum(int(m.get("example_count", 0)) for m in manifests),
+              "outcomes": dict(outcomes),
+              "family_counts": dict(families),
+              "profile": manifests[0].get("profile", ""),
+              "map_profile": manifests[0].get("map_profile", ""),
+              "seed_base": manifests[0].get("seed_base", 0),
+          }
+          Path("artifacts/self_play_manifest.json").write_text(json.dumps(merged, indent=2) + "\n")
+          print(json.dumps(merged, indent=2))
+          PY
+      - name: Build bounded recent-policy replay
+        run: |
+          set -euo pipefail
+          history_examples="$(find artifacts/source_candidate -type f -name combined_examples.jsonl -print -quit)"
+          history_pairs="$(find artifacts/source_candidate -type f -name combined_ranking_pairs.jsonl -print -quit)"
+          if [[ -z "$history_examples" || -z "$history_pairs" ]]; then
+            echo "Source candidate must contain combined examples and ranking pairs" >&2
+            exit 1
+          fi
+          mkdir -p artifacts/combined
+          python -m ml.value_model.build_replay_buffer \
+            --new-root artifacts/self_play_shards \
+            --history-examples "$history_examples" \
+            --output-examples artifacts/combined/combined_examples.jsonl \
+            --max-examples "${REPLAY_EXAMPLES}" \
+            --seed 0 \
+            --history-ranking-pairs "$history_pairs" \
+            --output-ranking-pairs artifacts/combined/combined_ranking_pairs.jsonl \
+            --max-ranking-pairs 1000 \
+            --manifest artifacts/combined/replay_manifest.json
+      - name: Run value-model tests
+        run: python -m unittest discover -s ml/tests -v
+      - name: Train fresh ranked model on recent replay
+        run: |
+          set -euo pipefail
+          python -m ml.value_model.train_ranked \
+            --data artifacts/combined/combined_examples.jsonl \
+            --ranking-data artifacts/combined/combined_ranking_pairs.jsonl \
+            --output artifacts/ranked_value_model.pt \
+            --epochs "${EPOCHS}" \
+            --batch-size 64 \
+            --ranking-batch-size 32 \
+            --ranking-weight 0.5 \
+            --learning-rate 0.0003 \
+            --weight-decay 0.0001 \
+            --validation-fraction 0.25 \
+            --split-key source.base_scenario_id \
+            --seed 0 \
+            --device cpu \
+            | tee artifacts/ranked_metrics.json
+          test -s artifacts/ranked_value_model.pt
+      - name: Evaluate candidate on frozen counterfactual benchmark
+        run: |
+          python -m ml.value_model.evaluate_counterfactual \
+            --candidates artifacts/experiment/counterfactual/candidates_with_handwritten.jsonl \
+            --checkpoint artifacts/ranked_value_model.pt \
+            --output artifacts/ranked_counterfactual_metrics.json
+      - name: Preserve compatible source metadata
+        run: |
+          set -euo pipefail
+          rejected="$(find artifacts/source_candidate -type f -name rejected_continuations.jsonl -print -quit)"
+          if [[ -n "$rejected" ]]; then
+            cp "$rejected" artifacts/combined/rejected_continuations.jsonl
+          else
+            : > artifacts/combined/rejected_continuations.jsonl
+          fi
+      - name: Write self-play training summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          sp = json.loads(Path("artifacts/self_play_manifest.json").read_text())
+          replay = json.loads(Path("artifacts/combined/replay_manifest.json").read_text())
+          metrics = json.loads(Path("artifacts/ranked_metrics.json").read_text())
+          cf = json.loads(Path("artifacts/ranked_counterfactual_metrics.json").read_text())
+          neural = cf["evaluators"]["neural_value_model"]
+          value_replay = replay["value_replay"]
+          rank_replay = replay["ranking_replay"]
+          summary = f"""## Randomized current-policy self-play
+
+          | Metric | Result |
+          | --- | ---: |
+          | Self-play games requested | {sp['games_requested']} |
+          | Decisive/labeled self-play games | {sp['games_labeled']} |
+          | Unresolved self-play games | {sp['games_unlabeled']} |
+          | Fresh examples generated | {sp['examples_generated']} |
+          | Replay examples retained | {value_replay['output_examples']} |
+          | Fresh examples retained | {value_replay['new_examples_selected']} |
+          | Historical examples retained | {value_replay['history_examples_selected']} |
+          | Frozen-Arena historical examples removed | {value_replay['history_examples_excluded_frozen_arena']} |
+          | Ranking pairs retained | {rank_replay['output_pairs']} |
+          | Frozen-Arena/tactical ranking pairs removed | {rank_replay['history_pairs_excluded_frozen_arena']} |
+          | Conflicting identical-input groups | {metrics['all_conflicting_input_groups']} |
+          | Conflicting identical-input examples | {metrics['all_conflicting_input_examples']} |
+          | Held-out nonterminal winner accuracy | {float(metrics['neural_eval_sign_accuracy_nonterminal']):.1%} |
+          | Held-out sibling ranking accuracy | {float(metrics['eval_ranking_accuracy']):.1%} |
+          | Counterfactual candidate ranking | {float(neural['candidate_ranking_accuracy']):.1%} |
+          | Counterfactual mean regret | {float(neural['top_plan_mean_regret']):.3f} |
+          | Counterfactual optimal-choice rate | {float(neural['top_plan_optimal_rate']):.1%} |
+
+          **Current checkpoint run:** {os.environ['CHECKPOINT_RUN_ID']}
+          **Frozen counterfactual source:** {os.environ['SOURCE_EXPERIMENT_RUN_ID']}
+          **Self-play search profile:** `{os.environ['SEARCH_PROFILE']}`
+          **Self-play family counts:** `{sp['family_counts']}`
+          """
+          Path("artifacts/training_summary.md").write_text(summary)
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as handle:
+              handle.write(summary)
+          print(summary)
+          PY
+      - name: Upload self-play candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: neural-self-play-candidate-${{ github.run_number }}
+          path: |
+            artifacts/ranked_value_model.pt
+            artifacts/ranked_metrics.json
+            artifacts/ranked_counterfactual_metrics.json
+            artifacts/training_summary.md
+            artifacts/self_play_manifest.json
+            artifacts/combined/combined_examples.jsonl
+            artifacts/combined/combined_ranking_pairs.jsonl
+            artifacts/combined/replay_manifest.json
+            artifacts/combined/rejected_continuations.jsonl
+          if-no-files-found: error
+          retention-days: 14
+
+  arena:
+    name: Frozen Arena shard ${{ matrix.shard }}
+    needs: retrain
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Download self-play candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: neural-self-play-candidate-${{ github.run_number }}
+          path: artifacts/candidate
+      - name: Install candidate checkpoint
+        run: |
+          mkdir -p hex-strategy-game/models
+          cp artifacts/candidate/ranked_value_model.pt \
+            hex-strategy-game/models/objective_aware_candidate_v1.pt
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Run untouched frozen fast Arena
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/ai_arena.tscn -- \
+            --preset=fast \
+            --map-profile=compact_v1 \
+            --champion-profile="${SEARCH_PROFILE}" \
+            --challenger-profile="${SEARCH_PROFILE}" \
+            --champion-evaluator=handwritten \
+            --challenger-evaluator=neural \
+            --rules-version="${GITHUB_SHA}" \
+            --out="${GITHUB_WORKSPACE}/artifacts/arena" \
+            --shard-index="${{ matrix.shard }}" \
+            --shard-count=4
+      - name: Upload Arena shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: neural-self-play-arena-shard-${{ matrix.shard }}
+          path: artifacts/arena/
+          if-no-files-found: error
+          retention-days: 7
+
+  merge-arena:
+    name: Merge frozen Arena
+    needs: arena
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Arena shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-self-play-arena-shard-*
+          path: artifacts/arena_shards
+          merge-multiple: false
+      - name: Merge and summarize Arena
+        run: |
+          python3 hex-strategy-game/tools/merge_ai_arena.py \
+            --input-root artifacts/arena_shards \
+            --out artifacts/arena_merged \
+            --checkpoint-source="neural-self-play-scale:${GITHUB_RUN_ID}"
+          cat artifacts/arena_merged/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload merged Arena
+        uses: actions/upload-artifact@v4
+        with:
+          name: neural-self-play-arena-${{ github.run_number }}
+          path: artifacts/arena_merged/
+          if-no-files-found: error
+          retention-days: 14
