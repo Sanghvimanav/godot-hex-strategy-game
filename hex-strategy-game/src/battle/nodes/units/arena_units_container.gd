@@ -8,6 +8,7 @@ func apply_scenario(scenario: Dictionary) -> void:
 	var arena_variant = scenario.get("arena_playtest", {})
 	var arena_enabled := arena_variant is Dictionary and bool((arena_variant as Dictionary).get("enabled", false))
 	set_meta("arena_playtest_enabled", arena_enabled)
+	set_meta("arena_playtest_ai_variant", str((arena_variant as Dictionary).get("ai_variant", "handwritten")) if arena_variant is Dictionary else "handwritten")
 	super(scenario)
 	if arena_enabled:
 		_restore_stable_unit_ids(scenario)
@@ -15,7 +16,10 @@ func apply_scenario(scenario: Dictionary) -> void:
 
 func _should_run_llm_batch_for_sp() -> bool:
 	if _arena_enabled():
-		return false
+		# Reuse the existing single-player batch LLM planner only for the explicit
+		# LLM Arena variant. Handwritten and neural variants are planned by the
+		# Arena controller through GameplayAI instead.
+		return _arena_ai_variant() == "llm" and super()
 	return super()
 
 
@@ -58,6 +62,10 @@ func _select_planning_unit() -> void:
 
 func _arena_enabled() -> bool:
 	return bool(get_meta("arena_playtest_enabled", false))
+
+
+func _arena_ai_variant() -> String:
+	return str(get_meta("arena_playtest_ai_variant", "handwritten"))
 
 
 func _is_forced_no_action(unit: Unit) -> bool:
