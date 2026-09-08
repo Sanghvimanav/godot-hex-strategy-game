@@ -10,11 +10,25 @@ class_name PureStateArenaSuite
 const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
 const PureStateSelfPlaySuite = preload("res://src/simulation/pure_state_self_play_suite.gd")
 
-const SUITE_VERSION := 3
+const SUITE_VERSION := 4
 const DEFAULT_SEED_BASE := 1701
 const FAST_PAIR_COUNT := 8
 const FULL_PAIR_COUNT := 32
 const ARENA_TURN_ALLOWANCE := 2
+
+const MAP_PROFILE_LEGACY := "legacy_v1"
+const MAP_PROFILE_COMPACT := "compact_v1"
+const DEFAULT_MAP_PROFILE := MAP_PROFILE_COMPACT
+const COMPACT_FAMILY_HEX_RADIUS := {
+	"mixed_force": 4,
+	"hydra_crossfire": 3,
+	"medic_hold": 3,
+	"scout_kite": 3,
+	"worker_screen": 3,
+	"baneling_flank": 3,
+	"attrition": 3,
+	"fester_siege": 4,
+}
 
 # Official benchmark seeds are explicit rather than regenerated from an editable
 # base. This makes fast/full arena results comparable across commits and over time.
@@ -104,6 +118,10 @@ static func available_presets() -> Array[String]:
 	return ["smoke", "fast", "full"]
 
 
+static func available_map_profiles() -> Array[String]:
+	return [MAP_PROFILE_LEGACY, MAP_PROFILE_COMPACT]
+
+
 static func agent_settings(
 	profile_name: String,
 	evaluator_name: String = GameplayAI.EVALUATOR_HANDWRITTEN
@@ -121,7 +139,13 @@ static func agent_settings(
 	return {}
 
 
-static func get_preset(preset_name: String, seed_base: int = DEFAULT_SEED_BASE) -> Array:
+static func get_preset(
+	preset_name: String,
+	seed_base: int = DEFAULT_SEED_BASE,
+	map_profile: String = DEFAULT_MAP_PROFILE
+) -> Array:
+	if map_profile not in available_map_profiles():
+		return []
 	var scenario_seeds: Array = []
 	match preset_name:
 		"smoke":
@@ -138,11 +162,17 @@ static func get_preset(preset_name: String, seed_base: int = DEFAULT_SEED_BASE) 
 	var jobs: Array = []
 	for scenario_seed_variant in scenario_seeds:
 		var scenario_seed := int(scenario_seed_variant)
-		jobs.append_array(_make_pair_jobs(scenario_seed, preset_name))
+		jobs.append_array(_make_pair_jobs(scenario_seed, preset_name, map_profile))
 	return jobs
 
 
-static func build_generated_state(scenario_seed: int, preset_name: String = "fast") -> Dictionary:
+static func build_generated_state(
+	scenario_seed: int,
+	preset_name: String = "fast",
+	map_profile: String = DEFAULT_MAP_PROFILE
+) -> Dictionary:
+	if map_profile not in available_map_profiles():
+		return {}
 	var rng := RandomNumberGenerator.new()
 	rng.seed = scenario_seed
 	# Family choice is stratified by seed residue instead of sampled with
@@ -155,6 +185,7 @@ static func build_generated_state(scenario_seed: int, preset_name: String = "fas
 	var rotation_steps := rng.randi_range(0, 5)
 	var variation_seed := int(rng.randi())
 	var state := PureStateSelfPlaySuite.build_state(family)
+	_apply_map_profile(state, family, map_profile)
 	state = PureStateSelfPlaySuite.vary_state(state, variation_seed)
 
 	# Full runs spend their extra budget on scenario coverage first, not wider
@@ -173,12 +204,25 @@ static func build_generated_state(scenario_seed: int, preset_name: String = "fas
 		"rotation_steps": rotation_steps,
 		"variation_seed": variation_seed,
 		"variation_passes": variation_passes,
+		"map_profile": map_profile,
+		"hex_radius": int(state.get("hex_radius", 0)),
 	}
 	return state
 
 
-static func _make_pair_jobs(scenario_seed: int, preset_name: String) -> Array:
-	var state := build_generated_state(scenario_seed, preset_name)
+static func _apply_map_profile(state: Dictionary, family: String, map_profile: String) -> void:
+	if map_profile == MAP_PROFILE_LEGACY:
+		return
+	if map_profile == MAP_PROFILE_COMPACT:
+		state["hex_radius"] = int(
+			COMPACT_FAMILY_HEX_RADIUS.get(family, int(state.get("hex_radius", 5)))
+		)
+
+
+static func _make_pair_jobs(scenario_seed: int, preset_name: String, map_profile: String) -> Array:
+	var state := build_generated_state(scenario_seed, preset_name, map_profile)
+	if state.is_empty():
+		return []
 	var metadata: Dictionary = state.get("arena_metadata", {})
 	var family := str(metadata.get("base_scenario_id", ""))
 	# Generated variants can move objectives/fights far enough that the original
@@ -209,6 +253,8 @@ static func _make_job(
 		"rotation_steps": int(metadata.get("rotation_steps", 0)),
 		"variation_seed": int(metadata.get("variation_seed", 0)),
 		"variation_passes": int(metadata.get("variation_passes", 1)),
+		"map_profile": str(metadata.get("map_profile", MAP_PROFILE_LEGACY)),
+		"hex_radius": int(metadata.get("hex_radius", state.get("hex_radius", 0))),
 		"challenger_group": challenger_group,
 		"champion_group": champion_group,
 		"max_turns": max_turns,

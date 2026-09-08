@@ -8,6 +8,8 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
+PASSIVE_ACTION_KEYS = {"reload", "rest", "rest_no_energy"}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -19,6 +21,32 @@ def parse_args() -> argparse.Namespace:
         help="Reproducible checkpoint provenance such as artifact:123 or run:456/file.pt",
     )
     return parser.parse_args()
+
+
+def _new_action_counter() -> dict:
+    return {"actions": 0, "passive_actions": 0, "action_keys": Counter()}
+
+
+def _record_actions(counter: dict, actions: list) -> None:
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        key = str(action.get("action_key", action.get("type", "unknown")))
+        counter["actions"] += 1
+        counter["action_keys"][key] += 1
+        if key in PASSIVE_ACTION_KEYS:
+            counter["passive_actions"] += 1
+
+
+def _freeze_action_counter(counter: dict) -> dict:
+    actions = int(counter["actions"])
+    passive = int(counter["passive_actions"])
+    return {
+        "actions": actions,
+        "passive_actions": passive,
+        "passive_rate": passive / actions if actions else 0.0,
+        "action_keys": dict(counter["action_keys"]),
+    }
 
 
 def main() -> int:
@@ -36,6 +64,7 @@ def main() -> int:
         "preset",
         "seed_base",
         "rules_version",
+        "map_profile",
         "champion_profile",
         "challenger_profile",
         "champion_evaluator",
@@ -70,6 +99,7 @@ def main() -> int:
             seen_game_ids.add(game_id)
             games.append(game)
     games.sort(key=lambda row: row["game_id"])
+    game_by_id = {game["game_id"]: game for game in games}
 
     expected_games = int(first["preset_games"])
     if len(games) != expected_games:
@@ -142,6 +172,69 @@ def main() -> int:
             pair_counts["tie"] += 1
             pair_family_counts[family]["tie"] += 1
 
+    # Decision-level action diagnostics use submitted actions, not execution
+    # summaries, so simultaneous conflicts/cancellations do not distort what the
+    # evaluator actually chose.
+    traces = []
+    for trace_path in sorted(root.glob("**/traces.jsonl")):
+        for raw in trace_path.read_text().splitlines():
+            if raw.strip():
+                traces.append(json.loads(raw))
+    trace_ids = {str(trace.get("game_id", "")) for trace in traces}
+    if trace_ids != set(game_by_id):
+        missing = sorted(set(game_by_id) - trace_ids)
+        extra = sorted(trace_ids - set(game_by_id))
+        raise SystemExit(f"Arena trace coverage mismatch: missing={missing}, extra={extra}")
+
+    overall_action_counts = {
+        "challenger": _new_action_counter(),
+        "champion": _new_action_counter(),
+    }
+    family_action_counts = defaultdict(
+        lambda: {"challenger": _new_action_counter(), "champion": _new_action_counter()}
+    )
+    faction_action_counts = defaultdict(
+        lambda: {"challenger": _new_action_counter(), "champion": _new_action_counter()}
+    )
+    for trace in traces:
+        game_id = str(trace.get("game_id", ""))
+        game = game_by_id[game_id]
+        family = str(game.get("base_scenario_id", "unknown"))
+        agent_groups = {
+            "challenger": str(game.get("challenger_group", "")),
+            "champion": str(game.get("champion_group", "")),
+        }
+        for turn in trace.get("history", []):
+            if not isinstance(turn, dict):
+                continue
+            for agent, group in agent_groups.items():
+                actions = turn.get(f"{group}_actions", [])
+                if not isinstance(actions, list):
+                    continue
+                _record_actions(overall_action_counts[agent], actions)
+                _record_actions(family_action_counts[family][agent], actions)
+                _record_actions(faction_action_counts[group][agent], actions)
+
+    passivity = {
+        "passive_action_keys": sorted(PASSIVE_ACTION_KEYS),
+        "challenger": _freeze_action_counter(overall_action_counts["challenger"]),
+        "champion": _freeze_action_counter(overall_action_counts["champion"]),
+        "by_family": {
+            family: {
+                agent: _freeze_action_counter(counters[agent])
+                for agent in ("challenger", "champion")
+            }
+            for family, counters in sorted(family_action_counts.items())
+        },
+        "by_faction": {
+            faction: {
+                agent: _freeze_action_counter(counters[agent])
+                for agent in ("challenger", "champion")
+            }
+            for faction, counters in sorted(faction_action_counts.items())
+        },
+    }
+
     def search_totals(agent_key: str) -> dict:
         elapsed = 0.0
         decisions = 0
@@ -175,6 +268,7 @@ def main() -> int:
         "preset": first["preset"],
         "seed_base": first["seed_base"],
         "rules_version": first["rules_version"],
+        "map_profile": first.get("map_profile", "legacy_v1"),
         "checkpoint_source": args.checkpoint_source,
         "champion_profile": first["champion_profile"],
         "challenger_profile": first["challenger_profile"],
@@ -196,6 +290,7 @@ def main() -> int:
             key: dict(value) for key, value in challenger_faction_counts.items()
         },
         "winner_faction_counts": dict(winner_faction_counts),
+        "passivity": passivity,
         "scored_pairs": scored_pairs,
         "termination_counts": dict(termination_counts),
         "decisive_games": decisive,
@@ -238,12 +333,38 @@ def main() -> int:
             f"{row['draw']} | {row['unresolved']} |"
         )
 
+    passivity_lines = [
+        "| Agent | Passive actions | Unit actions | Passive rate |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for agent in ("challenger", "champion"):
+        row = passivity[agent]
+        passivity_lines.append(
+            f"| {agent.capitalize()} | {row['passive_actions']} | {row['actions']} | {row['passive_rate']:.1%} |"
+        )
+
+    passivity_family_lines = [
+        "| Family | Challenger passive | Champion passive |",
+        "| --- | ---: | ---: |",
+    ]
+    for family in sorted(passivity["by_family"]):
+        row = passivity["by_family"][family]
+        challenger_row = row["challenger"]
+        champion_row = row["champion"]
+        passivity_family_lines.append(
+            f"| {family} | {challenger_row['passive_actions']}/{challenger_row['actions']} "
+            f"({challenger_row['passive_rate']:.1%}) | "
+            f"{champion_row['passive_actions']}/{champion_row['actions']} "
+            f"({champion_row['passive_rate']:.1%}) |"
+        )
+
     checkpoint_line = args.checkpoint_source or "not recorded"
     summary = f"""## Seeded AI arena
 
 | Metric | Result |
 | --- | ---: |
 | Preset | {first['preset']} |
+| Map profile | {first.get('map_profile', 'legacy_v1')} |
 | Generated pairs | {len(pairs)} |
 | Games | {len(games)} |
 | Challenger wins | {counts['challenger']} |
@@ -276,6 +397,16 @@ def main() -> int:
 ### Neural results by faction
 
 {chr(10).join(faction_lines)}
+
+### Passivity diagnostics
+
+Passive actions are `{', '.join(sorted(PASSIVE_ACTION_KEYS))}`. Rates use submitted unit actions, before simultaneous resolution.
+
+{chr(10).join(passivity_lines)}
+
+#### Passivity by scenario family
+
+{chr(10).join(passivity_family_lines)}
 """
     (out / "summary.md").write_text(summary)
     print(summary)

@@ -22,6 +22,7 @@ func _ready() -> void:
 func _run_arena() -> void:
 	var args := _parse_cmdline_kv()
 	var preset := str(args.get("preset", "fast"))
+	var map_profile := str(args.get("map-profile", PureStateArenaSuite.DEFAULT_MAP_PROFILE))
 	var champion_profile := str(args.get("champion-profile", "fast"))
 	var challenger_profile := str(args.get("challenger-profile", "fast"))
 	var champion_evaluator := str(args.get("champion-evaluator", "handwritten"))
@@ -34,6 +35,10 @@ func _run_arena() -> void:
 
 	if shard_count <= 0 or shard_index < 0 or shard_index >= shard_count:
 		push_error("Invalid arena shard %d/%d" % [shard_index, shard_count])
+		get_tree().quit(1)
+		return
+	if map_profile not in PureStateArenaSuite.available_map_profiles():
+		push_error("Unknown arena map profile '%s'. Available: %s" % [map_profile, str(PureStateArenaSuite.available_map_profiles())])
 		get_tree().quit(1)
 		return
 	var champion_settings := PureStateArenaSuite.agent_settings(champion_profile, champion_evaluator)
@@ -50,7 +55,7 @@ func _run_arena() -> void:
 		get_tree().quit(1)
 		return
 
-	var all_jobs := PureStateArenaSuite.get_preset(preset, seed_base)
+	var all_jobs := PureStateArenaSuite.get_preset(preset, seed_base, map_profile)
 	if all_jobs.is_empty():
 		push_error("Unknown or empty arena preset '%s'. Available: %s" % [preset, str(PureStateArenaSuite.available_presets())])
 		get_tree().quit(1)
@@ -64,7 +69,7 @@ func _run_arena() -> void:
 		shard_index,
 		shard_count
 	)
-	print("[arena] shard=%d/%d selected=%d/%d games by balanced pair order" % [shard_index, shard_count, jobs.size(), all_jobs.size()])
+	print("[arena] map_profile=%s shard=%d/%d selected=%d/%d games by balanced pair order" % [map_profile, shard_index, shard_count, jobs.size(), all_jobs.size()])
 
 	var abs_out := ProjectSettings.globalize_path(out_dir)
 	if DirAccess.make_dir_recursive_absolute(abs_out) != OK:
@@ -131,6 +136,8 @@ func _run_arena() -> void:
 			"rotation_steps": int(job.get("rotation_steps", 0)),
 			"variation_seed": int(job.get("variation_seed", 0)),
 			"variation_passes": int(job.get("variation_passes", 1)),
+			"map_profile": str(job.get("map_profile", map_profile)),
+			"hex_radius": int(job.get("hex_radius", 0)),
 			"challenger_group": challenger_group,
 			"champion_group": champion_group,
 			"max_turns": int(job.get("max_turns", 0)),
@@ -153,9 +160,10 @@ func _run_arena() -> void:
 			"winner_agent": winner_agent,
 			"history": (result.get("history", []) as Array).duplicate(true),
 		})
-		print("[arena] %s family=%s seed=%d challenger=%s result=%s/%s turns=%d search_ms=%.1f/%.1f sims=%d/%d" % [
+		print("[arena] %s family=%s radius=%d seed=%d challenger=%s result=%s/%s turns=%d search_ms=%.1f/%.1f sims=%d/%d" % [
 			str(job.get("game_id", "")),
 			str(job.get("base_scenario_id", "")),
+			int(job.get("hex_radius", 0)),
 			int(job.get("scenario_seed", 0)),
 			challenger_group,
 			winner_agent,
@@ -176,6 +184,7 @@ func _run_arena() -> void:
 		"preset": preset,
 		"seed_base": seed_base,
 		"rules_version": rules_version,
+		"map_profile": map_profile,
 		"champion_profile": champion_profile,
 		"challenger_profile": challenger_profile,
 		"champion_evaluator": champion_evaluator,
@@ -204,7 +213,8 @@ func _run_arena() -> void:
 
 	var write_ok := _write_json(out_dir.path_join("manifest.json"), manifest)
 	write_ok = _write_jsonl(out_dir.path_join("traces.jsonl"), traces) and write_ok
-	print("[arena] summary games=%d pairs=%d counts=%s decisive_win_rate=%.1f%% wall_ms=%.0f" % [
+	print("[arena] summary map_profile=%s games=%d pairs=%d counts=%s decisive_win_rate=%.1f%% wall_ms=%.0f" % [
+		map_profile,
 		game_summaries.size(),
 		game_summaries.size() / 2,
 		str(counts),
