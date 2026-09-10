@@ -106,7 +106,10 @@ const AGENT_PROFILES := {
 	# Plan-pair count dominates one-turn search cost. Keep the per-PR tier at 2x2
 	# while preserving the same action enumeration used by existing self-play.
 	"fast": {"max_actions_per_unit": 8, "own_max_plans": 2, "opponent_max_plans": 2},
-	"balanced": {"max_actions_per_unit": 8, "own_max_plans": 4, "opponent_max_plans": 4},
+	# Balanced keeps four own candidates but grants opponent recall one extra slot.
+	# Five responses activates the selector's second commit representative while
+	# retaining hold, reposition, and disengage coverage.
+	"balanced": {"max_actions_per_unit": 8, "own_max_plans": 4, "opponent_max_plans": 5},
 	# Intermediate diagnostic profile: if 6x6 cannot justify its extra compute on
 	# the frozen arena, there is little reason to spend full-run budget on 8x8.
 	"wide": {"max_actions_per_unit": 8, "own_max_plans": 6, "opponent_max_plans": 6},

@@ -19,6 +19,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/human-playtest-benchmark.yml"
+      - "hex-strategy-game/src/simulation/pure_state_arena_suite.gd"
       - "hex-strategy-game/src/simulation/pure_state_opponent_response_search.gd"
       - "hex-strategy-game/src/simulation/pure_state_plans.gd"
       - "hex-strategy-game/src/simulation/pure_state_plan_intents.gd"
@@ -38,7 +39,7 @@ jobs:
   benchmark:
     name: Human response benchmark
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -57,7 +58,7 @@ jobs:
       - name: Run human response benchmark
         env:
           QUALITY: ${{ github.event_name == 'pull_request' && 'adversarial' || inputs.quality }}
-          MAX_DECISIONS: ${{ github.event_name == 'pull_request' && '1' || inputs.max_decisions }}
+          MAX_DECISIONS: ${{ github.event_name == 'pull_request' && '0' || inputs.max_decisions }}
         run: |
           set -euo pipefail
           cd hex-strategy-game
