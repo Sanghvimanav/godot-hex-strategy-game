@@ -14,9 +14,9 @@ on:
         default: "34152473442"
         type: string
       game_count:
-        description: Randomized full-game current-policy self-play games
+        description: Randomized full-game current-policy self-play games; must divide evenly across 60 shards
         required: true
-        default: "480"
+        default: "720"
         type: string
       replay_examples:
         description: Maximum recent-policy value examples retained for training
@@ -51,12 +51,14 @@ concurrency:
 env:
   CHECKPOINT_RUN_ID: ${{ inputs.checkpoint_run_id || '34240515308' }}
   SOURCE_EXPERIMENT_RUN_ID: ${{ inputs.source_experiment_run_id || '34152473442' }}
-  GAME_COUNT: ${{ inputs.game_count || '480' }}
+  GAME_COUNT: ${{ inputs.game_count || '720' }}
   REPLAY_EXAMPLES: ${{ inputs.replay_examples || '5000' }}
   SEARCH_PROFILE: ${{ inputs.search_profile || 'balanced' }}
   EPOCHS: ${{ inputs.epochs || '60' }}
-  SELF_PLAY_SHARDS: "20"
+  SELF_PLAY_SHARDS: "60"
   SELF_PLAY_SEED_BASE: "900001"
+  SELF_PLAY_SEED_STRIDE: "7919"
+  SELF_PLAY_EXTRA_TURNS: "4"
 
 jobs:
   self-play:
@@ -67,7 +69,7 @@ jobs:
       fail-fast: false
       max-parallel: 20
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -104,15 +106,28 @@ jobs:
       - name: Generate randomized current-policy self-play
         working-directory: hex-strategy-game
         run: |
+          set -euo pipefail
+          if (( GAME_COUNT % SELF_PLAY_SHARDS != 0 )); then
+            echo "GAME_COUNT=${GAME_COUNT} must divide evenly across SELF_PLAY_SHARDS=${SELF_PLAY_SHARDS}" >&2
+            exit 1
+          fi
+          games_per_shard=$((GAME_COUNT / SELF_PLAY_SHARDS))
+          if (( games_per_shard < 8 )); then
+            echo "Need at least 8 games per shard so every shard covers all 8 scenario families" >&2
+            exit 1
+          fi
+          shard_seed_base=$((SELF_PLAY_SEED_BASE + ${{ matrix.shard }} * games_per_shard * SELF_PLAY_SEED_STRIDE))
+          echo "shard=${{ matrix.shard }} games=${games_per_shard} seed_base=${shard_seed_base} extra_turns=${SELF_PLAY_EXTRA_TURNS}"
           godot --headless --path . res://tools/neural_self_play_dataset.tscn -- \
             --profile="${SEARCH_PROFILE}" \
             --map-profile=compact_v1 \
             --checkpoint="${GITHUB_WORKSPACE}/artifacts/checkpoint/ranked_value_model.pt" \
-            --game-count="${GAME_COUNT}" \
-            --seed-base="${SELF_PLAY_SEED_BASE}" \
+            --game-count="${games_per_shard}" \
+            --seed-base="${shard_seed_base}" \
+            --extra-turns="${SELF_PLAY_EXTRA_TURNS}" \
             --out="${GITHUB_WORKSPACE}/artifacts/self_play" \
-            --shard-index="${{ matrix.shard }}" \
-            --shard-count="${SELF_PLAY_SHARDS}"
+            --shard-index=0 \
+            --shard-count=1
       - name: Upload self-play shard
         uses: actions/upload-artifact@v4
         with:
@@ -155,21 +170,71 @@ jobs:
           pattern: neural-self-play-shard-*
           path: artifacts/self_play_shards
           merge-multiple: false
-      - name: Aggregate self-play manifests
+      - name: Validate and aggregate self-play manifests
         run: |
           python - <<'PY'
           import json
+          import os
           from collections import Counter
           from pathlib import Path
+
+          expected_shards = int(os.environ["SELF_PLAY_SHARDS"])
+          expected_games = int(os.environ["GAME_COUNT"])
+          expected_families = {
+              "mixed_force",
+              "hydra_crossfire",
+              "medic_hold",
+              "scout_kite",
+              "worker_screen",
+              "baneling_flank",
+              "attrition",
+              "fester_siege",
+          }
+          if expected_games % expected_shards != 0:
+              raise SystemExit(
+                  f"GAME_COUNT={expected_games} does not divide evenly across {expected_shards} shards"
+              )
+          expected_games_per_shard = expected_games // expected_shards
+
           paths = sorted(Path("artifacts/self_play_shards").rglob("manifest.json"))
-          manifests = [json.loads(path.read_text()) for path in paths]
-          if not manifests:
-              raise SystemExit("No self-play manifests found")
+          if len(paths) != expected_shards:
+              raise SystemExit(
+                  f"Expected {expected_shards} completed self-play shards, found {len(paths)}"
+              )
+
+          manifests = []
           outcomes = Counter()
-          families = Counter()
-          for manifest in manifests:
+          labeled_families = Counter()
+          requested_families = Counter()
+          for path in paths:
+              manifest = json.loads(path.read_text())
+              manifests.append(manifest)
+              requested = int(manifest.get("games_requested", 0))
+              if requested != expected_games_per_shard:
+                  raise SystemExit(
+                      f"{path.parent.name}: expected {expected_games_per_shard} games, found {requested}"
+                  )
+              games_path = path.with_name("games.jsonl")
+              if not games_path.exists():
+                  raise SystemExit(f"Missing games.jsonl next to {path}")
+              shard_requested_families = Counter()
+              for line in games_path.read_text().splitlines():
+                  if not line.strip():
+                      continue
+                  row = json.loads(line)
+                  family = str(row.get("base_scenario_id", ""))
+                  if family:
+                      shard_requested_families[family] += 1
+                      requested_families[family] += 1
+              missing = expected_families - set(shard_requested_families)
+              if missing:
+                  raise SystemExit(
+                      f"{path.parent.name}: missing scenario families {sorted(missing)}; "
+                      f"coverage={dict(shard_requested_families)}"
+                  )
               outcomes.update({k: int(v) for k, v in manifest.get("outcomes", {}).items()})
-              families.update({k: int(v) for k, v in manifest.get("family_counts", {}).items()})
+              labeled_families.update({k: int(v) for k, v in manifest.get("family_counts", {}).items()})
+
           merged = {
               "shards": len(manifests),
               "games_requested": sum(int(m.get("games_requested", 0)) for m in manifests),
@@ -178,11 +243,20 @@ jobs:
               "games_failed": sum(int(m.get("games_failed", 0)) for m in manifests),
               "examples_generated": sum(int(m.get("example_count", 0)) for m in manifests),
               "outcomes": dict(outcomes),
-              "family_counts": dict(families),
+              "family_requested_counts": dict(requested_families),
+              "family_counts": dict(labeled_families),
+              "all_families_present_per_shard": True,
               "profile": manifests[0].get("profile", ""),
               "map_profile": manifests[0].get("map_profile", ""),
-              "seed_base": manifests[0].get("seed_base", 0),
+              "extra_turns": manifests[0].get("extra_turns", 0),
           }
+          if merged["games_requested"] != expected_games:
+              raise SystemExit(
+                  f"Expected {expected_games} requested games, aggregated {merged['games_requested']}"
+              )
+          if merged["games_failed"] != 0:
+              raise SystemExit(f"Self-play generation had {merged['games_failed']} failed games")
+
           Path("artifacts/self_play_manifest.json").write_text(json.dumps(merged, indent=2) + "\n")
           print(json.dumps(merged, indent=2))
           PY
@@ -259,6 +333,7 @@ jobs:
 
           | Metric | Result |
           | --- | ---: |
+          | Self-play shards | {sp['shards']} |
           | Self-play games requested | {sp['games_requested']} |
           | Decisive/labeled self-play games | {sp['games_labeled']} |
           | Unresolved self-play games | {sp['games_unlabeled']} |
@@ -280,7 +355,9 @@ jobs:
           **Current checkpoint run:** {os.environ['CHECKPOINT_RUN_ID']}
           **Frozen counterfactual source:** {os.environ['SOURCE_EXPERIMENT_RUN_ID']}
           **Self-play search profile:** `{os.environ['SEARCH_PROFILE']}`
-          **Self-play family counts:** `{sp['family_counts']}`
+          **Self-play extra turns:** `{sp['extra_turns']}`
+          **Attempted family counts:** `{sp['family_requested_counts']}`
+          **Labeled family counts:** `{sp['family_counts']}`
           """
           Path("artifacts/training_summary.md").write_text(summary)
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as handle:
