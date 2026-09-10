@@ -14,6 +14,7 @@ const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural
 const MANIFEST_SCHEMA_VERSION := 1
 const DEFAULT_GAME_COUNT := 480
 const DEFAULT_SEED_BASE := 900001
+const DEFAULT_EXTRA_TURNS := 0
 const SEED_STRIDE := 7919
 
 
@@ -28,6 +29,7 @@ func _run() -> void:
 	var out_dir: String = str(args.get("out", "user://neural_self_play"))
 	var game_count: int = int(args.get("game-count", DEFAULT_GAME_COUNT))
 	var seed_base: int = int(args.get("seed-base", DEFAULT_SEED_BASE))
+	var extra_turns: int = int(args.get("extra-turns", DEFAULT_EXTRA_TURNS))
 	var map_profile: String = str(args.get("map-profile", PureStateArenaSuite.DEFAULT_MAP_PROFILE))
 	var shard_index: int = int(args.get("shard-index", 0))
 	var shard_count: int = int(args.get("shard-count", 1))
@@ -38,6 +40,10 @@ func _run() -> void:
 		return
 	if game_count <= 0:
 		push_error("--game-count must be positive")
+		get_tree().quit(1)
+		return
+	if extra_turns < 0:
+		push_error("--extra-turns must be non-negative")
 		get_tree().quit(1)
 		return
 	if shard_count <= 0 or shard_index < 0 or shard_index >= shard_count:
@@ -91,7 +97,7 @@ func _run() -> void:
 		var metadata_variant: Variant = state.get("arena_metadata", {})
 		var metadata: Dictionary = metadata_variant as Dictionary if metadata_variant is Dictionary else {}
 		var family := str(metadata.get("base_scenario_id", ""))
-		var max_turns := int(PureStateArenaSuite.FAMILY_MAX_TURNS.get(family, 10)) + PureStateArenaSuite.ARENA_TURN_ALLOWANCE
+		var max_turns := int(PureStateArenaSuite.FAMILY_MAX_TURNS.get(family, 10)) + PureStateArenaSuite.ARENA_TURN_ALLOWANCE + extra_turns
 		var game_id := "selfplay-%s-s%d" % [family, scenario_seed]
 
 		var result: Dictionary = PureStateGameRollout.play_game_with_settings(
@@ -117,6 +123,7 @@ func _run() -> void:
 			"generation_game_index": game_index,
 			"search_profile": profile,
 			"max_turns": max_turns,
+			"self_play_extra_turns": extra_turns,
 		}
 		var built: Dictionary = PureStateTrainingData.build_examples_from_rollout(
 			result,
@@ -163,6 +170,7 @@ func _run() -> void:
 			"winner": str(result.get("winner", "")),
 			"turns_played": int(result.get("turns_played", 0)),
 			"example_count": int(built.get("example_count", 0)),
+			"max_turns": max_turns,
 		})
 
 	var manifest := {
@@ -172,6 +180,7 @@ func _run() -> void:
 		"map_profile": map_profile,
 		"seed_base": seed_base,
 		"seed_stride": SEED_STRIDE,
+		"extra_turns": extra_turns,
 		"game_count_total": game_count,
 		"shard_index": shard_index,
 		"shard_count": shard_count,
@@ -188,7 +197,7 @@ func _run() -> void:
 	var ok := _write_text(abs_out.path_join("examples.jsonl"), _to_jsonl(examples))
 	ok = _write_text(abs_out.path_join("games.jsonl"), _to_jsonl(games)) and ok
 	ok = _write_text(abs_out.path_join("manifest.json"), JSON.stringify(manifest, "  ") + "\n") and ok
-	print("[self-play] shard=%d/%d requested=%d labeled=%d unresolved=%d failed=%d examples=%d" % [
+	print("[self-play] shard=%d/%d requested=%d labeled=%d unresolved=%d failed=%d examples=%d extra_turns=%d" % [
 		shard_index,
 		shard_count,
 		requested_on_shard,
@@ -196,6 +205,7 @@ func _run() -> void:
 		unlabeled_games,
 		failed_games,
 		examples.size(),
+		extra_turns,
 	])
 	PureStateNeuralEvaluator.shutdown()
 	get_tree().quit(0 if ok and failed_games == 0 else 1)
