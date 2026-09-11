@@ -81,13 +81,19 @@ def build_replay(
     eligible_history = [row for row in history_examples if not _is_frozen_arena_value(row)]
     excluded_history = len(history_examples) - len(eligible_history)
 
-    new_selected = _sample(new_examples, min(max_examples, len(new_examples)), seed)
-    remaining = max(0, max_examples - len(new_selected))
-    history_selected = _sample(eligible_history, remaining, seed + 1)
+    unbounded = max_examples <= 0
+    if unbounded:
+        new_selected = list(new_examples)
+        history_selected = list(eligible_history)
+    else:
+        new_selected = _sample(new_examples, min(max_examples, len(new_examples)), seed)
+        remaining = max(0, max_examples - len(new_selected))
+        history_selected = _sample(eligible_history, remaining, seed + 1)
     combined = new_selected + history_selected
 
     manifest = {
-        "max_examples": max_examples,
+        "max_examples": None if unbounded else max_examples,
+        "unbounded": unbounded,
         "seed": seed,
         "new_examples_seen": len(new_examples),
         "new_examples_selected": len(new_selected),
@@ -160,12 +166,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Build a bounded recent-policy replay buffer and exclude frozen Arena supervision."
+        description="Build a recent-policy replay buffer and exclude frozen Arena supervision."
     )
     parser.add_argument("--new-root", required=True)
     parser.add_argument("--history-examples", default=None)
     parser.add_argument("--output-examples", required=True)
-    parser.add_argument("--max-examples", type=int, default=5000)
+    parser.add_argument(
+        "--max-examples",
+        type=int,
+        default=5000,
+        help="Maximum value examples to retain; use 0 or a negative value to keep all eligible examples.",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--history-ranking-pairs", default=None)
     parser.add_argument("--output-ranking-pairs", default=None)
