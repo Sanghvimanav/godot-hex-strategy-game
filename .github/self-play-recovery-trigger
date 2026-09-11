@@ -1,3 +1,4 @@
 recover_run=34556698980
-missing_shard=26
-retry=1
+missing_shards=26,46,54
+uncapped=1
+retry=2
