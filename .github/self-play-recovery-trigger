@@ -1,4 +1,5 @@
 recover_run=34556698980
 missing_shards=26,46,54
 uncapped=1
-retry=2
+policy_head=1
+retry=3
