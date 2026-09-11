@@ -1,1 +1,2 @@
 run randomized current-policy self-play scale experiment
+rerun after shard balancing and timeout fixes
