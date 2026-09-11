@@ -23,7 +23,7 @@ class ResidualBlock(nn.Module):
 
 
 class HexValueNet(nn.Module):
-    """Small residual CNN producing a perspective-relative value in [-1, 1]."""
+    """Residual hex-state encoder with value and optional search-ranking heads."""
 
     def __init__(
         self,
@@ -31,6 +31,7 @@ class HexValueNet(nn.Module):
         global_features: int = GLOBAL_FEATURES,
         hidden_channels: int = 32,
         residual_blocks: int = 2,
+        policy_head: bool = False,
     ):
         super().__init__()
         self.stem = nn.Sequential(
@@ -39,14 +40,27 @@ class HexValueNet(nn.Module):
             nn.ReLU(inplace=True),
         )
         self.body = nn.Sequential(*(ResidualBlock(hidden_channels) for _ in range(residual_blocks)))
+        feature_size = hidden_channels + global_features
         self.head = nn.Sequential(
-            nn.Linear(hidden_channels + global_features, 64),
+            nn.Linear(feature_size, 64),
             nn.ReLU(inplace=True),
             nn.Linear(64, 1),
             nn.Tanh(),
         )
+        self.policy_head = (
+            nn.Sequential(
+                nn.Linear(feature_size, 64),
+                nn.ReLU(inplace=True),
+                nn.Linear(64, 1),
+                nn.Tanh(),
+            )
+            if policy_head
+            else None
+        )
 
-    def forward(self, board: torch.Tensor, global_features: torch.Tensor) -> torch.Tensor:
+    def _features(
+        self, board: torch.Tensor, global_features: torch.Tensor
+    ) -> torch.Tensor:
         if board.ndim != 4:
             raise ValueError("board must have shape [batch, channels, height, width]")
         if global_features.ndim != 2:
@@ -56,4 +70,16 @@ class HexValueNet(nn.Module):
         masked_sum = (x * valid_mask).sum(dim=(2, 3))
         valid_cells = valid_mask.sum(dim=(2, 3)).clamp_min(1.0)
         pooled = masked_sum / valid_cells
-        return self.head(torch.cat([pooled, global_features], dim=1)).squeeze(1)
+        return torch.cat([pooled, global_features], dim=1)
+
+    def forward(self, board: torch.Tensor, global_features: torch.Tensor) -> torch.Tensor:
+        """Predict perspective-relative terminal value in [-1, 1]."""
+        return self.head(self._features(board, global_features)).squeeze(1)
+
+    def policy_score(
+        self, board: torch.Tensor, global_features: torch.Tensor
+    ) -> torch.Tensor:
+        """Score sibling candidate outcomes for search ordering/action preference."""
+        if self.policy_head is None:
+            raise RuntimeError("policy head is not enabled")
+        return self.policy_head(self._features(board, global_features)).squeeze(1)
