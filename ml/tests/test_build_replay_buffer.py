@@ -24,6 +24,7 @@ class BuildReplayBufferTests(unittest.TestCase):
         self.assertTrue(all(row["source"]["data_policy"] == "current_self_play" for row in rows))
         self.assertEqual(5, manifest["new_examples_selected"])
         self.assertEqual(0, manifest["history_examples_selected"])
+        self.assertFalse(manifest["unbounded"])
 
     def test_fills_from_history_after_removing_frozen_arena_rows(self) -> None:
         new = [example("current_self_play", "new")]
@@ -36,6 +37,21 @@ class BuildReplayBufferTests(unittest.TestCase):
         self.assertEqual(3, len(rows))
         self.assertEqual(1, manifest["history_examples_excluded_frozen_arena"])
         self.assertFalse(any(row["source"].get("arena_preset") for row in rows))
+
+    def test_unbounded_replay_keeps_all_fresh_and_eligible_history(self) -> None:
+        new = [example("current_self_play", f"new-{i}") for i in range(3)]
+        history = [
+            example("handwritten", "keep-a"),
+            example("neural_vs_handwritten", "arena", arena_preset="fast"),
+            example("handwritten", "keep-b"),
+        ]
+        rows, manifest = build_replay(new, history, max_examples=0, seed=0)
+        self.assertEqual(5, len(rows))
+        self.assertEqual(3, manifest["new_examples_selected"])
+        self.assertEqual(2, manifest["history_examples_selected"])
+        self.assertEqual(1, manifest["history_examples_excluded_frozen_arena"])
+        self.assertTrue(manifest["unbounded"])
+        self.assertIsNone(manifest["max_examples"])
 
     def test_ranking_replay_drops_arena_and_tactical_pairs(self) -> None:
         pairs = [
