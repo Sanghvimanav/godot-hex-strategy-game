@@ -18,11 +18,6 @@ on:
         required: true
         default: "34152473442"
         type: string
-      replay_examples:
-        description: Maximum recent-policy value examples retained for training
-        required: true
-        default: "5000"
-        type: string
       search_profile:
         description: Search budget used during frozen Arena
         required: true
@@ -52,18 +47,17 @@ env:
   SOURCE_SELF_PLAY_RUN_ID: ${{ inputs.source_self_play_run_id || '34556698980' }}
   CHECKPOINT_RUN_ID: ${{ inputs.checkpoint_run_id || '34240515308' }}
   SOURCE_EXPERIMENT_RUN_ID: ${{ inputs.source_experiment_run_id || '34152473442' }}
-  REPLAY_EXAMPLES: ${{ inputs.replay_examples || '5000' }}
   SEARCH_PROFILE: ${{ inputs.search_profile || 'balanced' }}
   EPOCHS: ${{ inputs.epochs || '60' }}
   SELF_PLAY_SHARDS: "60"
-  EXPECTED_MISSING_SHARD: "26"
+  EXPECTED_MISSING_SHARDS: "26,46,54"
   GAMES_PER_SHARD: "12"
 
 jobs:
   retrain:
     name: Aggregate completed shards and retrain
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -105,9 +99,13 @@ jobs:
           from pathlib import Path
 
           total_shards = int(os.environ["SELF_PLAY_SHARDS"])
-          missing_shard = int(os.environ["EXPECTED_MISSING_SHARD"])
+          missing_shards = {
+              int(value)
+              for value in os.environ["EXPECTED_MISSING_SHARDS"].split(",")
+              if value.strip()
+          }
           games_per_shard = int(os.environ["GAMES_PER_SHARD"])
-          expected_ids = set(range(total_shards)) - {missing_shard}
+          expected_ids = set(range(total_shards)) - missing_shards
           expected_families = {
               "mixed_force",
               "hydra_crossfire",
@@ -176,7 +174,7 @@ jobs:
               "source_self_play_run_id": os.environ["SOURCE_SELF_PLAY_RUN_ID"],
               "shards": len(manifests),
               "expected_total_shards": total_shards,
-              "missing_shards": [missing_shard],
+              "missing_shards": sorted(missing_shards),
               "games_requested": sum(int(m.get("games_requested", 0)) for m in manifests),
               "games_labeled": sum(int(m.get("games_labeled", 0)) for m in manifests),
               "games_unlabeled": sum(int(m.get("games_unlabeled", 0)) for m in manifests),
@@ -201,7 +199,7 @@ jobs:
           Path("artifacts/self_play_manifest.json").write_text(json.dumps(merged, indent=2) + "\n")
           print(json.dumps(merged, indent=2))
           PY
-      - name: Build bounded recent-policy replay
+      - name: Build uncapped eligible replay
         run: |
           set -euo pipefail
           history_examples="$(find artifacts/source_candidate -type f -name combined_examples.jsonl -print -quit)"
@@ -215,7 +213,7 @@ jobs:
             --new-root artifacts/self_play_shards \
             --history-examples "$history_examples" \
             --output-examples artifacts/combined/combined_examples.jsonl \
-            --max-examples "${REPLAY_EXAMPLES}" \
+            --max-examples 0 \
             --seed 0 \
             --history-ranking-pairs "$history_pairs" \
             --output-ranking-pairs artifacts/combined/combined_ranking_pairs.jsonl \
@@ -223,7 +221,7 @@ jobs:
             --manifest artifacts/combined/replay_manifest.json
       - name: Run value-model tests
         run: python -m unittest discover -s ml/tests -v
-      - name: Train fresh ranked model on recent replay
+      - name: Train fresh ranked model on full eligible replay
         run: |
           set -euo pipefail
           python -m ml.value_model.train_ranked \
@@ -287,6 +285,7 @@ jobs:
               f"| Fresh examples retained | {value_replay['new_examples_selected']} |",
               f"| Historical examples retained | {value_replay['history_examples_selected']} |",
               f"| Frozen-Arena historical examples removed | {value_replay['history_examples_excluded_frozen_arena']} |",
+              f"| Replay capped | {not bool(value_replay.get('unbounded'))} |",
               f"| Ranking pairs retained | {rank_replay['output_pairs']} |",
               f"| Frozen-Arena/tactical ranking pairs removed | {rank_replay['history_pairs_excluded_frozen_arena']} |",
               f"| Conflicting identical-input groups | {metrics['all_conflicting_input_groups']} |",
