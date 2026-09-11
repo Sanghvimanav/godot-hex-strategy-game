@@ -271,38 +271,40 @@ jobs:
           neural = cf["evaluators"]["neural_value_model"]
           value_replay = replay["value_replay"]
           rank_replay = replay["ranking_replay"]
-          summary = f"""## Recovered randomized current-policy self-play
-
-| Metric | Result |
-| --- | ---: |
-| Source self-play run | {sp['source_self_play_run_id']} |
-| Self-play shards used | {sp['shards']} / {sp['expected_total_shards']} |
-| Missing shards | {sp['missing_shards']} |
-| Self-play games requested | {sp['games_requested']} |
-| Decisive/labeled self-play games | {sp['games_labeled']} |
-| Unresolved self-play games | {sp['games_unlabeled']} |
-| Fresh examples generated | {sp['examples_generated']} |
-| Replay examples retained | {value_replay['output_examples']} |
-| Fresh examples retained | {value_replay['new_examples_selected']} |
-| Historical examples retained | {value_replay['history_examples_selected']} |
-| Frozen-Arena historical examples removed | {value_replay['history_examples_excluded_frozen_arena']} |
-| Ranking pairs retained | {rank_replay['output_pairs']} |
-| Frozen-Arena/tactical ranking pairs removed | {rank_replay['history_pairs_excluded_frozen_arena']} |
-| Conflicting identical-input groups | {metrics['all_conflicting_input_groups']} |
-| Conflicting identical-input examples | {metrics['all_conflicting_input_examples']} |
-| Held-out nonterminal winner accuracy | {float(metrics['neural_eval_sign_accuracy_nonterminal']):.1%} |
-| Held-out sibling ranking accuracy | {float(metrics['eval_ranking_accuracy']):.1%} |
-| Counterfactual candidate ranking | {float(neural['candidate_ranking_accuracy']):.1%} |
-| Counterfactual mean regret | {float(neural['top_plan_mean_regret']):.3f} |
-| Counterfactual optimal-choice rate | {float(neural['top_plan_optimal_rate']):.1%} |
-
-**Current checkpoint run:** {os.environ['CHECKPOINT_RUN_ID']}  
-**Frozen counterfactual source:** {os.environ['SOURCE_EXPERIMENT_RUN_ID']}  
-**Arena search profile:** `{os.environ['SEARCH_PROFILE']}`  
-**Self-play extra turns:** `{sp['extra_turns']}`  
-**Attempted family counts:** `{sp['family_requested_counts']}`  
-**Labeled family counts:** `{sp['family_counts']}`
-"""
+          summary_lines = [
+              "## Recovered randomized current-policy self-play",
+              "",
+              "| Metric | Result |",
+              "| --- | ---: |",
+              f"| Source self-play run | {sp['source_self_play_run_id']} |",
+              f"| Self-play shards used | {sp['shards']} / {sp['expected_total_shards']} |",
+              f"| Missing shards | {sp['missing_shards']} |",
+              f"| Self-play games requested | {sp['games_requested']} |",
+              f"| Decisive/labeled self-play games | {sp['games_labeled']} |",
+              f"| Unresolved self-play games | {sp['games_unlabeled']} |",
+              f"| Fresh examples generated | {sp['examples_generated']} |",
+              f"| Replay examples retained | {value_replay['output_examples']} |",
+              f"| Fresh examples retained | {value_replay['new_examples_selected']} |",
+              f"| Historical examples retained | {value_replay['history_examples_selected']} |",
+              f"| Frozen-Arena historical examples removed | {value_replay['history_examples_excluded_frozen_arena']} |",
+              f"| Ranking pairs retained | {rank_replay['output_pairs']} |",
+              f"| Frozen-Arena/tactical ranking pairs removed | {rank_replay['history_pairs_excluded_frozen_arena']} |",
+              f"| Conflicting identical-input groups | {metrics['all_conflicting_input_groups']} |",
+              f"| Conflicting identical-input examples | {metrics['all_conflicting_input_examples']} |",
+              f"| Held-out nonterminal winner accuracy | {float(metrics['neural_eval_sign_accuracy_nonterminal']):.1%} |",
+              f"| Held-out sibling ranking accuracy | {float(metrics['eval_ranking_accuracy']):.1%} |",
+              f"| Counterfactual candidate ranking | {float(neural['candidate_ranking_accuracy']):.1%} |",
+              f"| Counterfactual mean regret | {float(neural['top_plan_mean_regret']):.3f} |",
+              f"| Counterfactual optimal-choice rate | {float(neural['top_plan_optimal_rate']):.1%} |",
+              "",
+              f"Current checkpoint run: {os.environ['CHECKPOINT_RUN_ID']}",
+              f"Frozen counterfactual source: {os.environ['SOURCE_EXPERIMENT_RUN_ID']}",
+              f"Arena search profile: {os.environ['SEARCH_PROFILE']}",
+              f"Self-play extra turns: {sp['extra_turns']}",
+              f"Attempted family counts: {sp['family_requested_counts']}",
+              f"Labeled family counts: {sp['family_counts']}",
+          ]
+          summary = "\n".join(summary_lines) + "\n"
           Path("artifacts/training_summary.md").write_text(summary)
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as handle:
               handle.write(summary)
