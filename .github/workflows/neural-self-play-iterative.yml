@@ -29,6 +29,11 @@ on:
         required: true
         default: "10"
         type: string
+  push:
+    branches:
+      - ai/iterative-self-play-eval
+    paths:
+      - .github/iterative-self-play-trigger
 
 permissions:
   contents: read
@@ -45,13 +50,13 @@ jobs:
     with:
       cycle_id: "1"
       parent_cycle_id: "0"
-      parent_run_id: ${{ inputs.checkpoint_run_id }}
+      parent_run_id: ${{ inputs.checkpoint_run_id || '34240515308' }}
       parent_label: iteration-2
-      source_experiment_run_id: ${{ inputs.source_experiment_run_id }}
+      source_experiment_run_id: ${{ inputs.source_experiment_run_id || '34152473442' }}
       seed_base: "900001"
-      replay_examples: ${{ inputs.replay_examples }}
-      search_profile: ${{ inputs.search_profile }}
-      epochs: ${{ inputs.epochs }}
+      replay_examples: ${{ inputs.replay_examples || '5000' }}
+      search_profile: ${{ inputs.search_profile || 'balanced' }}
+      epochs: ${{ inputs.epochs || '10' }}
     secrets: inherit
 
   cycle-2:
@@ -63,11 +68,11 @@ jobs:
       parent_cycle_id: "1"
       parent_run_id: ""
       parent_label: cycle-1
-      source_experiment_run_id: ${{ inputs.source_experiment_run_id }}
+      source_experiment_run_id: ${{ inputs.source_experiment_run_id || '34152473442' }}
       seed_base: "1900001"
-      replay_examples: ${{ inputs.replay_examples }}
-      search_profile: ${{ inputs.search_profile }}
-      epochs: ${{ inputs.epochs }}
+      replay_examples: ${{ inputs.replay_examples || '5000' }}
+      search_profile: ${{ inputs.search_profile || 'balanced' }}
+      epochs: ${{ inputs.epochs || '10' }}
     secrets: inherit
 
   cycle-3:
@@ -79,11 +84,11 @@ jobs:
       parent_cycle_id: "2"
       parent_run_id: ""
       parent_label: cycle-2
-      source_experiment_run_id: ${{ inputs.source_experiment_run_id }}
+      source_experiment_run_id: ${{ inputs.source_experiment_run_id || '34152473442' }}
       seed_base: "2900001"
-      replay_examples: ${{ inputs.replay_examples }}
-      search_profile: ${{ inputs.search_profile }}
-      epochs: ${{ inputs.epochs }}
+      replay_examples: ${{ inputs.replay_examples || '5000' }}
+      search_profile: ${{ inputs.search_profile || 'balanced' }}
+      epochs: ${{ inputs.epochs || '10' }}
     secrets: inherit
 
   cycle-4:
@@ -95,11 +100,11 @@ jobs:
       parent_cycle_id: "3"
       parent_run_id: ""
       parent_label: cycle-3
-      source_experiment_run_id: ${{ inputs.source_experiment_run_id }}
+      source_experiment_run_id: ${{ inputs.source_experiment_run_id || '34152473442' }}
       seed_base: "3900001"
-      replay_examples: ${{ inputs.replay_examples }}
-      search_profile: ${{ inputs.search_profile }}
-      epochs: ${{ inputs.epochs }}
+      replay_examples: ${{ inputs.replay_examples || '5000' }}
+      search_profile: ${{ inputs.search_profile || 'balanced' }}
+      epochs: ${{ inputs.epochs || '10' }}
     secrets: inherit
 
   cycle-5:
@@ -111,11 +116,11 @@ jobs:
       parent_cycle_id: "4"
       parent_run_id: ""
       parent_label: cycle-4
-      source_experiment_run_id: ${{ inputs.source_experiment_run_id }}
+      source_experiment_run_id: ${{ inputs.source_experiment_run_id || '34152473442' }}
       seed_base: "4900001"
-      replay_examples: ${{ inputs.replay_examples }}
-      search_profile: ${{ inputs.search_profile }}
-      epochs: ${{ inputs.epochs }}
+      replay_examples: ${{ inputs.replay_examples || '5000' }}
+      search_profile: ${{ inputs.search_profile || 'balanced' }}
+      epochs: ${{ inputs.epochs || '10' }}
     secrets: inherit
 
   cycle-6:
@@ -127,11 +132,11 @@ jobs:
       parent_cycle_id: "5"
       parent_run_id: ""
       parent_label: cycle-5
-      source_experiment_run_id: ${{ inputs.source_experiment_run_id }}
+      source_experiment_run_id: ${{ inputs.source_experiment_run_id || '34152473442' }}
       seed_base: "5900001"
-      replay_examples: ${{ inputs.replay_examples }}
-      search_profile: ${{ inputs.search_profile }}
-      epochs: ${{ inputs.epochs }}
+      replay_examples: ${{ inputs.replay_examples || '5000' }}
+      search_profile: ${{ inputs.search_profile || 'balanced' }}
+      epochs: ${{ inputs.epochs || '10' }}
     secrets: inherit
 
   progression:
@@ -154,7 +159,7 @@ jobs:
           path: artifacts/baseline_candidate
           merge-multiple: false
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ inputs.checkpoint_run_id }}
+          run-id: ${{ inputs.checkpoint_run_id || '34240515308' }}
       - name: Download Iteration-2 frozen Arena
         uses: actions/download-artifact@v4
         with:
@@ -162,14 +167,14 @@ jobs:
           path: artifacts/baseline_arena
           merge-multiple: false
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ inputs.checkpoint_run_id }}
+          run-id: ${{ inputs.checkpoint_run_id || '34240515308' }}
       - name: Build checkpoint progression report
         run: |
           python -m ml.value_model.summarize_iterative_progression \
             --cycles-root artifacts/cycles \
             --baseline-candidate-root artifacts/baseline_candidate \
             --baseline-arena-root artifacts/baseline_arena \
-            --baseline-run-id "${{ inputs.checkpoint_run_id }}" \
+            --baseline-run-id "${{ inputs.checkpoint_run_id || '34240515308' }}" \
             --output-json artifacts/iterative_progression.json \
             --output-markdown artifacts/iterative_progression.md
           cat artifacts/iterative_progression.md >> "$GITHUB_STEP_SUMMARY"
