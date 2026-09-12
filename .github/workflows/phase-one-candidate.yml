@@ -15,122 +15,47 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PARENT_RUN: '34708894811'
+  PARENT_RUN: '34715462406'
+  RULES_VERSION: '9509cec4d018ad97fc05cb959647303bb1f4add7'
   GODOT_VERSION: '4.6.0'
 
 jobs:
-  data:
-    name: Reuse training-only capture shard ${{ matrix.shard }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: phase-one-candidate
-          path: artifacts/parent
-          merge-multiple: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ env.PARENT_RUN }}
-      - uses: chickensoft-games/setup-godot@v2.4.1
-        with:
-          version: ${{ env.GODOT_VERSION }}
-          use-dotnet: false
-          include-templates: false
-      - name: Import
-        working-directory: hex-strategy-game
-        run: godot --headless --editor --import --quit
-      - name: Reuse training-only captures without resimulating games
-        uses: actions/download-artifact@v4
-        with:
-          name: phase-one-training-${{ matrix.shard }}
-          path: artifacts/fresh
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ env.PARENT_RUN }}
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: phase-one-training-${{ matrix.shard }}
-          path: artifacts/fresh/
-          retention-days: 30
-
   train:
-    needs: data
+    name: Reuse unchanged experiment 3 checkpoint
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - uses: actions/download-artifact@v4
         with:
-          pattern: phase-one-candidate
-          path: artifacts/parent
-          merge-multiple: true
+          name: phase-one-candidate
+          path: artifacts/candidate
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ env.PARENT_RUN }}
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: phase-one-training-*
-          path: artifacts/fresh
-      - name: Audit and assemble training data
-        run: python -m ml.value_model.prepare_phase_one_training --fresh artifacts/fresh --parent artifacts/parent --output artifacts/dataset --reuse-parent-dataset
-      - name: Train richer value encoder and learned proposals
-        env:
-          OMP_NUM_THREADS: '2'
-          MKL_NUM_THREADS: '2'
-        run: |
-          python -m ml.value_model.train_ranked \
-            --encoder-version=2 \
-            --data artifacts/dataset/examples.jsonl --ranking-data artifacts/dataset/ranking_pairs.jsonl \
-            --output artifacts/candidate/value_ranked_model.pt \
-            --epochs=10 --ranking-weight=3 --learning-rate=0.0003 \
-            --split-key=game_id --split-seed=0 --seed=0 > artifacts/training_metrics.json
-          decisions=()
-          while IFS= read -r -d '' path; do decisions+=(--search-decisions "$path"); done < <(find artifacts/fresh -name search_decisions.jsonl -print0)
-          python -m ml.value_model.train_joint_plan_policy \
-            --base-checkpoint artifacts/candidate/value_ranked_model.pt "${decisions[@]}" \
-            --output artifacts/candidate/ranked_value_model.pt --epochs=10 --seed=0 > artifacts/proposal_metrics.json
-      - name: Record elapsed pipeline time and provenance
+      - name: Verify checkpoint and record ablation provenance
         run: |
           python - <<'PY'
-          import datetime, hashlib, json, os, pathlib, urllib.request
+          import datetime, hashlib, json, os, pathlib, sys, urllib.request
+          sys.path.insert(0, 'hex-strategy-game/tools')
+          from prepare_phase_one_ablation import ablation_provenance
           url = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
           run = json.load(urllib.request.urlopen(url))
           start = datetime.datetime.fromisoformat(run['created_at'].replace('Z', '+00:00'))
-          seconds = (datetime.datetime.now(datetime.timezone.utc) - start).total_seconds()
-          checkpoint = pathlib.Path('artifacts/candidate/ranked_value_model.pt')
-          data = json.loads(pathlib.Path('artifacts/dataset/dataset_report.json').read_text())
-          report = {'pipeline_elapsed_seconds': seconds, 'workers': 8,
-                    'generation_workers': 0, 'capture_download_workers': 8,
-                    'model_training_workers': 1,
-                    'runner_type': 'ubuntu-latest', 'rules_version': os.environ['GITHUB_SHA'],
-                    'checkpoint_sha256': hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
-                    'parent_run': os.environ['PARENT_RUN'], 'dataset': data,
-                    'evaluation_excluded_from_training': data['evaluation_excluded_from_training']}
-          checkpoint.with_name('training_provenance.json').write_text(json.dumps(report, indent=2))
-          if seconds >= 14400:
-              raise SystemExit('Four-hour training budget exceeded')
+          setup = (datetime.datetime.now(datetime.timezone.utc) - start).total_seconds()
+          checkpoint = pathlib.Path('artifacts/candidate/candidate/ranked_value_model.pt')
+          provenance = checkpoint.with_name('training_provenance.json')
+          source = json.loads(provenance.read_text())
+          report = ablation_provenance(source, hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
+                                      os.environ['RULES_VERSION'], setup, os.environ['PARENT_RUN'])
+          report['ablation_checkout_version'] = os.environ['GITHUB_SHA']
+          report['experiment_run'] = os.environ['GITHUB_RUN_ID']
+          provenance.write_text(json.dumps(report, indent=2) + '\n')
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: phase-one-candidate
-          path: |
-            artifacts/candidate/
-            artifacts/training_metrics.json
-            artifacts/proposal_metrics.json
-            artifacts/dataset/
+          path: artifacts/candidate/
           retention-days: 30
 
   evaluate:
@@ -172,9 +97,9 @@ jobs:
             --champion-profile=broad --challenger-profile=broad \
             --champion-evaluator=handwritten --challenger-evaluator=neural \
             --decision-time-budget-ms=25000 --runner-type=ubuntu-latest \
-            --learned-proposals=true \
+            --learned-proposals=false \
             --checkpoint="$GITHUB_WORKSPACE/artifacts/candidate/candidate/ranked_value_model.pt" \
-            --rules-version="$GITHUB_SHA" --shard-index=${{ matrix.shard }} --shard-count=4 \
+            --rules-version="$RULES_VERSION" --shard-index=${{ matrix.shard }} --shard-count=4 \
             --out="$GITHUB_WORKSPACE/artifacts/evaluation"
       - uses: actions/upload-artifact@v4
         if: always()

@@ -118,3 +118,29 @@ Learned proposals occupy at most four of the eight own-plan slots; handwritten
 plans fill the remaining slots. All new work, including both training stages and
 setup/worker waiting, counts toward the four-hour pipeline gate. Reused data and
 parent run are recorded explicitly. This experiment does not promote a checkpoint.
+
+### Experiment 3 result and controlled proposal ablation
+
+Run `34715462406` completed on September 12, 2026. Both familiar and unfamiliar
+groups resolved 16/20 games, with zero neural wins and four unresolved games each.
+There were no failed games. Maximum decision times were 27.97 and 28.35 seconds;
+the reused-data training pipeline took 136.20 seconds. All contract gates except
+win rate passed, but this is a clear regression from experiment 2, not promotion.
+Proposal validation top-1 accuracy was 38.3% across 60 held-out prefix examples;
+value/ranking training also showed a generalization gap. Neither establishes the
+cause of the arena regression. Do not mine these evaluation traces for training.
+
+Experiment 4 is a controlled ablation: reuse the exact experiment 3 checkpoint
+(`ef59bc0dd5862c90ca2cf82cb1369c10d9e7a4b3e4c0ff39e212889817aad5cd`)
+and turn learned proposals off. The richer encoder and value/ranking weights remain
+identical. All eight own-plan slots use handwritten proposals again. Frozen rules
+remain commit `9509cec4d018ad97fc05cb959647303bb1f4add7`; only experiment orchestration,
+provenance tooling, tests, and documentation change. Both twenty-game evaluations,
+mirroring, hardware, and decision-time ceilings are unchanged. No new examples or
+training epochs are produced. Preserve source training provenance and count ablation
+setup time alongside the original training elapsed time rather than pretending
+the reused checkpoint required zero training. Do not merge or promote automatically.
+
+This comparison isolates proposal mode at fixed weights, including its effect on
+candidate coverage and decision-time allocation. It does not isolate the V2 encoder
+from the from-scratch training change, nor prove any particular tactical cause.
