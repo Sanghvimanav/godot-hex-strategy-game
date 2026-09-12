@@ -50,8 +50,12 @@ def _evaluate_ranking(
     model.eval()
     with torch.no_grad():
         for better_board, better_globals, worse_board, worse_globals, weights in loader:
-            better = model(better_board.to(device), better_globals.to(device))
-            worse = model(worse_board.to(device), worse_globals.to(device))
+            better = model.policy_score(
+                better_board.to(device), better_globals.to(device)
+            )
+            worse = model.policy_score(
+                worse_board.to(device), worse_globals.to(device)
+            )
             loss = pairwise_ranking_loss(better, worse, weights.to(device))
             losses.append(float(loss.item()))
             better_predictions.append(better.cpu())
@@ -128,6 +132,14 @@ def _split_examples_for_training(
     )
 
 
+def _base_model_state_dict(model: HexValueNet) -> dict[str, torch.Tensor]:
+    return {
+        key: value
+        for key, value in model.state_dict().items()
+        if not key.startswith("policy_head.")
+    }
+
+
 def train(args: argparse.Namespace) -> dict:
     _seed_everything(args.seed)
     all_examples = load_jsonl_examples(args.data)
@@ -174,6 +186,7 @@ def train(args: argparse.Namespace) -> dict:
     model = HexValueNet(
         hidden_channels=args.hidden_channels,
         residual_blocks=args.residual_blocks,
+        policy_head=True,
     ).to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay
@@ -198,10 +211,12 @@ def train(args: argparse.Namespace) -> dict:
             optimizer.zero_grad(set_to_none=True)
             prediction = model(board.to(device), globals_.to(device))
             value_loss = value_loss_fn(prediction, target.to(device))
-            better_prediction = model(
+            better_prediction = model.policy_score(
                 better_board.to(device), better_globals.to(device)
             )
-            worse_prediction = model(worse_board.to(device), worse_globals.to(device))
+            worse_prediction = model.policy_score(
+                worse_board.to(device), worse_globals.to(device)
+            )
             rank_loss = pairwise_ranking_loss(
                 better_prediction,
                 worse_prediction,
@@ -243,8 +258,12 @@ def train(args: argparse.Namespace) -> dict:
     training_config = vars(args).copy()
     training_config["effective_split_seed"] = split_seed
     training_config["tactical_focus_train_groups"] = sorted(tactical_focus_groups)
+    assert model.policy_head is not None
     checkpoint = {
-        "model_state_dict": model.state_dict(),
+        # Keep the legacy value-model state dict loadable by frozen/offline evaluators.
+        "model_state_dict": _base_model_state_dict(model),
+        # Runtime search can opt into this separate action-ranking head.
+        "policy_head_state_dict": model.policy_head.state_dict(),
         "model_config": {
             "hidden_channels": args.hidden_channels,
             "residual_blocks": args.residual_blocks,
@@ -253,6 +272,8 @@ def train(args: argparse.Namespace) -> dict:
             "board_size": encoder.board_size,
             "max_radius": encoder.max_radius,
             "unit_types": list(encoder.unit_types),
+            "policy_head": True,
+            "search_head": "policy",
         },
         "training_config": training_config,
     }
@@ -270,8 +291,14 @@ def train(args: argparse.Namespace) -> dict:
         "ranking_comparison_population": (
             "held_out" if validation_pairs else "training_fallback"
         ),
+        "ranking_head": "policy",
         "ranking_weight": args.ranking_weight,
         "ranking_pair_kind_counts": ranking_kind_counts(all_pairs),
+        "train_policy_ranking_accuracy": train_ranking_metrics["accuracy"],
+        "train_policy_ranking_loss": train_ranking_metrics["loss"],
+        "eval_policy_ranking_accuracy": eval_ranking_metrics["accuracy"],
+        "eval_policy_ranking_loss": eval_ranking_metrics["loss"],
+        # Backward-compatible aliases for existing workflow summaries.
         "train_ranking_accuracy": train_ranking_metrics["accuracy"],
         "train_ranking_loss": train_ranking_metrics["loss"],
         "eval_ranking_accuracy": eval_ranking_metrics["accuracy"],
@@ -336,8 +363,7 @@ def train(args: argparse.Namespace) -> dict:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Train the neural value model jointly on terminal outcomes and "
-            "same-decision sibling ranking pairs."
+            "Train a shared neural encoder with separate value and search-ranking heads."
         )
     )
     parser.add_argument("--data", required=True)

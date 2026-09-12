@@ -22,7 +22,7 @@ from ml.value_model.model import HexValueNet
 
 def load_model(
     checkpoint_path: str | Path, device: torch.device
-) -> tuple[HexValueNet, HexStateEncoder]:
+) -> tuple[HexValueNet, HexStateEncoder, str]:
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
     config = checkpoint.get("model_config", {})
     encoder = HexStateEncoder()
@@ -39,15 +39,44 @@ def load_model(
                 f"checkpoint {key} does not match encoder: "
                 f"{config.get(key)!r} != {value!r}"
             )
+
+    has_policy_head = bool(config.get("policy_head", False))
+    search_head = str(config.get("search_head", "value"))
+    if search_head not in {"value", "policy"}:
+        raise ValueError(f"unsupported search_head: {search_head!r}")
+    if search_head == "policy" and not has_policy_head:
+        raise ValueError("search_head='policy' requires policy_head=True")
+
     model = HexValueNet(
         board_channels=int(config["board_channels"]),
         global_features=int(config["global_features"]),
         hidden_channels=int(config["hidden_channels"]),
         residual_blocks=int(config["residual_blocks"]),
+        policy_head=has_policy_head,
     ).to(device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    if has_policy_head:
+        incompatible = model.load_state_dict(
+            checkpoint["model_state_dict"], strict=False
+        )
+        missing = set(incompatible.missing_keys)
+        unexpected = set(incompatible.unexpected_keys)
+        expected_missing = {
+            key for key in model.state_dict() if key.startswith("policy_head.")
+        }
+        if missing != expected_missing or unexpected:
+            raise ValueError(
+                "base checkpoint state mismatch: "
+                f"missing={sorted(missing)}, unexpected={sorted(unexpected)}"
+            )
+        policy_state = checkpoint.get("policy_head_state_dict")
+        if not isinstance(policy_state, dict):
+            raise ValueError("policy-head checkpoint is missing policy_head_state_dict")
+        assert model.policy_head is not None
+        model.policy_head.load_state_dict(policy_state)
+    else:
+        model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-    return model, encoder
+    return model, encoder, search_head
 
 
 def request_example(request: dict[str, Any]) -> dict[str, Any]:
@@ -74,6 +103,7 @@ def score_requests(
     encoder: HexStateEncoder,
     requests: list[dict[str, Any]],
     device: torch.device,
+    search_head: str = "value",
 ) -> tuple[list[float], dict[str, float]]:
     started = time.perf_counter()
     encoded = [encoder.encode(request_example(request)) for request in requests]
@@ -83,7 +113,10 @@ def score_requests(
     boards = torch.stack([item.board for item in encoded], dim=0).to(device)
     globals_ = torch.stack([item.global_features for item in encoded], dim=0).to(device)
     with torch.no_grad():
-        values = model(boards, globals_).reshape(-1)
+        if search_head == "policy":
+            values = model.policy_score(boards, globals_).reshape(-1)
+        else:
+            values = model(boards, globals_).reshape(-1)
     inference_done = time.perf_counter()
     return [float(value.item()) for value in values], {
         "encode_ms": (encoded_done - started) * 1000.0,
@@ -100,13 +133,22 @@ def main() -> int:
     torch.set_num_threads(1)
     device = torch.device("cpu")
     try:
-        model, encoder = load_model(args.checkpoint, device)
+        model, encoder, search_head = load_model(args.checkpoint, device)
     except Exception as exc:
         print(json.dumps({"ready": False, "error": f"{type(exc).__name__}: {exc}"}), flush=True)
         return 2
 
     print(
-        json.dumps({"ready": True, "board_channels": encoder.board_channels, "global_features": encoder.global_features, "batch_protocol": 1}),
+        json.dumps(
+            {
+                "ready": True,
+                "board_channels": encoder.board_channels,
+                "global_features": encoder.global_features,
+                "batch_protocol": 1,
+                "search_head": search_head,
+                "policy_head": model.policy_head is not None,
+            }
+        ),
         flush=True,
     )
     for raw_line in sys.stdin:
@@ -121,7 +163,9 @@ def main() -> int:
             if batch is not None:
                 if not isinstance(batch, list) or not all(isinstance(item, dict) for item in batch):
                     raise ValueError("requests must be an array of objects")
-                values, timing = score_requests(model, encoder, batch, device)
+                values, timing = score_requests(
+                    model, encoder, batch, device, search_head=search_head
+                )
                 response = {
                     "ok": True,
                     "values": values,
@@ -129,7 +173,9 @@ def main() -> int:
                     "timing_ms": timing,
                 }
             else:
-                values, timing = score_requests(model, encoder, [request], device)
+                values, timing = score_requests(
+                    model, encoder, [request], device, search_head=search_head
+                )
                 response = {
                     "ok": True,
                     "value": values[0],

@@ -5,6 +5,7 @@ import unittest
 import torch
 
 from ml.value_model.data import HexStateEncoder
+from ml.value_model.model import HexValueNet
 from ml.value_model.ranking import (
     RankingPairDataset,
     pair_as_example,
@@ -116,6 +117,33 @@ class RankingLossTests(unittest.TestCase):
         self.assertEqual(len(validation), 1)
         self.assertEqual(train[0]["source"]["base_scenario_id"], "mixed_force")
         self.assertEqual(validation[0]["source"]["base_scenario_id"], "attrition")
+
+    def test_policy_head_is_opt_in(self) -> None:
+        encoder = HexStateEncoder()
+        example = pair_as_example(_pair(), "better")
+        encoded = encoder.encode(example)
+        board = encoded.board.unsqueeze(0)
+        globals_ = encoded.global_features.unsqueeze(0)
+        model = HexValueNet()
+        with self.assertRaisesRegex(RuntimeError, "policy head is not enabled"):
+            model.policy_score(board, globals_)
+
+    def test_policy_head_scores_separately_from_value_head(self) -> None:
+        encoder = HexStateEncoder()
+        example = pair_as_example(_pair(), "better")
+        encoded = encoder.encode(example)
+        board = encoded.board.unsqueeze(0)
+        globals_ = encoded.global_features.unsqueeze(0)
+        model = HexValueNet(policy_head=True)
+        value = model(board, globals_)
+        policy = model.policy_score(board, globals_)
+        self.assertEqual(tuple(value.shape), (1,))
+        self.assertEqual(tuple(policy.shape), (1,))
+        self.assertGreaterEqual(float(value[0]), -1.0)
+        self.assertLessEqual(float(value[0]), 1.0)
+        self.assertGreaterEqual(float(policy[0]), -1.0)
+        self.assertLessEqual(float(policy[0]), 1.0)
+        self.assertIsNot(model.head, model.policy_head)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,411 @@
+name: Neural Self-Play Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_self_play_run_id:
+        description: Prior self-play scale run containing completed shard artifacts
+        required: true
+        default: "34556698980"
+        type: string
+      checkpoint_run_id:
+        description: Run containing the current champion ranked_value_model.pt
+        required: true
+        default: "34240515308"
+        type: string
+      source_experiment_run_id:
+        description: Value Model Experiment run containing the frozen counterfactual benchmark
+        required: true
+        default: "34152473442"
+        type: string
+      search_profile:
+        description: Search budget used during frozen Arena
+        required: true
+        default: balanced
+        type: choice
+        options: [balanced, fast]
+      epochs:
+        description: Ranked retraining epochs
+        required: true
+        default: "60"
+        type: string
+  push:
+    branches:
+      - ai/scale-self-play-5000
+    paths:
+      - .github/self-play-recovery-trigger
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: neural-self-play-recovery-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SOURCE_SELF_PLAY_RUN_ID: ${{ inputs.source_self_play_run_id || '34556698980' }}
+  CHECKPOINT_RUN_ID: ${{ inputs.checkpoint_run_id || '34240515308' }}
+  SOURCE_EXPERIMENT_RUN_ID: ${{ inputs.source_experiment_run_id || '34152473442' }}
+  SEARCH_PROFILE: ${{ inputs.search_profile || 'balanced' }}
+  EPOCHS: ${{ inputs.epochs || '60' }}
+  SELF_PLAY_SHARDS: "60"
+  EXPECTED_MISSING_SHARDS: "26,46,54"
+  GAMES_PER_SHARD: "12"
+
+jobs:
+  retrain:
+    name: Aggregate completed shards and retrain
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Download current champion candidate
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-policy-candidate-*
+          path: artifacts/source_candidate
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.CHECKPOINT_RUN_ID }}
+      - name: Download frozen counterfactual source
+        uses: actions/download-artifact@v4
+        with:
+          pattern: value-model-experiment-*
+          path: artifacts/experiment
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.SOURCE_EXPERIMENT_RUN_ID }}
+      - name: Download completed self-play shards from prior run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-self-play-shard-*
+          path: artifacts/self_play_shards
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.SOURCE_SELF_PLAY_RUN_ID }}
+      - name: Validate and aggregate completed self-play manifests
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from collections import Counter
+          from pathlib import Path
+
+          total_shards = int(os.environ["SELF_PLAY_SHARDS"])
+          missing_shards = {
+              int(value)
+              for value in os.environ["EXPECTED_MISSING_SHARDS"].split(",")
+              if value.strip()
+          }
+          games_per_shard = int(os.environ["GAMES_PER_SHARD"])
+          expected_ids = set(range(total_shards)) - missing_shards
+          expected_families = {
+              "mixed_force",
+              "hydra_crossfire",
+              "medic_hold",
+              "scout_kite",
+              "worker_screen",
+              "baneling_flank",
+              "attrition",
+              "fester_siege",
+          }
+
+          paths = sorted(Path("artifacts/self_play_shards").rglob("manifest.json"))
+          found = {}
+          for path in paths:
+              match = re.search(r"neural-self-play-shard-(\d+)", str(path.parent))
+              if not match:
+                  raise SystemExit(f"Could not determine shard id from {path}")
+              shard_id = int(match.group(1))
+              if shard_id in found:
+                  raise SystemExit(f"Duplicate shard artifact for shard {shard_id}")
+              found[shard_id] = path
+
+          found_ids = set(found)
+          if found_ids != expected_ids:
+              raise SystemExit(
+                  f"Expected completed shards {sorted(expected_ids)}, found {sorted(found_ids)}; "
+                  f"missing={sorted(expected_ids - found_ids)}, unexpected={sorted(found_ids - expected_ids)}"
+              )
+
+          manifests = []
+          outcomes = Counter()
+          labeled_families = Counter()
+          requested_families = Counter()
+          for shard_id in sorted(found):
+              path = found[shard_id]
+              manifest = json.loads(path.read_text())
+              manifests.append(manifest)
+              requested = int(manifest.get("games_requested", 0))
+              if requested != games_per_shard:
+                  raise SystemExit(
+                      f"shard {shard_id}: expected {games_per_shard} games, found {requested}"
+                  )
+              games_path = path.with_name("games.jsonl")
+              if not games_path.exists():
+                  raise SystemExit(f"Missing games.jsonl next to {path}")
+              shard_requested_families = Counter()
+              for line in games_path.read_text().splitlines():
+                  if not line.strip():
+                      continue
+                  row = json.loads(line)
+                  family = str(row.get("base_scenario_id", ""))
+                  if family:
+                      shard_requested_families[family] += 1
+                      requested_families[family] += 1
+              missing_families = expected_families - set(shard_requested_families)
+              if missing_families:
+                  raise SystemExit(
+                      f"shard {shard_id}: missing scenario families {sorted(missing_families)}; "
+                      f"coverage={dict(shard_requested_families)}"
+                  )
+              outcomes.update({k: int(v) for k, v in manifest.get("outcomes", {}).items()})
+              labeled_families.update({k: int(v) for k, v in manifest.get("family_counts", {}).items()})
+
+          expected_games = len(expected_ids) * games_per_shard
+          merged = {
+              "source_self_play_run_id": os.environ["SOURCE_SELF_PLAY_RUN_ID"],
+              "shards": len(manifests),
+              "expected_total_shards": total_shards,
+              "missing_shards": sorted(missing_shards),
+              "games_requested": sum(int(m.get("games_requested", 0)) for m in manifests),
+              "games_labeled": sum(int(m.get("games_labeled", 0)) for m in manifests),
+              "games_unlabeled": sum(int(m.get("games_unlabeled", 0)) for m in manifests),
+              "games_failed": sum(int(m.get("games_failed", 0)) for m in manifests),
+              "examples_generated": sum(int(m.get("example_count", 0)) for m in manifests),
+              "outcomes": dict(outcomes),
+              "family_requested_counts": dict(requested_families),
+              "family_counts": dict(labeled_families),
+              "all_families_present_per_shard": True,
+              "profile": manifests[0].get("profile", ""),
+              "map_profile": manifests[0].get("map_profile", ""),
+              "extra_turns": manifests[0].get("extra_turns", 0),
+          }
+          if merged["games_requested"] != expected_games:
+              raise SystemExit(
+                  f"Expected {expected_games} requested games from completed shards, "
+                  f"aggregated {merged['games_requested']}"
+              )
+          if merged["games_failed"] != 0:
+              raise SystemExit(f"Self-play generation had {merged['games_failed']} failed games")
+
+          Path("artifacts/self_play_manifest.json").write_text(json.dumps(merged, indent=2) + "\n")
+          print(json.dumps(merged, indent=2))
+          PY
+      - name: Build uncapped eligible replay
+        run: |
+          set -euo pipefail
+          history_examples="$(find artifacts/source_candidate -type f -name combined_examples.jsonl -print -quit)"
+          history_pairs="$(find artifacts/source_candidate -type f -name combined_ranking_pairs.jsonl -print -quit)"
+          if [[ -z "$history_examples" || -z "$history_pairs" ]]; then
+            echo "Source candidate must contain combined examples and ranking pairs" >&2
+            exit 1
+          fi
+          mkdir -p artifacts/combined
+          python -m ml.value_model.build_replay_buffer \
+            --new-root artifacts/self_play_shards \
+            --history-examples "$history_examples" \
+            --output-examples artifacts/combined/combined_examples.jsonl \
+            --max-examples 0 \
+            --seed 0 \
+            --history-ranking-pairs "$history_pairs" \
+            --output-ranking-pairs artifacts/combined/combined_ranking_pairs.jsonl \
+            --max-ranking-pairs 1000 \
+            --manifest artifacts/combined/replay_manifest.json
+      - name: Run value-model tests
+        run: python -m unittest discover -s ml/tests -v
+      - name: Train fresh ranked model on full eligible replay
+        run: |
+          set -euo pipefail
+          python -m ml.value_model.train_ranked \
+            --data artifacts/combined/combined_examples.jsonl \
+            --ranking-data artifacts/combined/combined_ranking_pairs.jsonl \
+            --output artifacts/ranked_value_model.pt \
+            --epochs "${EPOCHS}" \
+            --batch-size 64 \
+            --ranking-batch-size 32 \
+            --ranking-weight 0.5 \
+            --learning-rate 0.0003 \
+            --weight-decay 0.0001 \
+            --validation-fraction 0.25 \
+            --split-key source.base_scenario_id \
+            --seed 0 \
+            --device cpu \
+            | tee artifacts/ranked_metrics.json
+          test -s artifacts/ranked_value_model.pt
+      - name: Evaluate candidate on frozen counterfactual benchmark
+        run: |
+          python -m ml.value_model.evaluate_counterfactual \
+            --candidates artifacts/experiment/counterfactual/candidates_with_handwritten.jsonl \
+            --checkpoint artifacts/ranked_value_model.pt \
+            --output artifacts/ranked_counterfactual_metrics.json
+      - name: Preserve compatible source metadata
+        run: |
+          set -euo pipefail
+          rejected="$(find artifacts/source_candidate -type f -name rejected_continuations.jsonl -print -quit)"
+          if [[ -n "$rejected" ]]; then
+            cp "$rejected" artifacts/combined/rejected_continuations.jsonl
+          else
+            : > artifacts/combined/rejected_continuations.jsonl
+          fi
+      - name: Write recovery training summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sp = json.loads(Path("artifacts/self_play_manifest.json").read_text())
+          replay = json.loads(Path("artifacts/combined/replay_manifest.json").read_text())
+          metrics = json.loads(Path("artifacts/ranked_metrics.json").read_text())
+          cf = json.loads(Path("artifacts/ranked_counterfactual_metrics.json").read_text())
+          neural = cf["evaluators"]["neural_value_model"]
+          value_replay = replay["value_replay"]
+          rank_replay = replay["ranking_replay"]
+          summary_lines = [
+              "## Recovered randomized current-policy self-play",
+              "",
+              "| Metric | Result |",
+              "| --- | ---: |",
+              f"| Source self-play run | {sp['source_self_play_run_id']} |",
+              f"| Self-play shards used | {sp['shards']} / {sp['expected_total_shards']} |",
+              f"| Missing shards | {sp['missing_shards']} |",
+              f"| Self-play games requested | {sp['games_requested']} |",
+              f"| Decisive/labeled self-play games | {sp['games_labeled']} |",
+              f"| Unresolved self-play games | {sp['games_unlabeled']} |",
+              f"| Fresh examples generated | {sp['examples_generated']} |",
+              f"| Replay examples retained | {value_replay['output_examples']} |",
+              f"| Fresh examples retained | {value_replay['new_examples_selected']} |",
+              f"| Historical examples retained | {value_replay['history_examples_selected']} |",
+              f"| Frozen-Arena historical examples removed | {value_replay['history_examples_excluded_frozen_arena']} |",
+              f"| Replay capped | {not bool(value_replay.get('unbounded'))} |",
+              f"| Ranking pairs retained | {rank_replay['output_pairs']} |",
+              f"| Frozen-Arena/tactical ranking pairs removed | {rank_replay['history_pairs_excluded_frozen_arena']} |",
+              f"| Conflicting identical-input groups | {metrics['all_conflicting_input_groups']} |",
+              f"| Conflicting identical-input examples | {metrics['all_conflicting_input_examples']} |",
+              f"| Held-out nonterminal winner accuracy | {float(metrics['neural_eval_sign_accuracy_nonterminal']):.1%} |",
+              f"| Held-out sibling ranking accuracy | {float(metrics['eval_ranking_accuracy']):.1%} |",
+              f"| Counterfactual candidate ranking | {float(neural['candidate_ranking_accuracy']):.1%} |",
+              f"| Counterfactual mean regret | {float(neural['top_plan_mean_regret']):.3f} |",
+              f"| Counterfactual optimal-choice rate | {float(neural['top_plan_optimal_rate']):.1%} |",
+              "",
+              f"Current checkpoint run: {os.environ['CHECKPOINT_RUN_ID']}",
+              f"Frozen counterfactual source: {os.environ['SOURCE_EXPERIMENT_RUN_ID']}",
+              f"Arena search profile: {os.environ['SEARCH_PROFILE']}",
+              f"Self-play extra turns: {sp['extra_turns']}",
+              f"Attempted family counts: {sp['family_requested_counts']}",
+              f"Labeled family counts: {sp['family_counts']}",
+          ]
+          summary = "\n".join(summary_lines) + "\n"
+          Path("artifacts/training_summary.md").write_text(summary)
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as handle:
+              handle.write(summary)
+          print(summary)
+          PY
+      - name: Upload recovered self-play candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: neural-self-play-recovery-candidate-${{ github.run_number }}
+          path: |
+            artifacts/ranked_value_model.pt
+            artifacts/ranked_metrics.json
+            artifacts/ranked_counterfactual_metrics.json
+            artifacts/training_summary.md
+            artifacts/self_play_manifest.json
+            artifacts/combined/combined_examples.jsonl
+            artifacts/combined/combined_ranking_pairs.jsonl
+            artifacts/combined/replay_manifest.json
+            artifacts/combined/rejected_continuations.jsonl
+          if-no-files-found: error
+          retention-days: 14
+
+  arena:
+    name: Frozen Arena shard ${{ matrix.shard }}
+    needs: retrain
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Download recovered self-play candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: neural-self-play-recovery-candidate-${{ github.run_number }}
+          path: artifacts/candidate
+      - name: Install candidate checkpoint
+        run: |
+          mkdir -p hex-strategy-game/models
+          cp artifacts/candidate/ranked_value_model.pt \
+            hex-strategy-game/models/objective_aware_candidate_v1.pt
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Run untouched frozen fast Arena
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/ai_arena.tscn -- \
+            --preset=fast \
+            --map-profile=compact_v1 \
+            --champion-profile="${SEARCH_PROFILE}" \
+            --challenger-profile="${SEARCH_PROFILE}" \
+            --champion-evaluator=handwritten \
+            --challenger-evaluator=neural \
+            --rules-version="${GITHUB_SHA}" \
+            --out="${GITHUB_WORKSPACE}/artifacts/arena" \
+            --shard-index="${{ matrix.shard }}" \
+            --shard-count=4
+      - name: Upload Arena shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: neural-self-play-recovery-arena-shard-${{ matrix.shard }}
+          path: artifacts/arena/
+          if-no-files-found: error
+          retention-days: 7
+
+  merge-arena:
+    name: Merge frozen Arena
+    needs: arena
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Arena shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-self-play-recovery-arena-shard-*
+          path: artifacts/arena_shards
+          merge-multiple: false
+      - name: Merge and summarize Arena
+        run: |
+          python3 hex-strategy-game/tools/merge_ai_arena.py \
+            --input-root artifacts/arena_shards \
+            --out artifacts/arena_merged \
+            --checkpoint-source="neural-self-play-recovery:${GITHUB_RUN_ID}"
+          cat artifacts/arena_merged/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload merged Arena
+        uses: actions/upload-artifact@v4
+        with:
+          name: neural-self-play-recovery-arena-${{ github.run_number }}
+          path: artifacts/arena_merged/
+          if-no-files-found: error
+          retention-days: 14
