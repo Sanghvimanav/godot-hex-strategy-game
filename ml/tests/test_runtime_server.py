@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from copy import deepcopy
 import subprocess
 import sys
 import tempfile
@@ -51,6 +52,7 @@ class NeuralRuntimeServerTests(unittest.TestCase):
                 self.assertTrue(ready["ready"], ready)
                 self.assertEqual(ready["board_channels"], encoder.board_channels)
                 self.assertEqual(ready["global_features"], encoder.global_features)
+                self.assertEqual(ready["batch_protocol"], 1)
 
                 request = {
                     "perspective_group": "zerg",
@@ -78,6 +80,44 @@ class NeuralRuntimeServerTests(unittest.TestCase):
                 self.assertGreaterEqual(scores[0], -1.0)
                 self.assertLessEqual(scores[0], 1.0)
                 self.assertAlmostEqual(scores[0], scores[1], places=7)
+
+                def send(payload: dict) -> dict:
+                    process.stdin.write(json.dumps(payload) + "\n")
+                    process.stdin.flush()
+                    return json.loads(process.stdout.readline())
+
+                # Preserve leaf order, duplicates and per-request perspective/clock.
+                other = deepcopy(request)
+                other["perspective_group"] = "terran"
+                other["opponent_group"] = "zerg"
+                other["turn_index"] = 5
+                other["state"]["groups"][0]["units"][0]["health"] = 1
+                other_score = send(other)
+                self.assertTrue(other_score["ok"], other_score)
+                batch = send({"requests": [other, request, other, request]})
+                self.assertTrue(batch["ok"], batch)
+                self.assertEqual(batch["batch_size"], 4)
+                self.assertEqual(len(batch["values"]), 4)
+                for actual, expected in zip(
+                    batch["values"],
+                    [other_score["value"], scores[0], other_score["value"], scores[0]],
+                ):
+                    self.assertAlmostEqual(actual, expected, places=6)
+                self.assertEqual(set(batch["timing_ms"]), {"encode_ms", "inference_ms", "total_ms"})
+
+                empty = send({"requests": []})
+                self.assertTrue(empty["ok"], empty)
+                self.assertEqual(empty["values"], [])
+                self.assertEqual(empty["batch_size"], 0)
+
+                # A malformed leaf must fail the entire batch and leave the server
+                # usable; never return partial values that shift leaf alignment.
+                invalid = send({"requests": [request, {"state": None}]})
+                self.assertFalse(invalid["ok"], invalid)
+                self.assertNotIn("values", invalid)
+                recovered = send({"requests": [request]})
+                self.assertTrue(recovered["ok"], recovered)
+                self.assertAlmostEqual(recovered["values"][0], scores[0], places=7)
             finally:
                 if process.stdin is not None:
                     process.stdin.close()
