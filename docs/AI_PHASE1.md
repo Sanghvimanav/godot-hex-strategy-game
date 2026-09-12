@@ -144,3 +144,30 @@ the reused checkpoint required zero training. Do not merge or promote automatica
 This comparison isolates proposal mode at fixed weights, including its effect on
 candidate coverage and decision-time allocation. It does not isolate the V2 encoder
 from the from-scratch training change, nor prove any particular tactical cause.
+
+### Experiment 4 result and fresh-data candidate
+
+Run `34717471103` completed September 12, 2026. With the identical experiment 3
+checkpoint and handwritten-only proposals, familiar games resolved 18/20 with
+5 neural wins (27.8%); unfamiliar resolved 18/20 with 3 neural wins (16.7%).
+Each group had two unresolved games and no draws or failures. Maximum decision
+times were 27.08 and 26.37 seconds. All gates except win rate passed. Restoring
+handwritten proposals recovered wins, implicating learned proposal admission and
+its compute allocation in the earlier regression; it does not prove a particular
+tactical explanation. Do not mine either frozen evaluation for training.
+
+Experiment 5 keeps handwritten-only proposals while generating 96 new training-
+only games from seed base 6100001, with balanced faction assignments and eight
+parallel workers. Capture up to four decisions per game and label up to 24
+family-diverse decisions per worker using real neural-vs-handwritten continuations
+under a shared opponent response. Combine fresh supervision with the audited
+parent training dataset, requiring fresh ranking pairs rather than silent reuse.
+
+Warm-start the V2 value/ranking model from experiment 4's unchanged checkpoint;
+train five epochs at learning rate 0.0001 and ranking weight 3. Retain all parent
+validation game IDs outside training and split only newly encountered games.
+This limits additional fitting while expanding state/continuation coverage, but
+does not guarantee stronger play. The new checkpoint contains the value/ranking
+heads; proposal-head training is deferred until stronger targets/admission are
+validated. Frozen evaluation, separate twenty-game gates, equal 25-second ceilings,
+absolute 30-second cap, and four-hour elapsed pipeline gate remain unchanged.

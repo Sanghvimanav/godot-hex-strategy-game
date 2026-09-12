@@ -159,6 +159,8 @@ def train(args: argparse.Namespace) -> dict:
     validation_group_values = {
         example_group_value(example, args.split_key) for example in validation_examples
     }
+    if args.split_key == "game_id":
+        validation_group_values.update(getattr(args, "parent_validation_game_ids", []))
     train_pairs, validation_pairs = split_ranking_pairs_by_group_values(
         all_pairs,
         args.split_key,
@@ -261,8 +263,10 @@ def train(args: argparse.Namespace) -> dict:
     training_config = vars(args).copy()
     training_config["effective_split_seed"] = split_seed
     training_config["tactical_focus_train_groups"] = sorted(tactical_focus_groups)
-    training_config["validation_game_ids"] = sorted({str(e["game_id"]) for e in validation_examples})
-    training_config["training_game_ids"] = sorted({str(e["game_id"]) for e in train_examples})
+    training_config["validation_game_ids"] = sorted({str(e["game_id"]) for e in validation_examples}
+                                                    | {str(p["game_id"]) for p in validation_pairs})
+    training_config["training_game_ids"] = sorted({str(e["game_id"]) for e in train_examples}
+                                                  | {str(p["game_id"]) for p in train_pairs})
     assert model.policy_head is not None
     checkpoint = {
         # Keep the legacy value-model state dict loadable by frozen/offline evaluators.

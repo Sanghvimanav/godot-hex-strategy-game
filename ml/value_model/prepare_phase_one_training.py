@@ -36,10 +36,15 @@ def main():
         return
     new_values = [r for p in args.fresh.rglob("examples.jsonl") for r in _read_jsonl(p)]
     new_pairs = [r for p in args.fresh.rglob("neural_ranking_pairs.jsonl") for r in _read_jsonl(p)]
-    old_values_path = next(args.parent.rglob("combined_examples.jsonl"))
-    old_pairs_path = next(args.parent.rglob("combined_ranking_pairs.jsonl"))
+    old_values_path = args.parent / "dataset/examples.jsonl"
+    old_pairs_path = args.parent / "dataset/ranking_pairs.jsonl"
+    if not old_values_path.is_file():
+        old_values_path = next(args.parent.rglob("combined_examples.jsonl"))
+    if not old_pairs_path.is_file():
+        old_pairs_path = next(args.parent.rglob("combined_ranking_pairs.jsonl"))
     old_values, old_pairs = _read_jsonl(old_values_path), _read_jsonl(old_pairs_path)
-    audit(new_values + new_pairs + old_values + old_pairs)
+    decisions = [r for p in args.fresh.rglob("search_decisions.jsonl") for r in _read_jsonl(p)]
+    audit(new_values + new_pairs + old_values + old_pairs + decisions)
     values, value_report = build_replay(new_values, old_values, 5000, 0)
     pairs, ranking_report = build_ranking_replay(new_pairs + old_pairs, 5000)
     if not values or not pairs or not new_pairs:
