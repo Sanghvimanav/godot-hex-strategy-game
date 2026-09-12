@@ -32,6 +32,7 @@ func _run_arena() -> void:
 	var shard_count := int(args.get("shard-count", "1"))
 	var out_dir := str(args.get("out", "user://ai_arena"))
 	var rules_version := str(args.get("rules-version", "unknown"))
+	var runner_type := str(args.get("runner-type", OS.get_name()))
 
 	if shard_count <= 0 or shard_index < 0 or shard_index >= shard_count:
 		push_error("Invalid arena shard %d/%d" % [shard_index, shard_count])
@@ -43,6 +44,13 @@ func _run_arena() -> void:
 		return
 	var champion_settings := PureStateArenaSuite.agent_settings(champion_profile, champion_evaluator)
 	var challenger_settings := PureStateArenaSuite.agent_settings(challenger_profile, challenger_evaluator)
+	var decision_time_budget_ms := float(args.get("decision-time-budget-ms", "0"))
+	for settings in [champion_settings, challenger_settings]:
+		var evaluation: Dictionary = settings.get("evaluator_settings", {}).duplicate(true)
+		evaluation["decision_time_budget_ms"] = decision_time_budget_ms
+		if str(settings.get("evaluator", "")) == "neural" and args.has("checkpoint"):
+			evaluation["checkpoint_path"] = str(args["checkpoint"])
+		settings["evaluator_settings"] = evaluation
 	if champion_settings.is_empty() or challenger_settings.is_empty():
 		push_error(
 			"Unknown arena agent config champion=%s/%s challenger=%s/%s" % [
@@ -180,6 +188,9 @@ func _run_arena() -> void:
 	var challenger_decisive_win_rate := float(counts["challenger"]) / float(decisive_games) if decisive_games > 0 else 0.0
 	var manifest := {
 		"manifest_schema_version": MANIFEST_SCHEMA_VERSION,
+		"decision_time_budget_ms": decision_time_budget_ms,
+		"runner_type": runner_type,
+		"checkpoint_sha256": FileAccess.get_sha256(str(args.get("checkpoint", PureStateNeuralEvaluator.DEFAULT_CHECKPOINT_PATH))) if challenger_evaluator == "neural" else "",
 		"arena_suite_version": PureStateArenaSuite.SUITE_VERSION,
 		"preset": preset,
 		"seed_base": seed_base,

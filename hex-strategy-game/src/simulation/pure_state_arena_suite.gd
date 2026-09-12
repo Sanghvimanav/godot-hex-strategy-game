@@ -10,7 +10,7 @@ class_name PureStateArenaSuite
 const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
 const PureStateSelfPlaySuite = preload("res://src/simulation/pure_state_self_play_suite.gd")
 
-const SUITE_VERSION := 4
+const SUITE_VERSION := 5
 const DEFAULT_SEED_BASE := 1701
 const FAST_PAIR_COUNT := 8
 const FULL_PAIR_COUNT := 32
@@ -19,6 +19,10 @@ const ARENA_TURN_ALLOWANCE := 2
 const MAP_PROFILE_LEGACY := "legacy_v1"
 const MAP_PROFILE_COMPACT := "compact_v1"
 const DEFAULT_MAP_PROFILE := MAP_PROFILE_COMPACT
+const MAP_PROFILE_UNFAMILIAR := "phase1_unfamiliar_v1"
+# Reserved evaluation seeds. Never use either group for training or mistake mining.
+const PHASE1_FAMILIAR_SEEDS := [2100001, 2107920, 2115839, 2123758, 2131677, 2139596, 2147515, 2155434, 2163353, 2171272]
+const PHASE1_UNFAMILIAR_SEEDS := [3100001, 3107920, 3115839, 3123758, 3131677, 3139596, 3147515, 3155434, 3163353, 3171272]
 const COMPACT_FAMILY_HEX_RADIUS := {
 	"mixed_force": 4,
 	"hydra_crossfire": 3,
@@ -115,11 +119,11 @@ const AGENT_PROFILES := {
 
 
 static func available_presets() -> Array[String]:
-	return ["smoke", "fast", "full"]
+	return ["smoke", "fast", "full", "phase1_familiar", "phase1_unfamiliar"]
 
 
 static func available_map_profiles() -> Array[String]:
-	return [MAP_PROFILE_LEGACY, MAP_PROFILE_COMPACT]
+	return [MAP_PROFILE_LEGACY, MAP_PROFILE_COMPACT, MAP_PROFILE_UNFAMILIAR]
 
 
 static func agent_settings(
@@ -156,6 +160,14 @@ static func get_preset(
 			scenario_seeds = FAST_SEEDS.duplicate()
 		"full":
 			scenario_seeds = FULL_SEEDS.duplicate()
+		"phase1_familiar":
+			if map_profile != MAP_PROFILE_COMPACT:
+				return []
+			scenario_seeds = PHASE1_FAMILIAR_SEEDS.duplicate()
+		"phase1_unfamiliar":
+			if map_profile != MAP_PROFILE_UNFAMILIAR:
+				return []
+			scenario_seeds = PHASE1_UNFAMILIAR_SEEDS.duplicate()
 		_:
 			return []
 
@@ -187,6 +199,8 @@ static func build_generated_state(
 	var state := PureStateSelfPlaySuite.build_state(family)
 	_apply_map_profile(state, family, map_profile)
 	state = PureStateSelfPlaySuite.vary_state(state, variation_seed)
+	if map_profile == MAP_PROFILE_UNFAMILIAR:
+		_redeploy_unfamiliar(state, rng)
 
 	# Full runs spend their extra budget on scenario coverage first, not wider
 	# search. A minority of states receive a second small perturbation so the full
@@ -208,6 +222,43 @@ static func build_generated_state(
 		"hex_radius": int(state.get("hex_radius", 0)),
 	}
 	return state
+
+
+static func _redeploy_unfamiliar(state: Dictionary, rng: RandomNumberGenerator) -> void:
+	# A new deployment generator, rather than another one-cell fixture variation:
+	# armies occupy opposing wedges, with randomized depth/formation and neutral
+	# resource terrain retained. Objectives are derived from the new deployment.
+	var radius := 4
+	state["hex_radius"] = radius
+	state.erase("command_hexes")
+	var used: Dictionary = {}
+	for group_variant in state.get("groups", []):
+		var group: Dictionary = group_variant
+		if str(group.get("name", "")) not in ["terran", "zerg"]:
+			for unit in group.get("units", []):
+				var cell: Array = unit.get("cell", [0, 0])
+				used["%d,%d" % [int(cell[0]), int(cell[1])]] = true
+	for group_variant in state.get("groups", []):
+		var group: Dictionary = group_variant
+		var name := str(group.get("name", ""))
+		if name not in ["terran", "zerg"]:
+			continue
+		var direction := 1 if name == "terran" else -1
+		for unit_variant in group.get("units", []):
+			var unit: Dictionary = unit_variant
+			if int(unit.get("health", 0)) <= 0:
+				continue
+			var choices: Array = []
+			for q in range(1, 4):
+				for r in range(-2, 3):
+					var cq := q * direction
+					if maxi(abs(cq), maxi(abs(r), abs(cq + r))) <= radius and not used.has("%d,%d" % [cq, r]):
+						choices.append([cq, r])
+			if choices.is_empty():
+				continue
+			var cell: Array = choices[rng.randi_range(0, choices.size() - 1)]
+			unit["cell"] = cell
+			used["%d,%d" % [int(cell[0]), int(cell[1])]] = true
 
 
 static func _apply_map_profile(state: Dictionary, family: String, map_profile: String) -> void:

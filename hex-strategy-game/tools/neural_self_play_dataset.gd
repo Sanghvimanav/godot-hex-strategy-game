@@ -10,6 +10,7 @@ const PureStateArenaSuite = preload("res://src/simulation/pure_state_arena_suite
 const PureStateGameRollout = preload("res://src/simulation/pure_state_game_rollout.gd")
 const PureStateTrainingData = preload("res://src/simulation/pure_state_training_data.gd")
 const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural_evaluator.gd")
+const PureStateSearchDecisionData = preload("res://src/simulation/pure_state_search_decision_data.gd")
 
 const MANIFEST_SCHEMA_VERSION := 1
 const DEFAULT_GAME_COUNT := 480
@@ -33,6 +34,12 @@ func _run() -> void:
 	var map_profile: String = str(args.get("map-profile", PureStateArenaSuite.DEFAULT_MAP_PROFILE))
 	var shard_index: int = int(args.get("shard-index", 0))
 	var shard_count: int = int(args.get("shard-count", 1))
+	var capture_decisions := maxi(0, int(args.get("capture-decisions-per-game", 0)))
+	var opponent_evaluator := str(args.get("opponent-evaluator", "neural"))
+	if opponent_evaluator not in ["neural", "handwritten"] or map_profile == PureStateArenaSuite.MAP_PROFILE_UNFAMILIAR:
+		push_error("Invalid training opponent or reserved evaluation map generator")
+		get_tree().quit(1)
+		return
 
 	if checkpoint.is_empty():
 		push_error("--checkpoint is required")
@@ -74,6 +81,7 @@ func _run() -> void:
 		return
 
 	var examples: Array = []
+	var search_decisions: Array = []
 	var games: Array = []
 	var requested_on_shard := 0
 	var labeled_games := 0
@@ -85,6 +93,10 @@ func _run() -> void:
 	for game_index in range(shard_index, game_count, shard_count):
 		requested_on_shard += 1
 		var scenario_seed := seed_base + game_index * SEED_STRIDE
+		if scenario_seed in PureStateArenaSuite.PHASE1_FAMILIAR_SEEDS or scenario_seed in PureStateArenaSuite.PHASE1_UNFAMILIAR_SEEDS:
+			push_error("Reserved Phase 1 evaluation seed requested for training")
+			get_tree().quit(1)
+			return
 		var state := PureStateArenaSuite.build_generated_state(
 			scenario_seed,
 			"full",
@@ -100,12 +112,18 @@ func _run() -> void:
 		var max_turns := int(PureStateArenaSuite.FAMILY_MAX_TURNS.get(family, 10)) + PureStateArenaSuite.ARENA_TURN_ALLOWANCE + extra_turns
 		var game_id := "selfplay-%s-s%d" % [family, scenario_seed]
 
+		var teacher_settings := PureStateArenaSuite.agent_settings(profile, "handwritten")
+		# Family is stratified by seed residue. Alternate after each family block
+		# so faction assignment is not permanently confounded with the family.
+		var neural_group := "terran" if floori(float(game_index) / float(PureStateArenaSuite.SCENARIO_FAMILIES.size())) % 2 == 0 else "zerg"
+		var terran_settings := teacher_settings if opponent_evaluator == "handwritten" and neural_group == "zerg" else neural_settings
+		var zerg_settings := teacher_settings if opponent_evaluator == "handwritten" and neural_group == "terran" else neural_settings
 		var result: Dictionary = PureStateGameRollout.play_game_with_settings(
 			state.duplicate(true),
 			"terran",
 			"zerg",
-			neural_settings,
-			neural_settings,
+			terran_settings,
+			zerg_settings,
 			max_turns,
 			true
 		)
@@ -124,7 +142,27 @@ func _run() -> void:
 			"search_profile": profile,
 			"max_turns": max_turns,
 			"self_play_extra_turns": extra_turns,
+			"opponent_evaluator": opponent_evaluator,
+			"neural_group": neural_group,
 		}
+		# Capture bounded training-only alternatives even when the game remains
+		# unresolved. Continuation labeling, not heuristic scores, orders siblings.
+		var history: Array = result.get("history", [])
+		var captured := 0
+		for history_index in range(history.size() - 1, -1, -1):
+			if captured >= capture_decisions:
+				break
+			var turn: Dictionary = history[history_index]
+			if not turn.has(neural_group + "_actions"):
+				continue
+			var opponent_group := "zerg" if neural_group == "terran" else "terran"
+			var row := PureStateSearchDecisionData.capture_decision(
+				turn.get("state_before", {}), neural_group, opponent_group,
+				turn[neural_group + "_actions"], 8, 4, 4, game_id,
+				int(turn.get("turn", 1)), {}, source)
+			if bool(row.get("valid", false)):
+				search_decisions.append(row)
+			captured += 1
 		var built: Dictionary = PureStateTrainingData.build_examples_from_rollout(
 			result,
 			"terran",
@@ -147,8 +185,9 @@ func _run() -> void:
 				var source_variant: Variant = example.get("source", {})
 				if source_variant is Dictionary:
 					example_source = (source_variant as Dictionary).duplicate(true)
-				example_source["perspective_policy"] = "neural_current"
-				example_source["opponent_policy"] = "neural_current"
+				var perspective := str(example.get("perspective_group", ""))
+				example_source["perspective_policy"] = "neural_current" if opponent_evaluator == "neural" or perspective == neural_group else "handwritten"
+				example_source["opponent_policy"] = "neural_current" if opponent_evaluator == "neural" or perspective != neural_group else "handwritten"
 				example["source"] = example_source
 				examples.append(example)
 			var winner := str(result.get("winner", ""))
@@ -195,6 +234,9 @@ func _run() -> void:
 	}
 
 	var ok := _write_text(abs_out.path_join("examples.jsonl"), _to_jsonl(examples))
+	if capture_decisions > 0:
+		ok = _write_text(abs_out.path_join("search_decisions.jsonl"), _to_jsonl(search_decisions)) and ok
+		ok = _write_text(abs_out.path_join("rejected_continuations.jsonl"), "") and ok
 	ok = _write_text(abs_out.path_join("games.jsonl"), _to_jsonl(games)) and ok
 	ok = _write_text(abs_out.path_join("manifest.json"), JSON.stringify(manifest, "  ") + "\n") and ok
 	print("[self-play] shard=%d/%d requested=%d labeled=%d unresolved=%d failed=%d examples=%d extra_turns=%d" % [

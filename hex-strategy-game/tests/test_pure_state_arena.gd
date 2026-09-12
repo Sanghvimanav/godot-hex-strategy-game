@@ -13,7 +13,33 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_generated_jobs_receive_turn_allowance(tests) and ok
 	ok = _test_arena_pairs_swap_agent_factions_on_identical_state(tests) and ok
 	ok = _test_asymmetric_rollout_records_per_side_search_cost(tests) and ok
+	ok = _test_phase_one_map_groups(tests) and ok
 	return ok
+
+
+static func _test_phase_one_map_groups(tests: Node) -> bool:
+	var familiar := PureStateArenaSuite.get_preset("phase1_familiar")
+	var unfamiliar := PureStateArenaSuite.get_preset("phase1_unfamiliar", 0, PureStateArenaSuite.MAP_PROFILE_UNFAMILIAR)
+	if familiar.size() != 20 or unfamiliar.size() != 20:
+		tests._fail("Phase 1 requires two separate twenty-game mirrored groups")
+		return false
+	if unfamiliar != PureStateArenaSuite.get_preset("phase1_unfamiliar", 0, PureStateArenaSuite.MAP_PROFILE_UNFAMILIAR):
+		tests._fail("unfamiliar map generation must be reproducible")
+		return false
+	for index in range(0, 20, 2):
+		if unfamiliar[index]["state"] != unfamiliar[index + 1]["state"] or unfamiliar[index]["challenger_group"] == unfamiliar[index + 1]["challenger_group"]:
+			tests._fail("each unfamiliar map must be evaluated with both agent factions")
+			return false
+		var seed := int(unfamiliar[index]["scenario_seed"])
+		var fixture := PureStateArenaSuite.build_generated_state(seed)
+		if fixture.get("groups", []) == unfamiliar[index]["state"].get("groups", []):
+			tests._fail("unfamiliar maps must use new deployments, not metadata-only changes")
+			return false
+	if not PureStateArenaSuite.get_preset("phase1_unfamiliar").is_empty():
+		tests._fail("the unfamiliar preset must fail closed on the familiar generator")
+		return false
+	tests._pass("Phase 1 holds out deterministic unfamiliar deployments and mirrored pairs")
+	return true
 
 
 static func _test_generated_states_are_seeded_and_reproducible(tests: Node) -> bool:

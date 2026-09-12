@@ -44,6 +44,9 @@ static func search(
 	evaluator_settings: Dictionary = {}
 ) -> Dictionary:
 	var started_usec := Time.get_ticks_usec()
+	var decision_time_budget_ms := maxf(0.0, float(evaluator_settings.get("decision_time_budget_ms", 0.0)))
+	var last_candidate_ms := 0.0
+	var time_budget_exhausted := false
 	var invalid := _empty_result(group_name, opponent_group_name, evaluator_mode)
 	if group_name.is_empty() or opponent_group_name.is_empty() or group_name == opponent_group_name:
 		return invalid
@@ -116,6 +119,13 @@ static func search(
 	var neural_runtime_ms := 0.0
 
 	for own_variant in own_candidates:
+		# Stop between complete candidate evaluations. Never promote a plan whose
+		# dangerous responses were omitted just because the clock ran out.
+		var spent_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
+		if decision_time_budget_ms > 0.0 and not best_full.is_empty() and spent_ms + last_candidate_ms >= decision_time_budget_ms:
+			time_budget_exhausted = true
+			break
+		var candidate_started_usec := Time.get_ticks_usec()
 		if not (own_variant is Dictionary):
 			continue
 		var own: Dictionary = own_variant
@@ -143,6 +153,7 @@ static func search(
 				)
 				var simulation := PureStateSimulator.simulate_turn(game_state, submitted)
 				var next_state: Dictionary = simulation.get("next_state", {})
+				next_state["turn_index"] = int(game_state.get("turn_index", 0)) + 1
 				leaf_entries.append({
 					"opponent": opponent,
 					"opponent_actions": opponent_actions,
@@ -223,6 +234,7 @@ static func search(
 				)
 				var simulation := PureStateSimulator.simulate_turn(game_state, submitted)
 				var next_state: Dictionary = simulation.get("next_state", {})
+				next_state["turn_index"] = int(game_state.get("turn_index", 0)) + 1
 				var breakdown := _evaluate_leaf(
 					next_state,
 					group_name,
@@ -261,6 +273,7 @@ static func search(
 
 		if response_count <= 0 or worst_result.is_empty():
 			continue
+		last_candidate_ms = float(Time.get_ticks_usec() - candidate_started_usec) / 1000.0
 
 		var result := {
 			"actions": own_actions,
@@ -309,6 +322,8 @@ static func search(
 		"simulations_run": simulations_run,
 		"pruned_candidates": pruned_candidates,
 		"elapsed_ms": elapsed_ms,
+		"decision_time_budget_ms": decision_time_budget_ms,
+		"time_budget_exhausted": time_budget_exhausted,
 		"neural_batch_evaluation": use_neural_batch,
 		"neural_batch_calls": neural_batch_calls,
 		"neural_batch_leaf_requests": neural_batch_leaf_requests,

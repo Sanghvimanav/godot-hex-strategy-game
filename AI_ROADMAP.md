@@ -2,6 +2,15 @@
 
 ## Goal
 
+The immediate user objective is Phase 1 in `docs/AI_PHASE1.md`: at least 75% neural
+wins among resolved games and at least 50% resolution independently on twenty
+familiar-map and twenty unfamiliar-map games, with equal decision-time budgets,
+a thirty-second turn limit, and a four-hour elapsed training pipeline. Learned
+proposal and evaluation heads are both allowed. The new `Phase One Candidate`
+workflow adds fresh adversarial sibling supervision and explicit promotion reports.
+Keep the handwritten champion until this contract passes; older same-width or
+decisive-only reports are diagnostics rather than Phase 1 success.
+
 A fair AI that coordinates simultaneous actions, avoids obvious blunders, discovers useful strategies, offers distinct play styles, and responds within the player's turn-time budget.
 
 The roadmap should improve two things together:

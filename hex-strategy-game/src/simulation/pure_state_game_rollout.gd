@@ -74,6 +74,7 @@ static func play_game_with_settings(
 		return invalid
 
 	var state := game_state.duplicate(true)
+	var initial_turn_index := int(state.get("turn_index", 0))
 	var command_hexes := PureStateCommandHexRules.ensure_command_hexes(state, group_a, group_b)
 	var command_occupants := PureStateCommandHexRules.initial_occupants(state, group_a, group_b, command_hexes)
 	var history: Array = []
@@ -83,6 +84,9 @@ static func play_game_with_settings(
 		return _build_result(true, "terminal", str(initial_outcome.get("winner", "")), 0, state, history, group_a, group_b, "elimination")
 
 	for turn_index in range(max_turns):
+		# Match the turn feature exported by PureStateTrainingData. Both agents
+		# receive the same clock; simulated leaves represent the following turn.
+		state["turn_index"] = initial_turn_index + turn_index
 		# Both searches intentionally read the same pre-turn state. Neither side gets
 		# privileged knowledge of the other side's selected simultaneous action.
 		var decision_a := GameplayAI.choose_actions(
@@ -121,6 +125,7 @@ static func play_game_with_settings(
 		var submitted := _submitted_actions(state, group_a, actions_a, group_b, actions_b)
 		var simulation := PureStateSimulator.simulate_turn(state, submitted)
 		var next_state: Dictionary = simulation.get("next_state", {})
+		next_state["turn_index"] = initial_turn_index + turn_index + 1
 		if next_state.is_empty():
 			return _build_result(false, "simulation_failed", "", turn_index, state, history, group_a, group_b)
 		next_state["command_hexes"] = command_hexes.duplicate(true)
