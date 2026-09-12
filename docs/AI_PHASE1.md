@@ -52,3 +52,22 @@ command positions; it does not merely relabel one-cell variations of fixtures.
 Artifacts include the fresh dataset, training provenance/checkpoint, full traces,
 and a fail-closed `phase_one_report.json`. A failed promotion report is evidence
 for the next experiment, not a reason to weaken thresholds or alter the holdout.
+
+## Experiment 1 result and follow-up
+
+Run `34703812988` produced 898 fresh value examples and 123 fresh ranking pairs.
+The training pipeline took 3,945 seconds on eight workers. Familiar evaluation
+resolved 19/20 games with 5 neural wins (26.3%); unfamiliar evaluation resolved
+18/20 with 2 neural wins (11.1%). Maximum decision times were 31.67 and 30.11
+seconds respectively. Neither group passes promotion. The report job also failed
+because module invocation imported PyTorch from the package initializer; the
+stdlib-only gate must be invoked directly in the report job.
+
+Experiment 2 retains the same parent checkpoint and frozen evaluation generators,
+uses fresh training seed base 5100001, labels up to sixteen decisions per worker
+instead of eight, increases ranking loss weight from one to three, and uses ten
+epochs instead of twenty to limit value overfitting. Both agents receive equal
+25-second search budgets, with the absolute 30-second promotion cap unchanged.
+This is a bundled candidate improvement, not an isolated causal comparison of
+each adjustment. Data jobs allow up to three hours; the full elapsed training
+pipeline must still pass the four-hour gate. No champion is automatically replaced.

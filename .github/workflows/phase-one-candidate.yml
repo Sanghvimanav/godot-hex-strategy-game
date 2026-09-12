@@ -22,7 +22,7 @@ jobs:
   data:
     name: Fresh adversarial training shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 110
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -54,7 +54,7 @@ jobs:
           godot --headless --path . res://tools/neural_self_play_dataset.tscn -- \
             --profile=balanced --opponent-evaluator=handwritten \
             --checkpoint="$GITHUB_WORKSPACE/artifacts/parent/ranked_value_model.pt" \
-            --game-count=64 --seed-base=4100001 --extra-turns=4 \
+            --game-count=64 --seed-base=5100001 --extra-turns=4 \
             --capture-decisions-per-game=4 --shard-index=${{ matrix.shard }} --shard-count=8 \
             --out="$GITHUB_WORKSPACE/artifacts/fresh"
       - name: Label fresh alternatives under a shared opponent response
@@ -62,7 +62,7 @@ jobs:
         run: |
           godot --headless --path . res://tools/search_decision_neural_sibling_pairs.tscn -- \
             --neural-checkpoint="$GITHUB_WORKSPACE/artifacts/parent/ranked_value_model.pt" \
-            --max-decisions=8 --allow-unplayed-reference=true --out="$GITHUB_WORKSPACE/artifacts/fresh"
+            --max-decisions=16 --allow-unplayed-reference=true --out="$GITHUB_WORKSPACE/artifacts/fresh"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -102,7 +102,7 @@ jobs:
             --init-checkpoint artifacts/parent/ranked_value_model.pt \
             --data artifacts/dataset/examples.jsonl --ranking-data artifacts/dataset/ranking_pairs.jsonl \
             --output artifacts/candidate/ranked_value_model.pt \
-            --epochs=20 --ranking-weight=1 --learning-rate=0.0003 \
+            --epochs=10 --ranking-weight=3 --learning-rate=0.0003 \
             --split-key=game_id --split-seed=0 --seed=0 > artifacts/training_metrics.json
       - name: Record elapsed pipeline time and provenance
         run: |
@@ -171,7 +171,7 @@ jobs:
             --preset="phase1_$MAP_GROUP" --map-profile="$map_profile" \
             --champion-profile=broad --challenger-profile=broad \
             --champion-evaluator=handwritten --challenger-evaluator=neural \
-            --decision-time-budget-ms=30000 --runner-type=ubuntu-latest \
+            --decision-time-budget-ms=25000 --runner-type=ubuntu-latest \
             --checkpoint="$GITHUB_WORKSPACE/artifacts/candidate/candidate/ranked_value_model.pt" \
             --rules-version="$GITHUB_SHA" --shard-index=${{ matrix.shard }} --shard-count=4 \
             --out="$GITHUB_WORKSPACE/artifacts/evaluation"
@@ -203,7 +203,7 @@ jobs:
         run: |
           python hex-strategy-game/tools/merge_ai_arena.py --input-root artifacts/familiar --out artifacts/merged/familiar
           python hex-strategy-game/tools/merge_ai_arena.py --input-root artifacts/unfamiliar --out artifacts/merged/unfamiliar
-          python -m ml.value_model.phase_one_gate \
+          python ml/value_model/phase_one_gate.py \
             --familiar artifacts/merged/familiar/manifest.json \
             --unfamiliar artifacts/merged/unfamiliar/manifest.json \
             --training artifacts/candidate/candidate/training_provenance.json \
