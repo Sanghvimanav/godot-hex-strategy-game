@@ -15,12 +15,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PARENT_RUN: '34240515308'
+  PARENT_RUN: '34708894811'
   GODOT_VERSION: '4.6.0'
 
 jobs:
   data:
-    name: Fresh adversarial training shard ${{ matrix.shard }}
+    name: Reuse training-only capture shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     strategy:
@@ -35,7 +35,7 @@ jobs:
       - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - uses: actions/download-artifact@v4
         with:
-          pattern: neural-policy-candidate-*
+          pattern: phase-one-candidate
           path: artifacts/parent
           merge-multiple: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -48,21 +48,13 @@ jobs:
       - name: Import
         working-directory: hex-strategy-game
         run: godot --headless --editor --import --quit
-      - name: Generate 64 training-only games and alternative plans
-        working-directory: hex-strategy-game
-        run: |
-          godot --headless --path . res://tools/neural_self_play_dataset.tscn -- \
-            --profile=balanced --opponent-evaluator=handwritten \
-            --checkpoint="$GITHUB_WORKSPACE/artifacts/parent/ranked_value_model.pt" \
-            --game-count=64 --seed-base=5100001 --extra-turns=4 \
-            --capture-decisions-per-game=4 --shard-index=${{ matrix.shard }} --shard-count=8 \
-            --out="$GITHUB_WORKSPACE/artifacts/fresh"
-      - name: Label fresh alternatives under a shared opponent response
-        working-directory: hex-strategy-game
-        run: |
-          godot --headless --path . res://tools/search_decision_neural_sibling_pairs.tscn -- \
-            --neural-checkpoint="$GITHUB_WORKSPACE/artifacts/parent/ranked_value_model.pt" \
-            --max-decisions=16 --allow-unplayed-reference=true --out="$GITHUB_WORKSPACE/artifacts/fresh"
+      - name: Reuse training-only captures without resimulating games
+        uses: actions/download-artifact@v4
+        with:
+          name: phase-one-training-${{ matrix.shard }}
+          path: artifacts/fresh
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.PARENT_RUN }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -82,7 +74,7 @@ jobs:
       - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - uses: actions/download-artifact@v4
         with:
-          pattern: neural-policy-candidate-*
+          pattern: phase-one-candidate
           path: artifacts/parent
           merge-multiple: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -92,18 +84,23 @@ jobs:
           pattern: phase-one-training-*
           path: artifacts/fresh
       - name: Audit and assemble training data
-        run: python -m ml.value_model.prepare_phase_one_training --fresh artifacts/fresh --parent artifacts/parent --output artifacts/dataset
-      - name: Train candidate with fresh ranking supervision
+        run: python -m ml.value_model.prepare_phase_one_training --fresh artifacts/fresh --parent artifacts/parent --output artifacts/dataset --reuse-parent-dataset
+      - name: Train richer value encoder and learned proposals
         env:
           OMP_NUM_THREADS: '2'
           MKL_NUM_THREADS: '2'
         run: |
-          python -m ml.value_model.train_ranked_iterative \
-            --init-checkpoint artifacts/parent/ranked_value_model.pt \
+          python -m ml.value_model.train_ranked \
+            --encoder-version=2 \
             --data artifacts/dataset/examples.jsonl --ranking-data artifacts/dataset/ranking_pairs.jsonl \
-            --output artifacts/candidate/ranked_value_model.pt \
+            --output artifacts/candidate/value_ranked_model.pt \
             --epochs=10 --ranking-weight=3 --learning-rate=0.0003 \
             --split-key=game_id --split-seed=0 --seed=0 > artifacts/training_metrics.json
+          decisions=()
+          while IFS= read -r -d '' path; do decisions+=(--search-decisions "$path"); done < <(find artifacts/fresh -name search_decisions.jsonl -print0)
+          python -m ml.value_model.train_joint_plan_policy \
+            --base-checkpoint artifacts/candidate/value_ranked_model.pt "${decisions[@]}" \
+            --output artifacts/candidate/ranked_value_model.pt --epochs=10 --seed=0 > artifacts/proposal_metrics.json
       - name: Record elapsed pipeline time and provenance
         run: |
           python - <<'PY'
@@ -115,6 +112,8 @@ jobs:
           checkpoint = pathlib.Path('artifacts/candidate/ranked_value_model.pt')
           data = json.loads(pathlib.Path('artifacts/dataset/dataset_report.json').read_text())
           report = {'pipeline_elapsed_seconds': seconds, 'workers': 8,
+                    'generation_workers': 0, 'capture_download_workers': 8,
+                    'model_training_workers': 1,
                     'runner_type': 'ubuntu-latest', 'rules_version': os.environ['GITHUB_SHA'],
                     'checkpoint_sha256': hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
                     'parent_run': os.environ['PARENT_RUN'], 'dataset': data,
@@ -130,6 +129,7 @@ jobs:
           path: |
             artifacts/candidate/
             artifacts/training_metrics.json
+            artifacts/proposal_metrics.json
             artifacts/dataset/
           retention-days: 30
 
@@ -172,6 +172,7 @@ jobs:
             --champion-profile=broad --challenger-profile=broad \
             --champion-evaluator=handwritten --challenger-evaluator=neural \
             --decision-time-budget-ms=25000 --runner-type=ubuntu-latest \
+            --learned-proposals=true \
             --checkpoint="$GITHUB_WORKSPACE/artifacts/candidate/candidate/ranked_value_model.pt" \
             --rules-version="$GITHUB_SHA" --shard-index=${{ matrix.shard }} --shard-count=4 \
             --out="$GITHUB_WORKSPACE/artifacts/evaluation"

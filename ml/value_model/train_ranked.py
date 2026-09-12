@@ -17,6 +17,7 @@ from .data import (
 )
 from .metrics import sign_accuracy
 from .model import HexValueNet
+from .strategic_state import make_encoder
 from .ranking import (
     RankingPairDataset,
     load_ranking_pairs,
@@ -166,7 +167,7 @@ def train(args: argparse.Namespace) -> dict:
     if not train_pairs:
         raise ValueError("no ranking pairs remain in the training split")
 
-    encoder = HexStateEncoder()
+    encoder = make_encoder(getattr(args, "encoder_version", 1))
     all_conflicts = _input_conflict_metrics(all_examples, encoder)
     train_conflicts = _input_conflict_metrics(train_examples, encoder)
     validation_conflicts = _input_conflict_metrics(validation_examples, encoder)
@@ -184,6 +185,8 @@ def train(args: argparse.Namespace) -> dict:
 
     device = torch.device(args.device)
     model = HexValueNet(
+        board_channels=encoder.board_channels,
+        global_features=encoder.global_features,
         hidden_channels=args.hidden_channels,
         residual_blocks=args.residual_blocks,
         policy_head=True,
@@ -258,6 +261,8 @@ def train(args: argparse.Namespace) -> dict:
     training_config = vars(args).copy()
     training_config["effective_split_seed"] = split_seed
     training_config["tactical_focus_train_groups"] = sorted(tactical_focus_groups)
+    training_config["validation_game_ids"] = sorted({str(e["game_id"]) for e in validation_examples})
+    training_config["training_game_ids"] = sorted({str(e["game_id"]) for e in train_examples})
     assert model.policy_head is not None
     checkpoint = {
         # Keep the legacy value-model state dict loadable by frozen/offline evaluators.
@@ -265,6 +270,7 @@ def train(args: argparse.Namespace) -> dict:
         # Runtime search can opt into this separate action-ranking head.
         "policy_head_state_dict": model.policy_head.state_dict(),
         "model_config": {
+            "encoder_version": getattr(args, "encoder_version", 1),
             "hidden_channels": args.hidden_channels,
             "residual_blocks": args.residual_blocks,
             "board_channels": encoder.board_channels,
@@ -370,6 +376,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ranking-data", required=True)
     parser.add_argument("--output", default="artifacts/value_model.pt")
     parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--encoder-version", type=int, choices=(1, 2), default=1)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--ranking-batch-size", type=int, default=32)
     parser.add_argument("--ranking-weight", type=float, default=0.5)

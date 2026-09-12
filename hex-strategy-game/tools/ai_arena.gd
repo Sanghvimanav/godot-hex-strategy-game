@@ -50,6 +50,7 @@ func _run_arena() -> void:
 		evaluation["decision_time_budget_ms"] = decision_time_budget_ms
 		if str(settings.get("evaluator", "")) == "neural" and args.has("checkpoint"):
 			evaluation["checkpoint_path"] = str(args["checkpoint"])
+			evaluation["learned_proposals"] = str(args.get("learned-proposals", "false")) == "true"
 		settings["evaluator_settings"] = evaluation
 	if champion_settings.is_empty() or challenger_settings.is_empty():
 		push_error(

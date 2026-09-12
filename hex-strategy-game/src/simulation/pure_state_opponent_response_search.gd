@@ -21,6 +21,7 @@ const PureStateCounterConditioning = preload("res://src/simulation/pure_state_co
 const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd")
 const PureStateEvaluator = preload("res://src/simulation/pure_state_evaluator.gd")
 const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural_evaluator.gd")
+const PureStateNeuralPlans = preload("res://src/simulation/pure_state_neural_plans.gd")
 
 const EVALUATOR_HANDWRITTEN := "handwritten"
 const EVALUATOR_NEURAL := "neural"
@@ -101,6 +102,26 @@ static func search(
 	)
 	if own_candidates.is_empty():
 		return invalid
+
+	var learned_proposals := 0
+	if evaluator_mode == EVALUATOR_NEURAL and bool(evaluator_settings.get("learned_proposals", false)):
+		var learned_limit := maxi(1, int(own_max_plans / 2))
+		var learned := PureStateNeuralPlans.get_candidate_plans(game_state, group_name, opponent_group_name,
+			own_max_actions_per_unit, learned_limit, evaluator_settings)
+		if not learned.is_empty():
+			var mixed: Array = []
+			var seen: Dictionary = {}
+			for candidate in learned + own_candidates:
+				var signature := JSON.stringify(candidate.get("actions", []))
+				if seen.has(signature):
+					continue
+				seen[signature] = true
+				mixed.append(candidate)
+				if candidate.get("proposal_source", "") == "neural_joint_policy":
+					learned_proposals += 1
+				if mixed.size() >= own_max_plans:
+					break
+			own_candidates = mixed
 
 	var own_intent_counts := PureStatePlanIntents.count_intents(own_candidates)
 	var opponent_intent_counts := PureStatePlanIntents.count_intents(opponent_candidates)
@@ -324,6 +345,7 @@ static func search(
 		"elapsed_ms": elapsed_ms,
 		"decision_time_budget_ms": decision_time_budget_ms,
 		"time_budget_exhausted": time_budget_exhausted,
+		"learned_proposals": learned_proposals,
 		"neural_batch_evaluation": use_neural_batch,
 		"neural_batch_calls": neural_batch_calls,
 		"neural_batch_leaf_requests": neural_batch_leaf_requests,

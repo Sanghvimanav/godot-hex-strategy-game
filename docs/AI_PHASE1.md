@@ -71,3 +71,50 @@ epochs instead of twenty to limit value overfitting. Both agents receive equal
 This is a bundled candidate improvement, not an isolated causal comparison of
 each adjustment. Data jobs allow up to three hours; the full elapsed training
 pipeline must still pass the four-hour gate. No champion is automatically replaced.
+
+## Learned proposal integration
+
+The opt-in V2 state encoder adds spatial active/pending stun duration, heal duration
+and amount, pending effects, and finite tile-resource amounts. V1 remains the
+default for existing checkpoints; V2 requires explicitly matching training and
+runtime checkpoint metadata. Current reinforcement timing is carried by effects,
+and command capture uses before/after occupant identity rather than a separate
+persistent timer. This is not a claim that every future game field is encoded.
+
+An autoregressive action head conditions on the state and earlier friendly actions.
+Godot supplies all currently legal actions from the canonical server validator;
+the policy can select those actions or an internal hold token that becomes no
+submitted command. A bounded beam assembles plans, then robust search evaluates
+them. Neural proposal mode reserves up to half of the existing own-plan budget
+for learned proposals; handwritten plans fill the remaining slots without increasing
+the total search width. Missing proposal checkpoints fall back to handwritten
+proposals, not invented actions. The handwritten champion remains unchanged.
+
+Initial proposal training distills bounded robust handwritten search scores from
+training-only decisions. It is bootstrap supervision, not an AlphaZero visit-count
+target or proof of optimal play. All prefixes from one game stay in one split;
+action/unit vocabularies are built from training games only. Subsequent outcome-
+labeled learned-plan continuations must drive improvement beyond that bootstrap.
+See `docs/HUMAN_AI_EXAMPLES.md` for useful human examples and recording requirements.
+
+### Experiment 3: strategic encoder and learned proposals
+
+Experiment 2 (`34708894811`) did not pass: familiar games resolved 18/20 with
+6 neural wins (33.3% of resolved); unfamiliar resolved 17/20 with 3 neural wins
+(17.6%). Its measured turn times passed the absolute cap and its training pipeline
+took 5,012 seconds. These are diagnostics, never new training examples.
+
+Experiment 3 reuses experiment 2's audited training dataset and its eight
+training-only search-capture shards. No evaluation traces enter either trainer.
+The V2 value model trains from scratch for 10 epochs (ranking weight 3), because
+its added input planes are incompatible with a V1 warm start. A new proposal head
+then trains for 10 epochs with that value backbone frozen. Its game-level split
+is aligned with the value model's split. Proposal accuracy is a conditional
+preference diagnostic, not evidence of arena strength.
+
+Frozen evaluation remains two separate mirrored 20-game groups, broad 8×8 search,
+equal 25-second decision ceilings, and the absolute 30-second measured cap.
+Learned proposals occupy at most four of the eight own-plan slots; handwritten
+plans fill the remaining slots. All new work, including both training stages and
+setup/worker waiting, counts toward the four-hour pipeline gate. Reused data and
+parent run are recorded explicitly. This experiment does not promote a checkpoint.

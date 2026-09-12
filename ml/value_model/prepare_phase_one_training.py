@@ -18,7 +18,22 @@ def main():
     parser = argparse.ArgumentParser()
     for name in ("fresh", "parent", "output"):
         parser.add_argument(f"--{name}", type=Path, required=True)
+    parser.add_argument("--reuse-parent-dataset", action="store_true")
     args = parser.parse_args()
+    if args.reuse_parent_dataset:
+        values = _read_jsonl(args.parent / "dataset/examples.jsonl")
+        pairs = _read_jsonl(args.parent / "dataset/ranking_pairs.jsonl")
+        decisions = [r for p in args.fresh.rglob("search_decisions.jsonl") for r in _read_jsonl(p)]
+        audit(values + pairs + decisions)
+        if not values or not pairs or not decisions:
+            raise ValueError("reused dataset and captured decisions are required")
+        _write_jsonl(args.output / "examples.jsonl", values)
+        _write_jsonl(args.output / "ranking_pairs.jsonl", pairs)
+        args.output.joinpath("dataset_report.json").write_text(json.dumps({
+            "fresh_value_examples": 0, "fresh_ranking_pairs": 0,
+            "reused_value_examples": len(values), "reused_ranking_pairs": len(pairs),
+            "captured_decisions": len(decisions), "evaluation_excluded_from_training": True}, indent=2) + "\n")
+        return
     new_values = [r for p in args.fresh.rglob("examples.jsonl") for r in _read_jsonl(p)]
     new_pairs = [r for p in args.fresh.rglob("neural_ranking_pairs.jsonl") for r in _read_jsonl(p)]
     old_values_path = next(args.parent.rglob("combined_examples.jsonl"))
