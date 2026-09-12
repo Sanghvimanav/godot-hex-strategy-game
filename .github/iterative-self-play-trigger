@@ -1,0 +1,2 @@
+run six-cycle iterative self-play experiment
+control budget: 720 total self-play games, 60 nominal epochs

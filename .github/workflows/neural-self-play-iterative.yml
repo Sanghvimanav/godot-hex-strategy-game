@@ -1,0 +1,188 @@
+name: Neural Iterative Self-Play Experiment
+
+on:
+  workflow_dispatch:
+    inputs:
+      checkpoint_run_id:
+        description: Iteration-2 champion run used as cycle-0 learner and frozen baseline
+        required: true
+        default: "34240515308"
+        type: string
+      source_experiment_run_id:
+        description: Run containing the untouched frozen counterfactual benchmark
+        required: true
+        default: "34152473442"
+        type: string
+      replay_examples:
+        description: Maximum rolling replay examples retained at every cycle
+        required: true
+        default: "5000"
+        type: string
+      search_profile:
+        description: Search budget used during self-play and frozen Arena
+        required: true
+        default: balanced
+        type: choice
+        options: [balanced, fast]
+      epochs:
+        description: Epochs per cycle; default 10 gives 60 nominal epochs across six cycles, matching the one-shot default
+        required: true
+        default: "10"
+        type: string
+  push:
+    branches:
+      - ai/iterative-self-play-eval
+    paths:
+      - .github/iterative-self-play-trigger
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: neural-iterative-self-play-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cycle-1:
+    name: Cycle 1 - 120 self-play games then train/eval
+    uses: ./.github/workflows/neural-self-play-cycle.yml
+    with:
+      cycle_id: "1"
+      parent_cycle_id: "0"
+      parent_run_id: ${{ inputs.checkpoint_run_id || '34240515308' }}
+      parent_label: iteration-2
+      source_experiment_run_id: ${{ inputs.source_experiment_run_id || '34152473442' }}
+      seed_base: "900001"
+      replay_examples: ${{ inputs.replay_examples || '5000' }}
+      search_profile: ${{ inputs.search_profile || 'balanced' }}
+      epochs: ${{ inputs.epochs || '10' }}
+    secrets: inherit
+
+  cycle-2:
+    name: Cycle 2 - 120 self-play games then train/eval
+    needs: cycle-1
+    uses: ./.github/workflows/neural-self-play-cycle.yml
+    with:
+      cycle_id: "2"
+      parent_cycle_id: "1"
+      parent_run_id: ""
+      parent_label: cycle-1
+      source_experiment_run_id: ${{ inputs.source_experiment_run_id || '34152473442' }}
+      seed_base: "1900001"
+      replay_examples: ${{ inputs.replay_examples || '5000' }}
+      search_profile: ${{ inputs.search_profile || 'balanced' }}
+      epochs: ${{ inputs.epochs || '10' }}
+    secrets: inherit
+
+  cycle-3:
+    name: Cycle 3 - 120 self-play games then train/eval
+    needs: cycle-2
+    uses: ./.github/workflows/neural-self-play-cycle.yml
+    with:
+      cycle_id: "3"
+      parent_cycle_id: "2"
+      parent_run_id: ""
+      parent_label: cycle-2
+      source_experiment_run_id: ${{ inputs.source_experiment_run_id || '34152473442' }}
+      seed_base: "2900001"
+      replay_examples: ${{ inputs.replay_examples || '5000' }}
+      search_profile: ${{ inputs.search_profile || 'balanced' }}
+      epochs: ${{ inputs.epochs || '10' }}
+    secrets: inherit
+
+  cycle-4:
+    name: Cycle 4 - 120 self-play games then train/eval
+    needs: cycle-3
+    uses: ./.github/workflows/neural-self-play-cycle.yml
+    with:
+      cycle_id: "4"
+      parent_cycle_id: "3"
+      parent_run_id: ""
+      parent_label: cycle-3
+      source_experiment_run_id: ${{ inputs.source_experiment_run_id || '34152473442' }}
+      seed_base: "3900001"
+      replay_examples: ${{ inputs.replay_examples || '5000' }}
+      search_profile: ${{ inputs.search_profile || 'balanced' }}
+      epochs: ${{ inputs.epochs || '10' }}
+    secrets: inherit
+
+  cycle-5:
+    name: Cycle 5 - 120 self-play games then train/eval
+    needs: cycle-4
+    uses: ./.github/workflows/neural-self-play-cycle.yml
+    with:
+      cycle_id: "5"
+      parent_cycle_id: "4"
+      parent_run_id: ""
+      parent_label: cycle-4
+      source_experiment_run_id: ${{ inputs.source_experiment_run_id || '34152473442' }}
+      seed_base: "4900001"
+      replay_examples: ${{ inputs.replay_examples || '5000' }}
+      search_profile: ${{ inputs.search_profile || 'balanced' }}
+      epochs: ${{ inputs.epochs || '10' }}
+    secrets: inherit
+
+  cycle-6:
+    name: Cycle 6 - 120 self-play games then train/eval
+    needs: cycle-5
+    uses: ./.github/workflows/neural-self-play-cycle.yml
+    with:
+      cycle_id: "6"
+      parent_cycle_id: "5"
+      parent_run_id: ""
+      parent_label: cycle-5
+      source_experiment_run_id: ${{ inputs.source_experiment_run_id || '34152473442' }}
+      seed_base: "5900001"
+      replay_examples: ${{ inputs.replay_examples || '5000' }}
+      search_profile: ${{ inputs.search_profile || 'balanced' }}
+      epochs: ${{ inputs.epochs || '10' }}
+    secrets: inherit
+
+  progression:
+    name: Compare every training checkpoint
+    needs: cycle-6
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all cycle metrics
+        uses: actions/download-artifact@v4
+        with:
+          pattern: iterative-self-play-cycle-*-metrics
+          path: artifacts/cycles
+          merge-multiple: false
+      - name: Download Iteration-2 baseline candidate
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-policy-candidate-*
+          path: artifacts/baseline_candidate
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.checkpoint_run_id || '34240515308' }}
+      - name: Download Iteration-2 frozen Arena
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-policy-arena-[0-9]*
+          path: artifacts/baseline_arena
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.checkpoint_run_id || '34240515308' }}
+      - name: Build checkpoint progression report
+        run: |
+          python -m ml.value_model.summarize_iterative_progression \
+            --cycles-root artifacts/cycles \
+            --baseline-candidate-root artifacts/baseline_candidate \
+            --baseline-arena-root artifacts/baseline_arena \
+            --baseline-run-id "${{ inputs.checkpoint_run_id || '34240515308' }}" \
+            --output-json artifacts/iterative_progression.json \
+            --output-markdown artifacts/iterative_progression.md
+          cat artifacts/iterative_progression.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iterative-self-play-progression-${{ github.run_number }}
+          path: |
+            artifacts/iterative_progression.json
+            artifacts/iterative_progression.md
+          if-no-files-found: error
+          retention-days: 30
