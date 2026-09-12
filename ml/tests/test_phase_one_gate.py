@@ -29,11 +29,15 @@ class PhaseOneGateTests(unittest.TestCase):
 
     def test_strong_familiar_cannot_hide_weak_unfamiliar(self):
         training = {"runner_type": "ubuntu-latest", "workers": 10,
+            "rules_version": "frozen-commit",
             "checkpoint_sha256": "checkpoint-hash", "pipeline_elapsed_seconds": 100,
             "evaluation_excluded_from_training": True}
         self.assertTrue(promotion_report(manifest(), manifest(unfamiliar=True), training)["passed"])
         self.assertFalse(promotion_report(manifest(20, 0), manifest(10, 10, unfamiliar=True), training)["passed"])
         training["pipeline_elapsed_seconds"] = 14400
+        self.assertFalse(promotion_report(manifest(), manifest(unfamiliar=True), training)["passed"])
+        training["pipeline_elapsed_seconds"] = 100
+        training["rules_version"] = "different-rules"
         self.assertFalse(promotion_report(manifest(), manifest(unfamiliar=True), training)["passed"])
 
     def test_duplicate_games_and_runtime_overrun_fail(self):
@@ -42,6 +46,8 @@ class PhaseOneGateTests(unittest.TestCase):
         self.assertFalse(score_group(data, "phase1_familiar")["passed"])
         data = manifest()
         data["games"][0]["challenger_search"]["max_elapsed_ms"] = 30001
+        self.assertFalse(score_group(data, "phase1_familiar")["passed"])
+        data["games"][0]["challenger_search"]["max_elapsed_ms"] = float("nan")
         self.assertFalse(score_group(data, "phase1_familiar")["passed"])
 
 

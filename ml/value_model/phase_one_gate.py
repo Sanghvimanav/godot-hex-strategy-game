@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -31,7 +32,7 @@ def score_group(manifest: dict, expected_preset: str) -> dict:
         "half_resolved": resolved >= 10,
         "three_quarters_resolved_wins": resolved > 0 and counts["challenger"] * 4 >= resolved * 3,
         "equal_positive_time_budget": 0 < budget <= 30000,
-        "thirty_second_cap": bool(times) and max(times) <= 30000,
+        "thirty_second_cap": bool(times) and all(math.isfinite(t) and 0 <= t <= 30000 for t in times),
         "neural_vs_handwritten": manifest.get("champion_evaluator") == "handwritten"
             and manifest.get("challenger_evaluator") == "neural",
     }
@@ -45,7 +46,7 @@ def promotion_report(familiar: dict, unfamiliar: dict, training: dict) -> dict:
     elapsed = training.get("pipeline_elapsed_seconds")
     checks = {
         "same_rules": bool(familiar.get("rules_version"))
-            and familiar.get("rules_version") == unfamiliar.get("rules_version"),
+            and familiar.get("rules_version") == unfamiliar.get("rules_version") == training.get("rules_version"),
         "same_budget": familiar.get("decision_time_budget_ms") == unfamiliar.get("decision_time_budget_ms"),
         "different_map_generator": familiar.get("map_profile") == "compact_v1"
             and unfamiliar.get("map_profile") == "phase1_unfamiliar_v1",
