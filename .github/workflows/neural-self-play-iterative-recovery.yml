@@ -1,0 +1,506 @@
+name: Recover Iterative Self-Play Experiment
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ai/iterative-self-play-eval
+    paths:
+      - .github/iterative-self-play-recovery-trigger
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: neural-iterative-self-play-recovery-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FAILED_RUN_ID: "34674280939"
+  CHECKPOINT_RUN_ID: "34240515308"
+  SOURCE_EXPERIMENT_RUN_ID: "34152473442"
+  SEARCH_PROFILE: balanced
+  REPLAY_EXAMPLES: "5000"
+  EPOCHS: "10"
+  SELF_PLAY_SEED_BASE: "900001"
+  SELF_PLAY_SEED_STRIDE: "7919"
+  SELF_PLAY_EXTRA_TURNS: "4"
+
+jobs:
+  recover-cycle-1-shard-0:
+    name: Recover Cycle 1 self-play shard 0
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Download Iteration-2 parent
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-policy-candidate-*
+          path: artifacts/source_candidate
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.CHECKPOINT_RUN_ID }}
+      - name: Resolve parent checkpoint
+        run: |
+          set -euo pipefail
+          checkpoint="$(find artifacts/source_candidate -type f -name ranked_value_model.pt -print -quit)"
+          test -n "$checkpoint"
+          mkdir -p artifacts/checkpoint
+          cp "$checkpoint" artifacts/checkpoint/ranked_value_model.pt
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with: {version: 4.6.0, use-dotnet: false, include-templates: false}
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Regenerate only Cycle 1 shard 0
+        working-directory: hex-strategy-game
+        run: |
+          set -euo pipefail
+          godot --headless --path . res://tools/neural_self_play_dataset.tscn -- \
+            --profile="${SEARCH_PROFILE}" \
+            --map-profile=compact_v1 \
+            --checkpoint="${GITHUB_WORKSPACE}/artifacts/checkpoint/ranked_value_model.pt" \
+            --game-count=12 \
+            --seed-base="${SELF_PLAY_SEED_BASE}" \
+            --extra-turns="${SELF_PLAY_EXTRA_TURNS}" \
+            --out="${GITHUB_WORKSPACE}/artifacts/self_play" \
+            --shard-index=0 --shard-count=1
+      - name: Stamp Cycle 1 provenance
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("artifacts/self_play")
+          examples = root / "examples.jsonl"
+          rows = []
+          if examples.exists():
+              for raw in examples.read_text().splitlines():
+                  if raw.strip():
+                      row = json.loads(raw)
+                      source = dict(row.get("source") or {})
+                      source.update(self_play_cycle=1, policy_version="iteration-2")
+                      row["source"] = source
+                      rows.append(row)
+              examples.write_text("".join(json.dumps(x, separators=(",", ":")) + "\n" for x in rows))
+          games = root / "games.jsonl"
+          game_rows = []
+          for raw in games.read_text().splitlines():
+              if raw.strip():
+                  row = json.loads(raw)
+                  row.update(self_play_cycle=1, policy_version="iteration-2")
+                  game_rows.append(row)
+          games.write_text("".join(json.dumps(x, separators=(",", ":")) + "\n" for x in game_rows))
+          manifest_path = root / "manifest.json"
+          manifest = json.loads(manifest_path.read_text())
+          manifest.update(self_play_cycle=1, policy_version="iteration-2", recovered_from_run=34674280939, recovered_shard=0)
+          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iterative-cycle-1-self-play-shard-0
+          path: artifacts/self_play/
+          if-no-files-found: error
+          retention-days: 21
+
+  recover-cycle-1-train:
+    name: Reassemble Cycle 1 and warm-start train
+    needs: recover-cycle-1-shard-0
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Download Iteration-2 parent
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-policy-candidate-*
+          path: artifacts/source_candidate
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.CHECKPOINT_RUN_ID }}
+      - name: Download frozen counterfactual source
+        uses: actions/download-artifact@v4
+        with:
+          pattern: value-model-experiment-*
+          path: artifacts/experiment
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.SOURCE_EXPERIMENT_RUN_ID }}
+      - name: Download nine completed Cycle 1 shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: iterative-cycle-1-self-play-shard-*
+          path: artifacts/source_shards
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.FAILED_RUN_ID }}
+      - name: Download recovered shard 0
+        uses: actions/download-artifact@v4
+        with:
+          name: iterative-cycle-1-self-play-shard-0
+          path: artifacts/recovered_shard_0
+      - name: Assemble and validate exact Cycle 1 dataset
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/self_play_shards
+          for dir in artifacts/source_shards/iterative-cycle-1-self-play-shard-*; do
+            cp -R "$dir" "artifacts/self_play_shards/$(basename "$dir")"
+          done
+          rm -rf artifacts/self_play_shards/iterative-cycle-1-self-play-shard-0
+          mkdir -p artifacts/self_play_shards/iterative-cycle-1-self-play-shard-0
+          cp -R artifacts/recovered_shard_0/. artifacts/self_play_shards/iterative-cycle-1-self-play-shard-0/
+          python - <<'PY'
+          import json, re
+          from collections import Counter
+          from pathlib import Path
+          expected_ids = set(range(10))
+          expected_families = {"mixed_force","hydra_crossfire","medic_hold","scout_kite","worker_screen","baneling_flank","attrition","fester_siege"}
+          found = {}
+          for path in Path("artifacts/self_play_shards").glob("iterative-cycle-1-self-play-shard-*/manifest.json"):
+              m = re.search(r"shard-(\d+)", path.parent.name)
+              if not m:
+                  raise SystemExit(f"Cannot parse shard id: {path}")
+              sid = int(m.group(1))
+              if sid in found:
+                  raise SystemExit(f"Duplicate shard {sid}")
+              found[sid] = path
+          if set(found) != expected_ids:
+              raise SystemExit(f"Expected shards 0..9; missing={sorted(expected_ids-set(found))}, unexpected={sorted(set(found)-expected_ids)}")
+          manifests, requested_families, labeled_families, outcomes = [], Counter(), Counter(), Counter()
+          for sid in sorted(found):
+              path = found[sid]
+              manifest = json.loads(path.read_text())
+              if int(manifest.get("self_play_cycle", -1)) != 1 or manifest.get("policy_version") != "iteration-2":
+                  raise SystemExit(f"Bad Cycle 1 provenance in shard {sid}")
+              if int(manifest.get("games_requested", 0)) != 12:
+                  raise SystemExit(f"Shard {sid}: expected 12 games")
+              shard_families = Counter()
+              for raw in path.with_name("games.jsonl").read_text().splitlines():
+                  if raw.strip():
+                      family = str(json.loads(raw).get("base_scenario_id", ""))
+                      if family:
+                          shard_families[family] += 1
+                          requested_families[family] += 1
+              missing = expected_families - set(shard_families)
+              if missing:
+                  raise SystemExit(f"Shard {sid}: missing families {sorted(missing)}")
+              manifests.append(manifest)
+              labeled_families.update({k:int(v) for k,v in manifest.get("family_counts",{}).items()})
+              outcomes.update({k:int(v) for k,v in manifest.get("outcomes",{}).items()})
+          merged = {
+              "self_play_cycle": 1,
+              "policy_version": "iteration-2",
+              "shards": 10,
+              "games_requested": sum(int(m.get("games_requested",0)) for m in manifests),
+              "games_labeled": sum(int(m.get("games_labeled",0)) for m in manifests),
+              "games_unlabeled": sum(int(m.get("games_unlabeled",0)) for m in manifests),
+              "games_failed": sum(int(m.get("games_failed",0)) for m in manifests),
+              "examples_generated": sum(int(m.get("example_count",0)) for m in manifests),
+              "outcomes": dict(outcomes),
+              "family_requested_counts": dict(requested_families),
+              "family_counts": dict(labeled_families),
+              "all_families_present_per_shard": True,
+              "profile": manifests[0].get("profile", ""),
+              "map_profile": manifests[0].get("map_profile", ""),
+              "extra_turns": manifests[0].get("extra_turns", 0),
+              "source_run_id": 34674280939,
+              "recovered_shards": [0],
+          }
+          if merged["games_requested"] != 120 or merged["games_failed"] != 0:
+              raise SystemExit(f"Invalid aggregate: {merged}")
+          Path("artifacts/self_play_manifest.json").write_text(json.dumps(merged, indent=2) + "\n")
+          print(json.dumps(merged, indent=2))
+          PY
+      - name: Build Cycle 1 rolling replay
+        run: |
+          set -euo pipefail
+          history_examples="$(find artifacts/source_candidate -type f -name combined_examples.jsonl -print -quit)"
+          history_pairs="$(find artifacts/source_candidate -type f -name combined_ranking_pairs.jsonl -print -quit)"
+          test -n "$history_examples" && test -n "$history_pairs"
+          mkdir -p artifacts/combined
+          python -m ml.value_model.build_replay_buffer \
+            --new-root artifacts/self_play_shards \
+            --history-examples "$history_examples" \
+            --output-examples artifacts/combined/combined_examples.jsonl \
+            --max-examples "${REPLAY_EXAMPLES}" --seed 1 \
+            --history-ranking-pairs "$history_pairs" \
+            --output-ranking-pairs artifacts/combined/combined_ranking_pairs.jsonl \
+            --max-ranking-pairs 1000 \
+            --manifest artifacts/combined/replay_manifest.json
+      - name: Run value-model tests
+        run: python -m unittest discover -s ml/tests -v
+      - name: Warm-start Cycle 1 learner
+        run: |
+          set -euo pipefail
+          parent_checkpoint="$(find artifacts/source_candidate -type f -name ranked_value_model.pt -print -quit)"
+          test -n "$parent_checkpoint"
+          python -m ml.value_model.train_ranked_iterative \
+            --init-checkpoint "$parent_checkpoint" \
+            --data artifacts/combined/combined_examples.jsonl \
+            --ranking-data artifacts/combined/combined_ranking_pairs.jsonl \
+            --output artifacts/ranked_value_model.pt \
+            --epochs "${EPOCHS}" --batch-size 64 --ranking-batch-size 32 \
+            --ranking-weight 0.5 --learning-rate 0.0003 --weight-decay 0.0001 \
+            --validation-fraction 0.25 --split-key source.base_scenario_id \
+            --seed 1 --device cpu | tee artifacts/ranked_metrics.json
+          test -s artifacts/ranked_value_model.pt
+      - name: Evaluate frozen counterfactual
+        run: |
+          python -m ml.value_model.evaluate_counterfactual \
+            --candidates artifacts/experiment/counterfactual/candidates_with_handwritten.jsonl \
+            --checkpoint artifacts/ranked_value_model.pt \
+            --output artifacts/ranked_counterfactual_metrics.json
+      - name: Write Cycle 1 training metrics
+        run: |
+          set -euo pipefail
+          rejected="$(find artifacts/source_candidate -type f -name rejected_continuations.jsonl -print -quit)"
+          if [[ -n "$rejected" ]]; then cp "$rejected" artifacts/combined/rejected_continuations.jsonl; else : > artifacts/combined/rejected_continuations.jsonl; fi
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          sp=json.loads(Path("artifacts/self_play_manifest.json").read_text())
+          replay=json.loads(Path("artifacts/combined/replay_manifest.json").read_text())
+          train=json.loads(Path("artifacts/ranked_metrics.json").read_text())
+          cf=json.loads(Path("artifacts/ranked_counterfactual_metrics.json").read_text())["evaluators"]["neural_value_model"]
+          payload={"cycle_id":1,"parent_policy":"iteration-2","self_play":sp,"replay":replay,"training":train,"counterfactual":cf}
+          Path("artifacts/cycle_training_metrics.json").write_text(json.dumps(payload,indent=2)+"\n")
+          summary=(f"## Recovered iterative cycle 1 training\n\n"
+                   f"Labeled/unresolved: {sp['games_labeled']}/{sp['games_unlabeled']}; fresh examples: {sp['examples_generated']}; "
+                   f"replay: {replay['value_replay']['output_examples']}.\n\n"
+                   f"Frozen CF: rank {cf['candidate_ranking_accuracy']:.1%}, regret {cf['top_plan_mean_regret']:.3f}, optimal {cf['top_plan_optimal_rate']:.1%}.\n")
+          Path("artifacts/training_summary.md").write_text(summary)
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as f: f.write(summary)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iterative-self-play-cycle-1-candidate
+          path: |
+            artifacts/ranked_value_model.pt
+            artifacts/ranked_metrics.json
+            artifacts/ranked_counterfactual_metrics.json
+            artifacts/cycle_training_metrics.json
+            artifacts/training_summary.md
+            artifacts/self_play_manifest.json
+            artifacts/combined/combined_examples.jsonl
+            artifacts/combined/combined_ranking_pairs.jsonl
+            artifacts/combined/replay_manifest.json
+            artifacts/combined/rejected_continuations.jsonl
+          if-no-files-found: error
+          retention-days: 21
+
+  cycle-1-arena:
+    name: Recovered Cycle 1 frozen Arena shard ${{ matrix.shard }}
+    needs: recover-cycle-1-train
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix: {shard: [0, 1, 2, 3]}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: iterative-self-play-cycle-1-candidate
+          path: artifacts/candidate
+      - name: Install learner checkpoint
+        run: mkdir -p hex-strategy-game/models && cp artifacts/candidate/ranked_value_model.pt hex-strategy-game/models/objective_aware_candidate_v1.pt
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with: {version: 4.6.0, use-dotnet: false, include-templates: false}
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Run untouched frozen fast Arena
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/ai_arena.tscn -- \
+            --preset=fast --map-profile=compact_v1 \
+            --champion-profile="${SEARCH_PROFILE}" --challenger-profile="${SEARCH_PROFILE}" \
+            --champion-evaluator=handwritten --challenger-evaluator=neural \
+            --rules-version="${GITHUB_SHA}" --out="${GITHUB_WORKSPACE}/artifacts/arena" \
+            --shard-index="${{ matrix.shard }}" --shard-count=4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iterative-cycle-1-arena-shard-${{ matrix.shard }}
+          path: artifacts/arena/
+          if-no-files-found: error
+          retention-days: 14
+
+  cycle-1-merge:
+    name: Complete recovered Cycle 1 metrics
+    needs: cycle-1-arena
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: iterative-cycle-1-arena-shard-*
+          path: artifacts/arena_shards
+          merge-multiple: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: iterative-self-play-cycle-1-candidate
+          path: artifacts/candidate
+      - name: Merge Arena and complete metrics
+        run: |
+          python3 hex-strategy-game/tools/merge_ai_arena.py --input-root artifacts/arena_shards --out artifacts/arena_merged --checkpoint-source="iterative-self-play:cycle-1:recovered:run-${GITHUB_RUN_ID}"
+          cat artifacts/arena_merged/summary.md >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          metrics=json.loads(Path("artifacts/candidate/cycle_training_metrics.json").read_text())
+          arena=json.loads(Path("artifacts/arena_merged/manifest.json").read_text())
+          metrics["arena"]={k:arena.get(k,{}) for k in ["counts","pair_counts","challenger_faction_counts","family_counts","passivity","termination_counts"]}
+          metrics["arena"].update(challenger_decisive_win_rate=arena.get("challenger_decisive_win_rate",0.0),mean_turns=arena.get("mean_turns",0.0))
+          Path("artifacts/cycle_metrics.json").write_text(json.dumps(metrics,indent=2)+"\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iterative-self-play-cycle-1-metrics
+          path: |
+            artifacts/cycle_metrics.json
+            artifacts/arena_merged/manifest.json
+            artifacts/arena_merged/summary.md
+          if-no-files-found: error
+          retention-days: 21
+
+  cycle-2:
+    name: Cycle 2 - 120 self-play games then train/eval
+    needs: cycle-1-merge
+    uses: ./.github/workflows/neural-self-play-cycle.yml
+    with:
+      cycle_id: "2"
+      parent_cycle_id: "1"
+      parent_run_id: ""
+      parent_label: cycle-1
+      source_experiment_run_id: "34152473442"
+      seed_base: "1900001"
+      replay_examples: "5000"
+      search_profile: balanced
+      epochs: "10"
+    secrets: inherit
+
+  cycle-3:
+    name: Cycle 3 - 120 self-play games then train/eval
+    needs: cycle-2
+    uses: ./.github/workflows/neural-self-play-cycle.yml
+    with:
+      cycle_id: "3"
+      parent_cycle_id: "2"
+      parent_run_id: ""
+      parent_label: cycle-2
+      source_experiment_run_id: "34152473442"
+      seed_base: "2900001"
+      replay_examples: "5000"
+      search_profile: balanced
+      epochs: "10"
+    secrets: inherit
+
+  cycle-4:
+    name: Cycle 4 - 120 self-play games then train/eval
+    needs: cycle-3
+    uses: ./.github/workflows/neural-self-play-cycle.yml
+    with:
+      cycle_id: "4"
+      parent_cycle_id: "3"
+      parent_run_id: ""
+      parent_label: cycle-3
+      source_experiment_run_id: "34152473442"
+      seed_base: "3900001"
+      replay_examples: "5000"
+      search_profile: balanced
+      epochs: "10"
+    secrets: inherit
+
+  cycle-5:
+    name: Cycle 5 - 120 self-play games then train/eval
+    needs: cycle-4
+    uses: ./.github/workflows/neural-self-play-cycle.yml
+    with:
+      cycle_id: "5"
+      parent_cycle_id: "4"
+      parent_run_id: ""
+      parent_label: cycle-4
+      source_experiment_run_id: "34152473442"
+      seed_base: "4900001"
+      replay_examples: "5000"
+      search_profile: balanced
+      epochs: "10"
+    secrets: inherit
+
+  cycle-6:
+    name: Cycle 6 - 120 self-play games then train/eval
+    needs: cycle-5
+    uses: ./.github/workflows/neural-self-play-cycle.yml
+    with:
+      cycle_id: "6"
+      parent_cycle_id: "5"
+      parent_run_id: ""
+      parent_label: cycle-5
+      source_experiment_run_id: "34152473442"
+      seed_base: "5900001"
+      replay_examples: "5000"
+      search_profile: balanced
+      epochs: "10"
+    secrets: inherit
+
+  progression:
+    name: Compare every training checkpoint
+    needs: cycle-6
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all cycle metrics
+        uses: actions/download-artifact@v4
+        with:
+          pattern: iterative-self-play-cycle-*-metrics
+          path: artifacts/cycles
+          merge-multiple: false
+      - name: Download Iteration-2 baseline candidate
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-policy-candidate-*
+          path: artifacts/baseline_candidate
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.CHECKPOINT_RUN_ID }}
+      - name: Download Iteration-2 frozen Arena
+        uses: actions/download-artifact@v4
+        with:
+          pattern: neural-policy-arena-[0-9]*
+          path: artifacts/baseline_arena
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.CHECKPOINT_RUN_ID }}
+      - name: Build checkpoint progression report
+        run: |
+          python -m ml.value_model.summarize_iterative_progression \
+            --cycles-root artifacts/cycles \
+            --baseline-candidate-root artifacts/baseline_candidate \
+            --baseline-arena-root artifacts/baseline_arena \
+            --baseline-run-id "${CHECKPOINT_RUN_ID}" \
+            --output-json artifacts/iterative_progression.json \
+            --output-markdown artifacts/iterative_progression.md
+          cat artifacts/iterative_progression.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iterative-self-play-progression-${{ github.run_number }}
+          path: |
+            artifacts/iterative_progression.json
+            artifacts/iterative_progression.md
+          if-no-files-found: error
+          retention-days: 30
