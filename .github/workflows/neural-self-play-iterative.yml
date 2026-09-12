@@ -25,9 +25,9 @@ on:
         type: choice
         options: [balanced, fast]
       epochs:
-        description: Ranked retraining epochs per cycle
+        description: Epochs per cycle; default 10 gives 60 nominal epochs across six cycles, matching the one-shot default
         required: true
-        default: "60"
+        default: "10"
         type: string
 
 permissions:
@@ -140,7 +140,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Download all iterative cycle metrics
+      - uses: actions/checkout@v4
+      - name: Download all cycle metrics
         uses: actions/download-artifact@v4
         with:
           pattern: iterative-self-play-cycle-*-metrics
@@ -164,164 +165,15 @@ jobs:
           run-id: ${{ inputs.checkpoint_run_id }}
       - name: Build checkpoint progression report
         run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          def first(root: str, name: str) -> Path:
-              matches = list(Path(root).rglob(name))
-              if not matches:
-                  raise SystemExit(f"Missing {name} under {root}")
-              return matches[0]
-
-          baseline_train = json.loads(first("artifacts/baseline_candidate", "ranked_metrics.json").read_text())
-          baseline_cf_full = json.loads(first("artifacts/baseline_candidate", "ranked_counterfactual_metrics.json").read_text())
-          baseline_cf = baseline_cf_full["evaluators"]["neural_value_model"]
-
-          arena_candidates = []
-          for path in Path("artifacts/baseline_arena").rglob("manifest.json"):
-              payload = json.loads(path.read_text())
-              if "counts" in payload and "challenger_decisive_win_rate" in payload:
-                  arena_candidates.append(payload)
-          if len(arena_candidates) != 1:
-              raise SystemExit(f"Expected one merged baseline Arena manifest, found {len(arena_candidates)}")
-          baseline_arena = arena_candidates[0]
-
-          rows = [{
-              "cycle_id": 0,
-              "label": "Iteration 2 baseline",
-              "parent_policy": "-",
-              "self_play": None,
-              "training": baseline_train,
-              "counterfactual": baseline_cf,
-              "arena": {
-                  "counts": baseline_arena.get("counts", {}),
-                  "challenger_decisive_win_rate": baseline_arena.get("challenger_decisive_win_rate", 0.0),
-                  "passivity": baseline_arena.get("passivity", {}),
-              },
-          }]
-
-          cycle_paths = sorted(
-              Path("artifacts/cycles").rglob("cycle_metrics.json"),
-              key=lambda p: int(json.loads(p.read_text())["cycle_id"]),
-          )
-          if len(cycle_paths) != 6:
-              raise SystemExit(f"Expected six cycle metrics files, found {len(cycle_paths)}")
-          for path in cycle_paths:
-              payload = json.loads(path.read_text())
-              payload["label"] = f"Cycle {payload['cycle_id']}"
-              rows.append(payload)
-
-          def metrics(row):
-              cf = row["counterfactual"]
-              arena = row["arena"]
-              return {
-                  "cf_rank": float(cf["candidate_ranking_accuracy"]),
-                  "cf_regret": float(cf["top_plan_mean_regret"]),
-                  "cf_optimal": float(cf["top_plan_optimal_rate"]),
-                  "arena_win": float(arena["challenger_decisive_win_rate"]),
-              }
-
-          transitions = []
-          for previous, current in zip(rows, rows[1:]):
-              a = metrics(previous)
-              b = metrics(current)
-              delta = {
-                  "from_cycle": previous["cycle_id"],
-                  "to_cycle": current["cycle_id"],
-                  "cf_rank_delta": b["cf_rank"] - a["cf_rank"],
-                  "cf_regret_delta": b["cf_regret"] - a["cf_regret"],
-                  "cf_optimal_delta": b["cf_optimal"] - a["cf_optimal"],
-                  "arena_win_delta": b["arena_win"] - a["arena_win"],
-              }
-              transitions.append(delta)
-
-          series = [metrics(row) for row in rows]
-          monotonic = {
-              "cf_candidate_ranking_nondecreasing": all(b["cf_rank"] >= a["cf_rank"] for a, b in zip(series, series[1:])),
-              "cf_mean_regret_nonincreasing": all(b["cf_regret"] <= a["cf_regret"] for a, b in zip(series, series[1:])),
-              "cf_optimal_rate_nondecreasing": all(b["cf_optimal"] >= a["cf_optimal"] for a, b in zip(series, series[1:])),
-              "arena_decisive_win_rate_nondecreasing": all(b["arena_win"] >= a["arena_win"] for a, b in zip(series, series[1:])),
-          }
-
-          report = {
-              "experiment": "six_cycle_iterative_self_play",
-              "total_self_play_games": 720,
-              "games_per_cycle": 120,
-              "cycles": 6,
-              "baseline_run_id": os.environ.get("BASELINE_RUN_ID", ""),
-              "rows": rows,
-              "transitions": transitions,
-              "monotonic_primary_metrics": monotonic,
-          }
-          Path("artifacts").mkdir(exist_ok=True)
-          Path("artifacts/iterative_progression.json").write_text(json.dumps(report, indent=2) + "\n")
-
-          def pct(v):
-              return f"{100.0 * float(v):.1f}%"
-
-          def signed_pp(v):
-              return f"{100.0 * float(v):+.1f}pp"
-
-          table = [
-              "## Iterative self-play checkpoint progression",
-              "",
-              "Same total self-play budget as the one-shot scale experiment: **720 games = 6 cycles × 120 games**.",
-              "Frozen evaluation data is never added to training replay.",
-              "",
-              "| Checkpoint | Parent used for self-play | Labeled / unresolved | Fresh examples | Held-out sign | Held-out sibling | Frozen CF rank | CF regret | CF optimal | Frozen Arena W-L-D-U | Arena decisive win | Neural passivity |",
-              "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
-          ]
-          for row in rows:
-              train = row["training"]
-              cf = row["counterfactual"]
-              arena = row["arena"]
-              counts = arena.get("counts", {})
-              passivity = arena.get("passivity", {}).get("challenger", {}).get("passive_rate", 0.0)
-              if row["cycle_id"] == 0:
-                  labeled = "-"
-                  examples = "-"
-                  parent = "-"
-              else:
-                  sp = row["self_play"]
-                  labeled = f"{sp['games_labeled']} / {sp['games_unlabeled']}"
-                  examples = str(sp["examples_generated"])
-                  parent = row["parent_policy"]
-              table.append(
-                  f"| {row['label']} | {parent} | {labeled} | {examples} | "
-                  f"{pct(train['neural_eval_sign_accuracy_nonterminal'])} | {pct(train['eval_ranking_accuracy'])} | "
-                  f"{pct(cf['candidate_ranking_accuracy'])} | {float(cf['top_plan_mean_regret']):.3f} | "
-                  f"{pct(cf['top_plan_optimal_rate'])} | "
-                  f"{counts.get('challenger', 0)}-{counts.get('champion', 0)}-{counts.get('draw', 0)}-{counts.get('unresolved', 0)} | "
-                  f"{pct(arena['challenger_decisive_win_rate'])} | {pct(passivity)} |"
-              )
-
-          table += ["", "### Change after each training step", "", "| Training step | CF rank | CF regret | CF optimal | Arena win rate |", "| --- | ---: | ---: | ---: | ---: |"]
-          for d in transitions:
-              table.append(
-                  f"| {d['from_cycle']} → {d['to_cycle']} | {signed_pp(d['cf_rank_delta'])} | "
-                  f"{d['cf_regret_delta']:+.3f} | {signed_pp(d['cf_optimal_delta'])} | {signed_pp(d['arena_win_delta'])} |"
-              )
-          table += ["", "### Monotonicity check", ""]
-          for key, value in monotonic.items():
-              table.append(f"- {key}: **{'yes' if value else 'no'}**")
-          table += [
-              "",
-              "A lower counterfactual regret is better; the other three frozen primary metrics are better when higher.",
-              "This report is descriptive: a temporary learner regression does not replace the Iteration-2 champion automatically.",
-              "",
-          ]
-          summary = "\n".join(table)
-          Path("artifacts/iterative_progression.md").write_text(summary)
-          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as handle:
-              handle.write(summary)
-          print(summary)
-          PY
-        env:
-          BASELINE_RUN_ID: ${{ inputs.checkpoint_run_id }}
-      - name: Upload progression report
-        uses: actions/upload-artifact@v4
+          python -m ml.value_model.summarize_iterative_progression \
+            --cycles-root artifacts/cycles \
+            --baseline-candidate-root artifacts/baseline_candidate \
+            --baseline-arena-root artifacts/baseline_arena \
+            --baseline-run-id "${{ inputs.checkpoint_run_id }}" \
+            --output-json artifacts/iterative_progression.json \
+            --output-markdown artifacts/iterative_progression.md
+          cat artifacts/iterative_progression.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
         with:
           name: iterative-self-play-progression-${{ github.run_number }}
           path: |
