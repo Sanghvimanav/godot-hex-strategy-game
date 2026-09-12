@@ -30,7 +30,7 @@ jobs:
   self-play:
     name: Cycle ${{ inputs.cycle_id }} self-play shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 70
     strategy:
       fail-fast: false
       max-parallel: 10
