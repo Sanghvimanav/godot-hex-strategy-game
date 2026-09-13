@@ -1,1 +1,1 @@
-neural-self-play-v3: rerun after explicit GDScript string types in policy decision capture
+neural-self-play-v4: corrected GDScript parse and cancel superseded experiment runs
