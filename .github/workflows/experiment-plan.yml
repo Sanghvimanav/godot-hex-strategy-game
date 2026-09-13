@@ -1,0 +1,134 @@
+name: Experiment Plan
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_path:
+        description: Committed experiment manifest path
+        required: true
+        default: experiments/example_phase_one_v1.json
+        type: string
+      tier:
+        description: Manifest tier to plan
+        required: true
+        default: diagnostic
+        type: string
+      checkpoint_sha256:
+        description: Optional exact checkpoint SHA-256
+        required: false
+        default: ""
+        type: string
+      resume_run_id:
+        description: Optional prior Actions run ID whose shard artifacts should be reused
+        required: false
+        default: ""
+        type: string
+  workflow_call:
+    inputs:
+      manifest_path:
+        description: Committed experiment manifest path
+        required: true
+        type: string
+      tier:
+        description: Manifest tier to plan
+        required: true
+        type: string
+      checkpoint_sha256:
+        description: Optional exact checkpoint SHA-256
+        required: false
+        default: ""
+        type: string
+      resume_run_id:
+        description: Optional prior Actions run ID whose shard artifacts should be reused
+        required: false
+        default: ""
+        type: string
+    outputs:
+      matrix:
+        description: GitHub matrix include object containing only pending shards
+        value: ${{ jobs.plan.outputs.matrix }}
+      pending_count:
+        description: Number of shards still requiring work
+        value: ${{ jobs.plan.outputs.pending_count }}
+      experiment_id:
+        description: Manifest experiment ID
+        value: ${{ jobs.plan.outputs.experiment_id }}
+      tier:
+        description: Resolved manifest tier
+        value: ${{ jobs.plan.outputs.tier }}
+      plan_artifact_name:
+        description: Artifact containing the exact resolved plan
+        value: ${{ jobs.plan.outputs.plan_artifact_name }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      pending_count: ${{ steps.plan.outputs.pending_count }}
+      experiment_id: ${{ steps.plan.outputs.experiment_id }}
+      tier: ${{ steps.plan.outputs.tier }}
+      plan_artifact_name: ${{ steps.metadata.outputs.plan_artifact_name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate manifest
+        run: python -m ml.experiments.runner validate "${{ inputs.manifest_path }}"
+
+      - name: Download prior shard artifacts
+        if: ${{ inputs.resume_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESUME_RUN_ID: ${{ inputs.resume_run_id }}
+        run: |
+          mkdir -p prior-results
+          gh run download "$RESUME_RUN_ID" --dir prior-results
+
+      - name: Prepare empty prior-results directory
+        if: ${{ inputs.resume_run_id == '' }}
+        run: mkdir -p prior-results
+
+      - name: Resolve exact-provenance shard plan
+        id: plan
+        env:
+          MANIFEST_PATH: ${{ inputs.manifest_path }}
+          TIER: ${{ inputs.tier }}
+          CHECKPOINT_SHA256: ${{ inputs.checkpoint_sha256 }}
+        run: |
+          args=(
+            plan "$MANIFEST_PATH"
+            --tier "$TIER"
+            --rules-sha "$GITHUB_SHA"
+            --results-dir prior-results
+            --output experiment-plan.json
+            --github-output "$GITHUB_OUTPUT"
+          )
+          if [[ -n "$CHECKPOINT_SHA256" ]]; then
+            args+=(--checkpoint-sha256 "$CHECKPOINT_SHA256")
+          fi
+          python -m ml.experiments.runner "${args[@]}"
+          cat experiment-plan.json
+
+      - name: Set artifact metadata
+        id: metadata
+        run: echo "plan_artifact_name=experiment-plan-${GITHUB_RUN_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload resolved plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: experiment-plan-${{ github.run_id }}
+          path: experiment-plan.json
+          if-no-files-found: error
+          retention-days: 30
