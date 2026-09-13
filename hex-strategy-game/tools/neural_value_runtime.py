@@ -82,7 +82,9 @@ def load_joint_policy(
     state = checkpoint.get("joint_plan_policy_state_dict")
     if not isinstance(config, dict) or not isinstance(state, dict):
         return None, None
-    if int(config.get("version", 0)) != 1:
+    # V2 changed only the supervision metadata to support soft MCTS visit targets;
+    # the inference architecture and serialized head tensors are unchanged from V1.
+    if int(config.get("version", 0)) not in {1, 2}:
         raise ValueError("unsupported joint-plan policy version")
     action_vocab = [str(item) for item in config.get("action_vocab", [])]
     unit_vocab = [str(item) for item in config.get("unit_vocab", [])]
