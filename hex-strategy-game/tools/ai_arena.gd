@@ -112,7 +112,8 @@ func _run_arena() -> void:
 			terran_settings,
 			zerg_settings,
 			int(job.get("max_turns", 10)),
-			false
+			false,
+			str(job.get("turn_limit_winner", ""))
 		)
 
 		var valid := bool(result.get("valid", false))

@@ -175,13 +175,17 @@ static func build_examples_from_rollout(
 			return result
 		var state: Dictionary = state_variant
 		var terminal_state := turn_index == states.size() - 1
+		# Opt-in discounted terminal returns: faster wins, slower losses. The
+		# historical default remains exactly +/-1 (or zero for terminal draws).
+		var discount := clampf(float(source_metadata.get("reward_discount", 1.0)), 0.01, 1.0)
+		var reward_scale := pow(discount, states.size() - 1 - turn_index)
 		examples.append(_build_example(
 			state,
 			game_id,
 			turn_index,
 			group_a,
 			group_b,
-			_perspective_outcome(winner, group_a),
+			_perspective_outcome(winner, group_a) * reward_scale,
 			terminal_state,
 			winner,
 			source_metadata
@@ -192,7 +196,7 @@ static func build_examples_from_rollout(
 			turn_index,
 			group_b,
 			group_a,
-			_perspective_outcome(winner, group_b),
+			_perspective_outcome(winner, group_b) * reward_scale,
 			terminal_state,
 			winner,
 			source_metadata

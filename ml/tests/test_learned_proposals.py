@@ -28,7 +28,7 @@ class LearnedProposalTests(unittest.TestCase):
         a = make_encoder(2).encode(e)
         e["state"]["tile_resources"] = {"1,0": {"amount": 8}}
         self.assertFalse(torch.equal(a.board, make_encoder(2).encode(e).board))
-        with self.assertRaises(ValueError): make_encoder(3)
+        with self.assertRaises(ValueError): make_encoder(4)
 
     def test_unit_definition_vocabulary_and_hold_target(self):
         e = example(); d = {"starting_state": e["state"], "perspective_group": "terran", "opponent_group": "zerg",

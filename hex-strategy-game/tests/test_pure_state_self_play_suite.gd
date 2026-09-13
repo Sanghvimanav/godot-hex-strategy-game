@@ -15,7 +15,44 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_six_hex_rotations_round_trip(tests) and ok
 	ok = _test_fester_siege_requires_delay_and_preserves_producer(tests) and ok
 	ok = _test_smoke_game_emits_rules_provenance(tests) and ok
+	ok = _test_basic_training_stacks_and_rotations(tests) and ok
 	return ok
+
+
+static func _test_basic_training_stacks_and_rotations(tests: Node) -> bool:
+	var jobs := PureStateSelfPlaySuite.get_preset("basic_training")
+	if jobs.size() != 9:
+		tests._fail("basic curriculum requires three separate scenarios in three training orientations")
+		return false
+	var expected := [[1, 2, 3, "terran"], [3, 2, 8, "zerg"], [2, 4, 4, "terran"]]
+	for i in range(jobs.size()):
+		var job: Dictionary = jobs[i]
+		var spec: Array = expected[i / 3]
+		var state: Dictionary = job["state"]
+		var groups: Array = state["groups"]
+		var terran: Array = (groups[0] as Dictionary)["units"]
+		var zerg: Array = (groups[1] as Dictionary)["units"]
+		if terran.size() != spec[0] or zerg.size() != spec[1] or int(job["max_turns"]) != spec[2] or str(job["turn_limit_winner"]) != spec[3]:
+			tests._fail("basic curriculum incorrect scenario %s" % job["game_id"])
+			return false
+		if int(state["hex_radius"]) != 1 or bool(state["command_hexes_enabled"]) != (i / 3 == 1) or float(job["reward_discount"]) >= 1.0:
+			tests._fail("basic curriculum must use radius one, scenario-two pressure, and time preference")
+			return false
+		var marine_cell: Array = (terran[0] as Dictionary)["cell"]
+		var zerg_cell: Array = (zerg[0] as Dictionary)["cell"]
+		for unit in terran:
+			if unit["cell"] != marine_cell:
+				tests._fail("marines must be stacked on their starting edge")
+				return false
+		for unit in zerg:
+			if unit["cell"] != zerg_cell:
+				tests._fail("zerglings must be stacked on the opposite edge")
+				return false
+		if marine_cell == zerg_cell:
+			tests._fail("both factions cannot spawn on the same cell")
+			return false
+	tests._pass("nine basic training setups preserve opposite-side stacks and objectives")
+	return true
 
 
 static func _test_starter_preset_is_versioned_and_diverse(tests: Node) -> bool:

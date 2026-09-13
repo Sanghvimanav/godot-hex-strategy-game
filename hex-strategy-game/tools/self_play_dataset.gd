@@ -80,6 +80,7 @@ func _run_dataset() -> void:
 		var policy_profile := str(policy_exploration.get("profile", "greedy"))
 		var policy_seed := int(policy_exploration.get("seed", 0))
 		var source_metadata := {
+			"reward_discount": float(job.get("reward_discount", 1.0)),
 			"rules_version": rules_version,
 			"self_play_suite_version": PureStateSelfPlaySuite.SUITE_VERSION,
 			"self_play_diversity_version": PureStateSelfPlayDiversity.VERSION,

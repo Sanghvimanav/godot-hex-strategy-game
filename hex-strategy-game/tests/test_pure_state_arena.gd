@@ -14,7 +14,30 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_arena_pairs_swap_agent_factions_on_identical_state(tests) and ok
 	ok = _test_asymmetric_rollout_records_per_side_search_cost(tests) and ok
 	ok = _test_phase_one_map_groups(tests) and ok
+	ok = _test_basic_arena_mirrored_pairs(tests) and ok
 	return ok
+
+
+static func _test_basic_arena_mirrored_pairs(tests: Node) -> bool:
+	var jobs := PureStateArenaSuite.get_preset("basic", 0, PureStateArenaSuite.MAP_PROFILE_BASIC)
+	if jobs.size() != 54:
+		tests._fail("basic arena needs 27 setups and 54 faction-mirrored games")
+		return false
+	for i in range(0, jobs.size(), 2):
+		var a: Dictionary = jobs[i]
+		var b: Dictionary = jobs[i + 1]
+		if a["pair_id"] != b["pair_id"] or a["state"] != b["state"] or a["challenger_group"] == b["challenger_group"]:
+			tests._fail("basic arena must mirror the neural side on an identical position")
+			return false
+		if int(a["hex_radius"]) != 1 or int(a["rotation_steps"]) not in [1, 3, 5]:
+			tests._fail("basic arena should be radius one and hold out odd rotations")
+			return false
+	tests._pass("basic arena spans 2-4 unit counts, odd rotations, and both neural factions")
+	var first := PureStateArenaSuite.get_preset("basic_s1", 0, PureStateArenaSuite.MAP_PROFILE_BASIC)
+	if first.size() != 6 or first[0]["turn_limit_winner"] != "terran" or int(first[0]["max_turns"]) != 3:
+		tests._fail("scenario 1 must also have a held-out three-turn survival check")
+		return false
+	return true
 
 
 static func _test_phase_one_map_groups(tests: Node) -> bool:

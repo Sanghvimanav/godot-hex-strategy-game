@@ -50,9 +50,29 @@ class StrategicStateEncoder(HexStateEncoder):
         return EncodedExample(torch.cat((base.board, extra), dim=0), base.global_features, base.target)
 
 
+class CurriculumStateEncoder(StrategicStateEncoder):
+    """Opt-in horizon and survival objective for the small tactical curriculum."""
+
+    global_features = HexStateEncoder.global_features + 3
+
+    def encode(self, example):
+        base = super().encode(example)
+        context = example["state"].get("curriculum", {})
+        cap = max(0, int(context.get("max_turns", 0)))
+        turn = max(0, int(example.get("turn_index", example["state"].get("turn_index", 0))))
+        extras = torch.tensor([
+            min(cap / 16.0, 1.0),
+            min(max(0, cap - turn) / 16.0, 1.0),
+            float(context.get("turn_limit_winner") == example["perspective_group"]),
+        ], dtype=torch.float32)
+        return EncodedExample(base.board, torch.cat((base.global_features, extras)), base.target)
+
+
 def make_encoder(version=1):
     if version == 1:
         return HexStateEncoder()
     if version == 2:
         return StrategicStateEncoder()
+    if version == 3:
+        return CurriculumStateEncoder()
     raise ValueError(f"unsupported encoder version: {version}")
