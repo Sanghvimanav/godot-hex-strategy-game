@@ -35,8 +35,8 @@ static func _test_basic_training_stacks_and_rotations(tests: Node) -> bool:
 		if terran.size() != spec[0] or zerg.size() != spec[1] or int(job["max_turns"]) != spec[2] or str(job["turn_limit_winner"]) != spec[3]:
 			tests._fail("basic curriculum incorrect scenario %s" % job["game_id"])
 			return false
-		if int(state["hex_radius"]) != 1 or bool(state["command_hexes_enabled"]) != (i / 3 == 1) or float(job["reward_discount"]) >= 1.0:
-			tests._fail("basic curriculum must use radius one, scenario-two pressure, and time preference")
+		if int(state["hex_radius"]) != 1 or bool(state["command_hexes_enabled"]) or float(job["reward_discount"]) >= 1.0:
+			tests._fail("basic curriculum must use radius one, no command objective, and time preference")
 			return false
 		var marine_cell: Array = (terran[0] as Dictionary)["cell"]
 		var zerg_cell: Array = (zerg[0] as Dictionary)["cell"]
@@ -51,7 +51,11 @@ static func _test_basic_training_stacks_and_rotations(tests: Node) -> bool:
 		if marine_cell == zerg_cell:
 			tests._fail("both factions cannot spawn on the same cell")
 			return false
-	tests._pass("nine basic training setups preserve opposite-side stacks and objectives")
+	var objective_state := PureStateSelfPlaySuite.basic_state(3, 2, 0, 8, "zerg", true)
+	if not bool(objective_state.get("command_hexes_enabled", false)):
+		tests._fail("basic states should still allow command objectives to be explicitly enabled per game")
+		return false
+	tests._pass("nine basic training setups preserve opposite-side stacks with objectives disabled by default")
 	return true
 
 
