@@ -1,0 +1,189 @@
+name: Pretrained Value Transfer
+
+on:
+  pull_request:
+    paths:
+      - "ml/pretrained_value/**"
+      - "ml/tests/test_pretrained_value.py"
+      - ".github/workflows/pretrained-value-transfer.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Pilot runs 25% only; full runs 10/25/50/100%
+        required: true
+        default: pilot
+        type: choice
+        options: [pilot, full]
+      source_run_id:
+        description: Neural-policy run containing combined value/ranking supervision
+        required: true
+        default: "34240515308"
+        type: string
+      source_artifact:
+        description: Artifact containing combined value/ranking files
+        required: true
+        default: neural-policy-candidate-3
+        type: string
+      counterfactual_run_id:
+        description: Value-model run containing frozen counterfactual candidates
+        required: true
+        default: "34152473442"
+        type: string
+      counterfactual_artifact:
+        description: Artifact containing frozen counterfactual candidates
+        required: true
+        default: value-model-experiment-81
+        type: string
+      model_name:
+        description: Pretrained base model
+        required: true
+        default: Qwen/Qwen3-0.6B-Base
+        type: string
+      transformer_epochs:
+        description: LoRA fine-tuning epochs
+        required: true
+        default: 3
+        type: number
+      cnn_epochs:
+        description: Scratch CNN epochs
+        required: true
+        default: 60
+        type: number
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: pretrained-value-transfer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    name: Compare at ${{ matrix.fraction }} data
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        fraction: ${{ fromJSON((inputs.mode || 'pilot') == 'full' && '["0.10","0.25","0.50","1.00"]' || '["0.25"]') }}
+    env:
+      HF_HOME: ${{ github.workspace }}/.cache/huggingface
+      TOKENIZERS_PARALLELISM: "false"
+
+    steps:
+      - name: Checkout experiment code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download frozen neural-policy supervision
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.source_artifact || 'neural-policy-candidate-3' }}
+          path: artifacts/source
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.source_run_id || '34240515308' }}
+
+      - name: Download frozen counterfactual benchmark
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.counterfactual_artifact || 'value-model-experiment-81' }}
+          path: artifacts/counterfactual_source
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.counterfactual_run_id || '34152473442' }}
+
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install pretrained experiment dependencies
+        run: python -m pip install -r ml/pretrained_value/requirements.txt
+
+      - name: Run scratch-vs-pretrained comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="artifacts/fraction-${{ matrix.fraction }}"
+          python -m ml.pretrained_value.experiment \
+            --data artifacts/source/combined/combined_examples.jsonl \
+            --ranking-data artifacts/source/combined/combined_ranking_pairs.jsonl \
+            --output-dir "$OUT" \
+            --training-fraction "${{ matrix.fraction }}" \
+            --validation-groups baneling_finish,mixed_force,scout_kite \
+            --cnn-epochs "${{ inputs.cnn_epochs || 60 }}" \
+            --transformer-epochs "${{ inputs.transformer_epochs || 3 }}" \
+            --model-name "${{ inputs.model_name || 'Qwen/Qwen3-0.6B-Base' }}"
+
+      - name: Evaluate scratch CNN on frozen counterfactual benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="artifacts/fraction-${{ matrix.fraction }}"
+          python -m ml.value_model.evaluate_counterfactual \
+            --candidates artifacts/counterfactual_source/counterfactual/candidates_with_handwritten.jsonl \
+            --checkpoint "$OUT/cnn_value_model.pt" \
+            --output "$OUT/cnn_counterfactual_metrics.json"
+
+      - name: Evaluate pretrained model on frozen counterfactual benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="artifacts/fraction-${{ matrix.fraction }}"
+          python -m ml.pretrained_value.evaluate_counterfactual \
+            --candidates artifacts/counterfactual_source/counterfactual/candidates_with_handwritten.jsonl \
+            --checkpoint "$OUT/pretrained_adapter" \
+            --output "$OUT/pretrained_counterfactual_metrics.json"
+
+      - name: Upload fraction result
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretrained-transfer-${{ matrix.fraction }}
+          path: artifacts/fraction-${{ matrix.fraction }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  aggregate:
+    name: Aggregate transfer curve
+    needs: compare
+    if: ${{ always() && needs.compare.result != 'failure' && needs.compare.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout experiment code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download completed fraction results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pretrained-transfer-*
+          path: artifacts/results
+          merge-multiple: false
+
+      - name: Aggregate scorecard
+        run: |
+          python -m ml.pretrained_value.aggregate \
+            --root artifacts/results \
+            --json-output artifacts/pretrained_transfer_summary.json \
+            --markdown-output artifacts/pretrained_transfer_summary.md
+          cat artifacts/pretrained_transfer_summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload aggregate
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretrained-value-transfer-summary
+          path: |
+            artifacts/pretrained_transfer_summary.json
+            artifacts/pretrained_transfer_summary.md
+          if-no-files-found: error
+          retention-days: 14
