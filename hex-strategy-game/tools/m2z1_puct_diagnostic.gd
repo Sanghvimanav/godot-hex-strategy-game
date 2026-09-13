@@ -157,8 +157,9 @@ func _same_puct_decision(a: Dictionary, b: Dictionary) -> bool:
 		return false
 	var ad: Dictionary = a.get("diagnostics", {})
 	var bd: Dictionary = b.get("diagnostics", {})
-	return _stable_edges(ad.get("own_edge_stats", [])) == _stable_edges(bd.get("own_edge_stats", [])) \
-		and _stable_edges(ad.get("opponent_edge_stats", [])) == _stable_edges(bd.get("opponent_edge_stats", []))
+	var own_same := _stable_edges(ad.get("own_edge_stats", [])) == _stable_edges(bd.get("own_edge_stats", []))
+	var opponent_same := _stable_edges(ad.get("opponent_edge_stats", [])) == _stable_edges(bd.get("opponent_edge_stats", []))
+	return own_same and opponent_same
 
 
 func _stable_edges(edges_variant: Variant) -> Array:
