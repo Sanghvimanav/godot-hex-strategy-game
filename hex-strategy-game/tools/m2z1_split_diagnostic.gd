@@ -1,9 +1,9 @@
 extends Node
 ## Focused diagnostic for the 2 Marines vs 1 Zergling conversion failure.
 ##
-## Replays neural Terran vs handwritten Zerg on held-out rotations, compares
-## split-fire availability at live candidate budgets against wider pools, and now
-## validates the first simultaneous root-PUCT layer using the same checkpoint.
+## Replays neural Terran vs handwritten Zerg on held-out rotations, retains the
+## split-fire coverage audit, and compares the existing robust search, MCTS-1
+## root-only PUCT, and MCTS-2 multi-turn PUCT with the same frozen checkpoint.
 
 const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
 const PureStateSelfPlaySuite = preload("res://src/simulation/pure_state_self_play_suite.gd")
@@ -23,7 +23,9 @@ const EXPANDED_OWN_PLANS := 32
 const EXPANDED_OPPONENT_PLANS := 16
 const EXPANDED_NEURAL_PROPOSALS := 32
 const MAX_TURNS := 8
-const PUCT_SIMULATIONS := 16
+const MCTS1_SIMULATIONS := 16
+const MCTS2_SIMULATIONS := 32
+const MCTS2_DEPTH := 3
 const PUCT_C := 1.5
 
 
@@ -45,36 +47,44 @@ func _run() -> void:
 		return
 
 	var neural_settings: Dictionary = GameplayAI.neural_settings(
-		MAX_ACTIONS_PER_UNIT,
-		LIVE_OWN_PLANS,
-		MAX_ACTIONS_PER_UNIT,
-		LIVE_OPPONENT_PLANS,
-		checkpoint,
-		{"learned_proposals": true}
+		MAX_ACTIONS_PER_UNIT, LIVE_OWN_PLANS,
+		MAX_ACTIONS_PER_UNIT, LIVE_OPPONENT_PLANS,
+		checkpoint, {"learned_proposals": true}
 	)
-	var puct_settings: Dictionary = GameplayAI.neural_puct_settings(
-		MAX_ACTIONS_PER_UNIT,
-		LIVE_OWN_PLANS,
-		MAX_ACTIONS_PER_UNIT,
-		LIVE_OPPONENT_PLANS,
+	var mcts1_settings: Dictionary = GameplayAI.neural_puct_settings(
+		MAX_ACTIONS_PER_UNIT, LIVE_OWN_PLANS,
+		MAX_ACTIONS_PER_UNIT, LIVE_OPPONENT_PLANS,
 		checkpoint,
 		{
 			"puct_policy_source": "neural",
-			"puct_simulations": PUCT_SIMULATIONS,
+			"puct_simulations": MCTS1_SIMULATIONS,
 			"puct_c": PUCT_C,
 			"puct_value_scale": 1000.0,
+			"puct_max_depth": 1,
+		}
+	)
+	var mcts2_settings: Dictionary = GameplayAI.neural_puct_settings(
+		MAX_ACTIONS_PER_UNIT, LIVE_OWN_PLANS,
+		MAX_ACTIONS_PER_UNIT, LIVE_OPPONENT_PLANS,
+		checkpoint,
+		{
+			"puct_policy_source": "neural",
+			"puct_simulations": MCTS2_SIMULATIONS,
+			"puct_c": PUCT_C,
+			"puct_value_scale": 1000.0,
+			"puct_max_depth": MCTS2_DEPTH,
 		}
 	)
 	var handwritten_settings: Dictionary = GameplayAI.handwritten_settings(
-		MAX_ACTIONS_PER_UNIT,
-		LIVE_OWN_PLANS,
-		MAX_ACTIONS_PER_UNIT,
-		LIVE_OPPONENT_PLANS
+		MAX_ACTIONS_PER_UNIT, LIVE_OWN_PLANS,
+		MAX_ACTIONS_PER_UNIT, LIVE_OPPONENT_PLANS
 	)
 	var evaluator_settings: Dictionary = neural_settings.get("evaluator_settings", {}) as Dictionary
 	var rotations: Array = []
-	var puct_ready := true
-	var puct_terran_wins := 0
+	var mcts1_ready := true
+	var mcts2_ready := true
+	var mcts1_terran_wins := 0
+	var mcts2_terran_wins := 0
 	var robust_terran_wins := 0
 
 	for rotation_variant in ROTATIONS:
@@ -82,17 +92,13 @@ func _run() -> void:
 		var initial_state: Dictionary = PureStateSelfPlaySuite.basic_state(2, 1, rotation, MAX_TURNS, "", false)
 		var initial_before := initial_state.duplicate(true)
 		var rollout: Dictionary = PureStateGameRollout.play_game_with_settings(
-			initial_state,
-			"terran",
-			"zerg",
-			neural_settings,
-			handwritten_settings,
-			MAX_TURNS,
-			true,
-			""
+			initial_state, "terran", "zerg",
+			neural_settings, handwritten_settings,
+			MAX_TURNS, true, ""
 		)
 		if str(rollout.get("winner", "")) == "terran":
 			robust_terran_wins += 1
+
 		var turn_rows: Array = []
 		var history: Array = rollout.get("history", []) as Array
 		for history_index in range(history.size()):
@@ -138,35 +144,48 @@ func _run() -> void:
 				"expanded_neural_proposals": _summarize_neural_plans(expanded_neural),
 			})
 
-		# MCTS-1 validation is deliberately search-only: same checkpoint, same
-		# simulator, same initial state. Repeat the root decision to prove stable
-		# visit accounting before running the full 8-turn diagnostic rollout.
-		var puct_first := GameplayAI.choose_actions(initial_state, "terran", "zerg", puct_settings)
-		var puct_second := GameplayAI.choose_actions(initial_state, "terran", "zerg", puct_settings)
-		var puct_deterministic := _same_puct_decision(puct_first, puct_second)
-		var puct_visits_valid := _puct_visit_accounting_ok(puct_first, PUCT_SIMULATIONS)
-		var source_unchanged := initial_state == initial_before
-		var puct_rollout := PureStateGameRollout.play_game_with_settings(
-			initial_state,
-			"terran",
-			"zerg",
-			puct_settings,
-			handwritten_settings,
-			MAX_TURNS,
-			true,
-			""
+		# Keep MCTS-1 as the frozen structural/baseline comparison.
+		var mcts1_first := GameplayAI.choose_actions(initial_state, "terran", "zerg", mcts1_settings)
+		var mcts1_visits_valid := _puct_visit_accounting_ok(mcts1_first, MCTS1_SIMULATIONS, "simultaneous_puct_root")
+		var mcts1_rollout := PureStateGameRollout.play_game_with_settings(
+			initial_state, "terran", "zerg",
+			mcts1_settings, handwritten_settings,
+			MAX_TURNS, true, ""
 		)
-		var rotation_puct_ready := (
-			bool(puct_first.get("valid", false))
-			and bool(puct_second.get("valid", false))
-			and bool(puct_rollout.get("valid", false))
-			and puct_deterministic
-			and puct_visits_valid
+		var rotation_mcts1_ready := (
+			bool(mcts1_first.get("valid", false))
+			and bool(mcts1_rollout.get("valid", false))
+			and mcts1_visits_valid
+		)
+		mcts1_ready = mcts1_ready and rotation_mcts1_ready
+		if str(mcts1_rollout.get("winner", "")) == "terran":
+			mcts1_terran_wins += 1
+
+		# MCTS-2 must be deterministic, conserve root visit counts, expand beyond the
+		# root, and reach at least a second simultaneous turn on this nonterminal case.
+		var mcts2_first := GameplayAI.choose_actions(initial_state, "terran", "zerg", mcts2_settings)
+		var mcts2_second := GameplayAI.choose_actions(initial_state, "terran", "zerg", mcts2_settings)
+		var mcts2_deterministic := _same_puct_decision(mcts2_first, mcts2_second)
+		var mcts2_visits_valid := _puct_visit_accounting_ok(mcts2_first, MCTS2_SIMULATIONS, "simultaneous_puct_tree")
+		var mcts2_tree_valid := _mcts2_tree_accounting_ok(mcts2_first)
+		var source_unchanged := initial_state == initial_before
+		var mcts2_rollout := PureStateGameRollout.play_game_with_settings(
+			initial_state, "terran", "zerg",
+			mcts2_settings, handwritten_settings,
+			MAX_TURNS, true, ""
+		)
+		var rotation_mcts2_ready := (
+			bool(mcts2_first.get("valid", false))
+			and bool(mcts2_second.get("valid", false))
+			and bool(mcts2_rollout.get("valid", false))
+			and mcts2_deterministic
+			and mcts2_visits_valid
+			and mcts2_tree_valid
 			and source_unchanged
 		)
-		puct_ready = puct_ready and rotation_puct_ready
-		if str(puct_rollout.get("winner", "")) == "terran":
-			puct_terran_wins += 1
+		mcts2_ready = mcts2_ready and rotation_mcts2_ready
+		if str(mcts2_rollout.get("winner", "")) == "terran":
+			mcts2_terran_wins += 1
 
 		rotations.append({
 			"rotation": rotation,
@@ -176,12 +195,19 @@ func _run() -> void:
 			"termination_reason": str(rollout.get("termination_reason", "")),
 			"turns": turn_rows,
 			"mcts1": {
-				"ready": rotation_puct_ready,
+				"ready": rotation_mcts1_ready,
+				"visit_accounting_valid": mcts1_visits_valid,
+				"initial_decision": _summarize_puct_decision(mcts1_first),
+				"rollout": _summarize_rollout(mcts1_rollout),
+			},
+			"mcts2": {
+				"ready": rotation_mcts2_ready,
 				"source_state_unchanged": source_unchanged,
-				"deterministic": puct_deterministic,
-				"visit_accounting_valid": puct_visits_valid,
-				"initial_decision": _summarize_puct_decision(puct_first),
-				"rollout": _summarize_rollout(puct_rollout),
+				"deterministic": mcts2_deterministic,
+				"visit_accounting_valid": mcts2_visits_valid,
+				"tree_accounting_valid": mcts2_tree_valid,
+				"initial_decision": _summarize_puct_decision(mcts2_first),
+				"rollout": _summarize_rollout(mcts2_rollout),
 			},
 		})
 
@@ -200,12 +226,22 @@ func _run() -> void:
 		"unresolved_draw_target_audit": true,
 		"mcts1": {
 			"stage": "MCTS-1",
-			"policy": GameplayAI.POLICY_SIMULTANEOUS_PUCT,
-			"simulations_per_decision": PUCT_SIMULATIONS,
+			"simulations_per_decision": MCTS1_SIMULATIONS,
+			"max_depth": 1,
 			"c_puct": PUCT_C,
-			"implementation_ready": puct_ready,
+			"implementation_ready": mcts1_ready,
 			"robust_terran_wins": robust_terran_wins,
-			"puct_terran_wins": puct_terran_wins,
+			"puct_terran_wins": mcts1_terran_wins,
+		},
+		"mcts2": {
+			"stage": "MCTS-2",
+			"simulations_per_decision": MCTS2_SIMULATIONS,
+			"max_depth": MCTS2_DEPTH,
+			"c_puct": PUCT_C,
+			"implementation_ready": mcts2_ready,
+			"robust_terran_wins": robust_terran_wins,
+			"mcts1_terran_wins": mcts1_terran_wins,
+			"mcts2_terran_wins": mcts2_terran_wins,
 		},
 		"rotations": rotations,
 	}
@@ -213,7 +249,7 @@ func _run() -> void:
 	print(JSON.stringify(report))
 	PureStateNeuralEvaluator.shutdown()
 	PureStateJointPolicy.shutdown()
-	get_tree().quit(0 if ok and puct_ready else 1)
+	get_tree().quit(0 if ok and mcts1_ready and mcts2_ready else 1)
 
 
 func _audit_unresolved_draw_target() -> bool:
@@ -260,7 +296,12 @@ func _same_puct_decision(a: Dictionary, b: Dictionary) -> bool:
 		return false
 	var ad: Dictionary = a.get("diagnostics", {})
 	var bd: Dictionary = b.get("diagnostics", {})
-	return _stable_puct_edges(ad.get("own_edge_stats", [])) == _stable_puct_edges(bd.get("own_edge_stats", [])) and _stable_puct_edges(ad.get("opponent_edge_stats", [])) == _stable_puct_edges(bd.get("opponent_edge_stats", []))
+	return (
+		_stable_puct_edges(ad.get("own_edge_stats", [])) == _stable_puct_edges(bd.get("own_edge_stats", []))
+		and _stable_puct_edges(ad.get("opponent_edge_stats", [])) == _stable_puct_edges(bd.get("opponent_edge_stats", []))
+		and int(ad.get("nodes_expanded", 0)) == int(bd.get("nodes_expanded", 0))
+		and int(ad.get("max_depth_reached", 0)) == int(bd.get("max_depth_reached", 0))
+	)
 
 
 func _stable_puct_edges(edges_variant: Variant) -> Array:
@@ -281,11 +322,11 @@ func _stable_puct_edges(edges_variant: Variant) -> Array:
 	return result
 
 
-func _puct_visit_accounting_ok(decision: Dictionary, expected: int) -> bool:
+func _puct_visit_accounting_ok(decision: Dictionary, expected: int, expected_search_type: String) -> bool:
 	if not bool(decision.get("valid", false)):
 		return false
 	var diagnostics: Dictionary = decision.get("diagnostics", {})
-	if str(diagnostics.get("search_type", "")) != "simultaneous_puct_root":
+	if str(diagnostics.get("search_type", "")) != expected_search_type:
 		return false
 	if not bool(diagnostics.get("simultaneous_pre_turn", false)):
 		return false
@@ -303,7 +344,24 @@ func _puct_visit_accounting_ok(decision: Dictionary, expected: int) -> bool:
 	for row_variant in diagnostics.get("pair_stats", []):
 		if row_variant is Dictionary:
 			pair_total += int((row_variant as Dictionary).get("visits", 0))
-	return own_total == expected and opponent_total == expected and pair_total == expected
+	var distribution_total := 0
+	for row_variant in diagnostics.get("root_visit_distribution", []):
+		if row_variant is Dictionary:
+			distribution_total += int((row_variant as Dictionary).get("visits", 0))
+	return own_total == expected and opponent_total == expected and pair_total == expected and distribution_total == expected
+
+
+func _mcts2_tree_accounting_ok(decision: Dictionary) -> bool:
+	if not bool(decision.get("valid", false)):
+		return false
+	var diagnostics: Dictionary = decision.get("diagnostics", {})
+	return (
+		str(diagnostics.get("mcts_stage", "")) == "MCTS-2"
+		and int(diagnostics.get("puct_max_depth", 0)) == MCTS2_DEPTH
+		and int(diagnostics.get("nodes_expanded", 0)) > 1
+		and int(diagnostics.get("tree_transitions", 0)) >= MCTS2_SIMULATIONS
+		and int(diagnostics.get("max_depth_reached", 0)) >= 2
+	)
 
 
 func _summarize_puct_decision(decision: Dictionary) -> Dictionary:
@@ -316,8 +374,15 @@ func _summarize_puct_decision(decision: Dictionary) -> Dictionary:
 		"mcts_stage": str(diagnostics.get("mcts_stage", "")),
 		"simultaneous_pre_turn": bool(diagnostics.get("simultaneous_pre_turn", false)),
 		"simulations_run": int(diagnostics.get("simulations_run", 0)),
+		"puct_max_depth": int(diagnostics.get("puct_max_depth", 0)),
+		"nodes_expanded": int(diagnostics.get("nodes_expanded", 0)),
+		"tree_transitions": int(diagnostics.get("tree_transitions", 0)),
+		"max_depth_reached": int(diagnostics.get("max_depth_reached", 0)),
+		"terminal_leaves": int(diagnostics.get("terminal_leaves", 0)),
+		"value_leaves": int(diagnostics.get("value_leaves", 0)),
 		"elapsed_ms": float(diagnostics.get("elapsed_ms", 0.0)),
 		"selected_actions": (decision.get("actions", []) as Array).duplicate(true),
+		"root_visit_distribution": (diagnostics.get("root_visit_distribution", []) as Array).duplicate(true),
 		"own_edge_stats": _stable_puct_edges(diagnostics.get("own_edge_stats", [])),
 		"opponent_edge_stats": _stable_puct_edges(diagnostics.get("opponent_edge_stats", [])),
 		"pair_stats": (diagnostics.get("pair_stats", []) as Array).duplicate(true),
