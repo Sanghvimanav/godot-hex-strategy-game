@@ -1,0 +1,112 @@
+name: Human Playtest Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      quality:
+        description: Human response quality split to score
+        required: true
+        default: adversarial
+        type: choice
+        options:
+          - adversarial
+          - all
+      max_decisions:
+        description: Maximum decisions to score (0 = all selected decisions)
+        required: true
+        default: "0"
+        type: string
+  pull_request:
+    paths:
+      - ".github/workflows/human-playtest-benchmark.yml"
+      - "hex-strategy-game/src/simulation/pure_state_opponent_response_search.gd"
+      - "hex-strategy-game/src/simulation/pure_state_plans.gd"
+      - "hex-strategy-game/src/simulation/pure_state_plan_intents.gd"
+      - "hex-strategy-game/src/simulation/pure_state_evaluator.gd"
+      - "hex-strategy-game/tests/fixtures/human_playtest_v1.jsonl"
+      - "hex-strategy-game/tools/human_playtest_benchmark.*"
+      - "hex-strategy-game/tools/run_human_playtest_benchmark.sh"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: human-playtest-benchmark-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: Human response benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Godot 4.6
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Run human response benchmark
+        env:
+          QUALITY: ${{ github.event_name == 'pull_request' && 'adversarial' || inputs.quality }}
+          MAX_DECISIONS: ${{ github.event_name == 'pull_request' && '1' || inputs.max_decisions }}
+        run: |
+          set -euo pipefail
+          cd hex-strategy-game
+          bash tools/run_human_playtest_benchmark.sh \
+            --quality="${QUALITY}" \
+            --max-decisions="${MAX_DECISIONS}" \
+            --out="${GITHUB_WORKSPACE}/artifacts/human-playtest-benchmark"
+
+      - name: Audit benchmark contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("artifacts/human-playtest-benchmark")
+          manifest = json.loads((root / "manifest.json").read_text())
+          rows = [json.loads(line) for line in (root / "decisions.jsonl").read_text().splitlines() if line.strip()]
+          assert manifest["benchmark_id"] == "human_playtest_v1", manifest
+          assert manifest["benchmark_version"] == 2, manifest
+          assert manifest["split"] == "evaluation_holdout", manifest
+          assert manifest["training_allowed"] is False, manifest
+          assert manifest["decisions_failed"] == 0, manifest
+          assert len(rows) == manifest["decisions_requested"], (len(rows), manifest)
+          assert len(rows) >= 1, rows
+          summary = manifest["summary"]
+          for key in (
+              "source_downside_coverage_rate",
+              "final_downside_coverage_rate",
+              "selected_near_best_against_human_rate",
+              "consequential_plan_regret_rate",
+              "consequential_downside_coverage_gap_rate",
+              "mean_actual_response_regret",
+              "human_response_exact_source_recall_rate",
+              "human_response_exact_final_recall_rate",
+          ):
+              assert key in summary, summary
+          for row in rows:
+              assert "source_downside_covered" in row, row
+              assert "final_downside_covered" in row, row
+              assert "actual_response_regret" in row, row
+              assert "human_response_exact_final_recalled" in row, row
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload human playtest benchmark artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-playtest-benchmark-${{ github.run_number }}
+          path: artifacts/human-playtest-benchmark/
+          if-no-files-found: warn
+          retention-days: 14
