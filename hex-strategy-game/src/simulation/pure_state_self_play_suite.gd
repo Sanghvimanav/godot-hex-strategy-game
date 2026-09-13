@@ -130,7 +130,15 @@ static func build_state(scenario_id: String) -> Dictionary:
 
 ## Same-faction stacks are legal; opposing edge cells remain distance two apart.
 ## Initial health/energy use the real unit definitions, never a forced winner.
-static func basic_state(marines: int, zerglings: int, rotation: int, cap: int = 4, survivor: String = "") -> Dictionary:
+## Command-hex objectives are opt-in so each game can choose whether it needs one.
+static func basic_state(
+	marines: int,
+	zerglings: int,
+	rotation: int,
+	cap: int = 4,
+	survivor: String = "",
+	command_hexes_enabled: bool = false
+) -> Dictionary:
 	var terran: Array = []
 	var zerg: Array = []
 	for i in range(marines):
@@ -139,7 +147,7 @@ static func basic_state(marines: int, zerglings: int, rotation: int, cap: int = 
 		zerg.append(_make_unit(marines + i + 1, "res://src/unit/definitions/zergling.tres", Vector2i(-1, 0)))
 	return rotate_state({
 		"scenario_id": "basic_m%d_z%d" % [marines, zerglings],
-		"hex_radius": 1, "command_hexes_enabled": marines == 3 and zerglings == 2, "tile_resources": {},
+		"hex_radius": 1, "command_hexes_enabled": command_hexes_enabled, "tile_resources": {},
 		"curriculum": {"max_turns": cap, "turn_limit_winner": survivor},
 		"groups": [{"name": "terran", "resources": {}, "units": terran},
 			{"name": "zerg", "resources": {}, "units": zerg}],
