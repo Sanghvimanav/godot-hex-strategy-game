@@ -5,6 +5,10 @@ class_name PureStateBasicRandomSuite
 ## Training and evaluation are intentionally separated by rotation parity and seed
 ## ranges. Training may use only 0/2/4. Evaluation may use only 1/3/5. Both sides
 ## remain stacked on opposing edge cells and command-hex objectives stay disabled.
+##
+## Training generation can be deterministically sharded in CI with
+## BASIC_RANDOM_SHARD_INDEX / BASIC_RANDOM_SHARD_COUNT. With those variables unset,
+## behavior is byte-for-byte equivalent to the historical single-process suite.
 
 const PureStateSelfPlaySuite = preload("res://src/simulation/pure_state_self_play_suite.gd")
 
@@ -27,7 +31,14 @@ const MAP_PROFILE := "basic_radius1_random_v1"
 
 static func training_jobs(game_count: int = DEFAULT_TRAINING_GAMES) -> Array:
 	var jobs: Array = []
+	var shard_count := maxi(1, int(OS.get_environment("BASIC_RANDOM_SHARD_COUNT") if OS.has_environment("BASIC_RANDOM_SHARD_COUNT") else "1"))
+	var shard_index := int(OS.get_environment("BASIC_RANDOM_SHARD_INDEX") if OS.has_environment("BASIC_RANDOM_SHARD_INDEX") else "0")
+	if shard_index < 0 or shard_index >= shard_count:
+		push_error("Invalid basic-random shard %d/%d" % [shard_index, shard_count])
+		return jobs
 	for index in range(maxi(0, game_count)):
+		if index % shard_count != shard_index:
+			continue
 		var seed := TRAINING_SEED_BASE + index * SEED_STRIDE
 		jobs.append(_random_job(seed, TRAINING_ROTATIONS, "training"))
 	return jobs
