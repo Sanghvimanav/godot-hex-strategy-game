@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "experiment_id": "example-phase-one-v1",
+  "description": "Reference manifest showing a cheap diagnostic tier before a frozen 40-game promotion tier. Copy and commit a new manifest for real experiments instead of editing this one in place.",
+  "search": {
+    "own_candidates": 4,
+    "opponent_responses": 5,
+    "decision_budget_seconds": 25,
+    "proposal_mode": "handwritten"
+  },
+  "seed_partitions": {
+    "training_radius_one": {
+      "role": "training",
+      "start": 9100001,
+      "count": 16
+    },
+    "diagnostic_radius_one": {
+      "role": "diagnostic",
+      "start": 9200001,
+      "count": 8
+    },
+    "familiar_eval": {
+      "role": "frozen_eval",
+      "start": 9300001,
+      "count": 20
+    },
+    "unfamiliar_eval": {
+      "role": "frozen_eval",
+      "start": 9400001,
+      "count": 20
+    }
+  },
+  "data_policy": {
+    "training_roles": [
+      "training"
+    ],
+    "mineable_roles": [
+      "training",
+      "diagnostic"
+    ]
+  },
+  "gates": [
+    {
+      "name": "absolute_decision_cap",
+      "path": "overall.timing.decision_max_ms",
+      "op": "<=",
+      "value": 30000
+    }
+  ],
+  "tiers": {
+    "diagnostic": {
+      "partitions": [
+        "diagnostic_radius_one"
+      ],
+      "shards_per_partition": 2,
+      "promotion_eligible": false,
+      "gates": [
+        {
+          "name": "diagnostic_resolution",
+          "path": "overall.games.resolution_rate",
+          "op": ">=",
+          "value": 0.5
+        }
+      ]
+    },
+    "promotion": {
+      "partitions": [
+        "familiar_eval",
+        "unfamiliar_eval"
+      ],
+      "shards_per_partition": 4,
+      "promotion_eligible": true,
+      "gates": [
+        {
+          "name": "familiar_resolution",
+          "path": "groups.familiar_eval.games.resolution_rate",
+          "op": ">=",
+          "value": 0.5
+        },
+        {
+          "name": "familiar_resolved_win_rate",
+          "path": "groups.familiar_eval.games.resolved_win_rate",
+          "op": ">=",
+          "value": 0.75
+        },
+        {
+          "name": "unfamiliar_resolution",
+          "path": "groups.unfamiliar_eval.games.resolution_rate",
+          "op": ">=",
+          "value": 0.5
+        },
+        {
+          "name": "unfamiliar_resolved_win_rate",
+          "path": "groups.unfamiliar_eval.games.resolved_win_rate",
+          "op": ">=",
+          "value": 0.75
+        }
+      ]
+    }
+  }
+}
