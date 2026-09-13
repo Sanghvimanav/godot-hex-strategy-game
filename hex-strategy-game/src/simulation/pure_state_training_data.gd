@@ -2,9 +2,10 @@ extends RefCounted
 class_name PureStateTrainingData
 ## Converts deterministic full-game self-play rollouts into supervised value targets.
 ##
-## V1 emits labels only for terminal objectives. An ordinary turn-limit game remains
-## unlabeled because its eventual winner is unknown; a scenario may explicitly declare
-## a winner at its objective horizon. Each visited state is emitted once per perspective.
+## V1 labels terminal objectives. Callers may opt in to treating an ordinary valid
+## turn-limit/unresolved game as a draw so failure to convert a winning position
+## contributes a zero value target instead of disappearing from training entirely.
+## Each visited state is emitted once per perspective.
 
 const PureStateGameRollout = preload("res://src/simulation/pure_state_game_rollout.gd")
 const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
@@ -148,8 +149,12 @@ static func build_examples_from_rollout(
 	if group_a.is_empty() or group_b.is_empty() or group_a == group_b or game_id.is_empty():
 		result["valid"] = false
 		return result
-	if status != "terminal":
-		# Do not poison value targets from an unadjudicated turn cap.
+	var label_unresolved_as_draw := bool(source_metadata.get(
+		"label_unresolved_as_draw",
+		str(source_metadata.get("dataset", "")) == "basic_random_self_play"
+	))
+	if status != "terminal" and not label_unresolved_as_draw:
+		# Default behavior remains conservative: unknown horizons are unlabeled.
 		return result
 
 	var states := _visited_states_from_rollout(rollout)
@@ -161,8 +166,7 @@ static func build_examples_from_rollout(
 	var training_start_turn := int(source_metadata.get("training_start_turn", 0))
 	if training_start_turn < 0 or training_start_turn >= states.size():
 		# An exploration replay that never diverged from greedy contains no new
-		# state-value information. Keep its terminal trace, but add no duplicate
-		# supervised examples.
+		# state-value information. Keep its trace, but add no duplicate examples.
 		return result
 
 	var examples: Array = []
@@ -174,9 +178,9 @@ static func build_examples_from_rollout(
 			result["example_count"] = 0
 			return result
 		var state: Dictionary = state_variant
-		var terminal_state := turn_index == states.size() - 1
-		# Opt-in discounted terminal returns: faster wins, slower losses. The
-		# historical default remains exactly +/-1 (or zero for terminal draws).
+		var terminal_state := status == "terminal" and turn_index == states.size() - 1
+		# Opt-in discounted terminal returns: faster wins, slower losses. An
+		# opt-in unresolved draw has winner="", so every emitted target is 0.0.
 		var discount := clampf(float(source_metadata.get("reward_discount", 1.0)), 0.01, 1.0)
 		var reward_scale := pow(discount, states.size() - 1 - turn_index)
 		examples.append(_build_example(
@@ -261,7 +265,7 @@ static func _visited_states_from_rollout(rollout: Dictionary) -> Array:
 	if not (final_state is Dictionary):
 		return []
 	# For a zero-turn terminal state, this is the only training state. Otherwise it
-	# adds the terminal state after all pre-turn states without duplicating middles.
+	# adds the final state after all pre-turn states without duplicating middles.
 	states.append((final_state as Dictionary).duplicate(true))
 	return states
 
