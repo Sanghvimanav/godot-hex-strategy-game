@@ -11,6 +11,7 @@ const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_handwritten_entry_point_matches_existing_search(tests) and ok
+	ok = _test_simultaneous_puct_is_opt_in_and_accounts_visits(tests) and ok
 	ok = _test_selective_continuation_is_opt_in_and_preserves_wide_gaps(tests) and ok
 	ok = _test_selective_continuation_compares_two_nonterminal_plans(tests) and ok
 	ok = _test_policy_exploration_is_seeded_and_near_best_only(tests) and ok
@@ -62,6 +63,60 @@ static func _test_handwritten_entry_point_matches_existing_search(tests: Node) -
 		return false
 
 	tests._pass("one entry point preserves current actions and diagnostics")
+	return true
+
+
+static func _test_simultaneous_puct_is_opt_in_and_accounts_visits(tests: Node) -> bool:
+	tests._log("test_gameplay_ai: simultaneous PUCT is opt-in and uses one shared pre-turn state")
+	var state := _one_hp_zergling_vs_marine_state()
+	state["turn_index"] = 3
+	var before := state.duplicate(true)
+	var settings := GameplayAI.handwritten_settings(4, 3, 4, 3)
+	settings["policy"] = GameplayAI.POLICY_SIMULTANEOUS_PUCT
+	settings["evaluator_settings"] = {
+		"puct_policy_source": "heuristic",
+		"puct_simulations": 12,
+		"puct_c": 1.5,
+	}
+	var decision := GameplayAI.choose_actions(state, "zerg", "terran", settings)
+	if not bool(decision.get("valid", false)):
+		tests._fail("opt-in root PUCT should return a valid decision: %s" % decision)
+		return false
+	if state != before:
+		tests._fail("PUCT must not mutate the shared pre-turn source state")
+		return false
+	if str(decision.get("policy", "")) != GameplayAI.POLICY_SIMULTANEOUS_PUCT:
+		tests._fail("decision should identify simultaneous PUCT explicitly")
+		return false
+	var diagnostics: Dictionary = decision.get("diagnostics", {})
+	if str(diagnostics.get("search_type", "")) != "simultaneous_puct_root" or str(diagnostics.get("mcts_stage", "")) != "MCTS-1":
+		tests._fail("PUCT diagnostics should identify the MCTS-1 root search")
+		return false
+	if not bool(diagnostics.get("simultaneous_pre_turn", false)) or int(diagnostics.get("root_turn_index", -1)) != 3:
+		tests._fail("both plan sets must be sourced from the same pre-turn boundary")
+		return false
+	if int(diagnostics.get("simulations_run", 0)) != 12:
+		tests._fail("PUCT should complete the requested deterministic simulation budget")
+		return false
+	if decision.get("actions", []) != diagnostics.get("best_actions", []):
+		tests._fail("greedy PUCT decision must select the visit-ranked root winner")
+		return false
+	var own_visits := 0
+	for edge_variant in diagnostics.get("own_edge_stats", []):
+		if edge_variant is Dictionary:
+			own_visits += int((edge_variant as Dictionary).get("visits", 0))
+	var opponent_visits := 0
+	for edge_variant in diagnostics.get("opponent_edge_stats", []):
+		if edge_variant is Dictionary:
+			opponent_visits += int((edge_variant as Dictionary).get("visits", 0))
+	var pair_visits := 0
+	for pair_variant in diagnostics.get("pair_stats", []):
+		if pair_variant is Dictionary:
+			pair_visits += int((pair_variant as Dictionary).get("visits", 0))
+	if own_visits != 12 or opponent_visits != 12 or pair_visits != 12:
+		tests._fail("every simultaneous simulation must back up one own edge, one opponent edge, and one pair")
+		return false
+	tests._pass("root PUCT preserves simultaneous information and visit accounting")
 	return true
 
 
