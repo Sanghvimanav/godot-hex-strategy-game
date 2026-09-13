@@ -57,6 +57,39 @@ def sorted_plan_actions(actions: Iterable[dict[str, Any]]) -> list[dict[str, Any
     )
 
 
+def _complete_plan_actions(
+    state: dict[str, Any], perspective: str, actions: Iterable[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    completed = sorted_plan_actions(actions)
+    selected = {int(a.get("unit_id", -1)) for a in completed}
+    for group in _groups(state):
+        if group.get("name") != perspective:
+            continue
+        for unit in group.get("units", []):
+            if not isinstance(unit, dict):
+                continue
+            uid = int(unit.get("unit_id", -1))
+            if unit.get("health", 0) <= 0 or uid in selected:
+                continue
+            if any(
+                e.get("kind") == "Stun"
+                and e.get("duration", 0) > 0
+                and not e.get("pending_first_tick", False)
+                for e in unit.get("effects", [])
+                if isinstance(e, dict)
+            ):
+                continue
+            completed.append(
+                {
+                    "unit_id": uid,
+                    "action_key": "<hold>",
+                    "end_point": unit.get("cell", [0, 0]),
+                    "path": [],
+                }
+            )
+    return sorted_plan_actions(completed)
+
+
 def build_vocab(search_decisions: Iterable[dict[str, Any]]) -> tuple[list[str], list[str]]:
     action_keys = {UNKNOWN_TOKEN, "<hold>"}
     unit_types = {UNKNOWN_TOKEN}
@@ -67,7 +100,10 @@ def build_vocab(search_decisions: Iterable[dict[str, Any]]) -> tuple[list[str], 
                 for unit in group.get("units", []):
                     if isinstance(unit, dict):
                         unit_types.add(unit_type(unit))
-        for candidate in decision.get("candidates", []):
+        plan_rows = []
+        plan_rows.extend(decision.get("candidates", []))
+        plan_rows.extend(decision.get("mcts_visit_distribution", []))
+        for candidate in plan_rows:
             if not isinstance(candidate, dict):
                 continue
             for action in candidate.get("actions", []):
@@ -84,17 +120,30 @@ class PolicyExample:
     prefix_actions: tuple[dict[str, Any], ...]
     candidate_actions: tuple[dict[str, Any], ...]
     continuation_scores: tuple[float, ...]
+    target_probabilities: tuple[float, ...] | None = None
 
     @property
     def target_index(self) -> int:
+        if self.target_probabilities is not None:
+            return max(range(len(self.target_probabilities)), key=self.target_probabilities.__getitem__)
         return max(range(len(self.continuation_scores)), key=self.continuation_scores.__getitem__)
+
+    @property
+    def target_distribution(self) -> tuple[float, ...]:
+        if self.target_probabilities is not None:
+            total = sum(max(0.0, float(v)) for v in self.target_probabilities)
+            if total <= 0:
+                raise ValueError("policy target distribution has no positive mass")
+            return tuple(max(0.0, float(v)) / total for v in self.target_probabilities)
+        target = self.target_index
+        return tuple(1.0 if i == target else 0.0 for i in range(len(self.candidate_actions)))
 
 
 def build_search_distillation_examples(decision: dict[str, Any]) -> list[PolicyExample]:
     """Convert complete robust-search candidates into autoregressive prefix targets.
 
     For a given prefix, each next action receives the best worst-case score of any
-    searched complete plan that starts with prefix + action.  The policy therefore
+    searched complete plan that starts with prefix + action. The policy therefore
     learns which action opens the strongest searched continuation rather than
     imitating the old proposal heuristic or merely copying the played action.
     """
@@ -108,20 +157,7 @@ def build_search_distillation_examples(decision: dict[str, Any]) -> list[PolicyE
     for candidate in decision.get("candidates", []):
         if not isinstance(candidate, dict):
             continue
-        actions = sorted_plan_actions(candidate.get("actions", []))
-        selected = {int(a.get("unit_id", -1)) for a in actions}
-        for group in _groups(state):
-            if group.get("name") != perspective:
-                continue
-            for unit in group.get("units", []):
-                uid = int(unit.get("unit_id", -1))
-                if unit.get("health", 0) <= 0 or uid in selected:
-                    continue
-                if any(e.get("kind") == "Stun" and e.get("duration", 0) > 0 and not e.get("pending_first_tick", False)
-                       for e in unit.get("effects", [])):
-                    continue
-                actions.append({"unit_id": uid, "action_key": "<hold>", "end_point": unit.get("cell", [0, 0]), "path": []})
-        actions = sorted_plan_actions(actions)
+        actions = _complete_plan_actions(state, perspective, candidate.get("actions", []))
         if not actions:
             continue
         plans.append((actions, float(candidate.get("handwritten_worst_case_score", 0.0))))
@@ -130,10 +166,9 @@ def build_search_distillation_examples(decision: dict[str, Any]) -> list[PolicyE
 
     examples: list[PolicyExample] = []
     max_depth = max(len(actions) for actions, _ in plans)
-    active: list[tuple[list[dict[str, Any]], float]] = plans
     for depth in range(max_depth):
         groups: dict[tuple[str, ...], list[tuple[list[dict[str, Any]], float]]] = {}
-        for actions, score in active:
+        for actions, score in plans:
             if len(actions) <= depth:
                 continue
             prefix_key = tuple(action_signature(action) for action in actions[:depth])
@@ -162,6 +197,82 @@ def build_search_distillation_examples(decision: dict[str, Any]) -> list[PolicyE
                 )
             )
     return examples
+
+
+def build_mcts_visit_examples(decision: dict[str, Any]) -> list[PolicyExample]:
+    """Decompose an MCTS root plan-visit distribution into prefix-level soft targets.
+
+    A complete plan's visit mass contributes to every prefix on that plan. For each
+    prefix, the next-action target is the normalized visit mass of all root plans
+    that share that prefix and choose that next action. This preserves the search
+    distribution instead of collapsing MCTS to a single winning plan.
+    """
+    state = decision.get("starting_state", {})
+    perspective = str(decision.get("perspective_group", ""))
+    opponent = str(decision.get("opponent_group", ""))
+    if not isinstance(state, dict) or not state or not perspective or not opponent:
+        return []
+
+    plans: list[tuple[list[dict[str, Any]], float]] = []
+    for row in decision.get("mcts_visit_distribution", []):
+        if not isinstance(row, dict):
+            continue
+        mass = float(row.get("visits", 0.0))
+        if mass <= 0:
+            mass = float(row.get("probability", 0.0))
+        if mass <= 0:
+            continue
+        actions = _complete_plan_actions(state, perspective, row.get("actions", []))
+        if actions:
+            plans.append((actions, mass))
+    if not plans:
+        return []
+
+    examples: list[PolicyExample] = []
+    max_depth = max(len(actions) for actions, _ in plans)
+    for depth in range(max_depth):
+        groups: dict[tuple[str, ...], list[tuple[list[dict[str, Any]], float]]] = {}
+        for actions, mass in plans:
+            if len(actions) <= depth:
+                continue
+            prefix_key = tuple(action_signature(action) for action in actions[:depth])
+            groups.setdefault(prefix_key, []).append((actions, mass))
+
+        for rows in groups.values():
+            by_action: dict[str, tuple[dict[str, Any], float]] = {}
+            for actions, mass in rows:
+                action = actions[depth]
+                signature = action_signature(action)
+                if signature not in by_action:
+                    by_action[signature] = (dict(action), 0.0)
+                existing_action, existing_mass = by_action[signature]
+                by_action[signature] = (existing_action, existing_mass + mass)
+            if len(by_action) < 2:
+                continue
+            ordered = sorted(by_action.values(), key=lambda item: action_signature(item[0]))
+            masses = tuple(float(mass) for _, mass in ordered)
+            total = sum(masses)
+            if total <= 0:
+                continue
+            prefix = tuple(dict(action) for action in rows[0][0][:depth])
+            examples.append(
+                PolicyExample(
+                    state=state,
+                    perspective_group=perspective,
+                    opponent_group=opponent,
+                    prefix_actions=prefix,
+                    candidate_actions=tuple(dict(action) for action, _ in ordered),
+                    continuation_scores=masses,
+                    target_probabilities=tuple(mass / total for mass in masses),
+                )
+            )
+    return examples
+
+
+def build_policy_examples(decision: dict[str, Any]) -> list[PolicyExample]:
+    if decision.get("mcts_visit_distribution"):
+        return build_mcts_visit_examples(decision)
+    return build_search_distillation_examples(decision)
 
 
 class ActionFeaturizer:
