@@ -121,10 +121,11 @@ func _run() -> void:
 			# starting decisions across the light/explore replay variants.
 			if profile == "greedy" and capture_decisions_per_game > 0:
 				var history: Array = rollout.get("history", [])
-				for group_name in ["terran", "zerg"]:
-					var opponent_group := "zerg" if group_name == "terran" else "terran"
-					var action_key := group_name + "_actions"
-					var captured := 0
+				for group_name_variant in ["terran", "zerg"]:
+					var group_name: String = str(group_name_variant)
+					var opponent_group: String = "zerg" if group_name == "terran" else "terran"
+					var action_key: String = group_name + "_actions"
+					var captured: int = 0
 					for history_index in range(history.size() - 1, -1, -1):
 						if captured >= capture_decisions_per_game:
 							break
