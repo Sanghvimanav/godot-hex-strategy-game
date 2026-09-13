@@ -1,1 +1,1 @@
-neural-self-play-v1: randomized radius-one training with counterfactual path replays
+neural-self-play-v2: randomized radius-one neural self-play with autoregressive learned plan proposals
