@@ -30,13 +30,13 @@ jobs:
       - name: Import Godot project
         working-directory: hex-strategy-game
         run: godot --headless --import
-      - name: Generate nine training-only games
+      - name: Generate greedy plus exploratory training games
         working-directory: hex-strategy-game
         run: |
           godot --headless --path . res://tools/self_play_dataset.tscn -- \
             --preset=basic_training --rules-version="$GITHUB_SHA" \
             --out="$GITHUB_WORKSPACE/artifacts/training"
-      - name: Audit rotations, objective-free outcomes, and training provenance
+      - name: Audit rotations, exploration, objective-free outcomes, and training provenance
         run: |
           python - <<'PY'
           import json
@@ -45,17 +45,20 @@ jobs:
           root = Path('artifacts/training')
           manifest = json.loads((root / 'manifest.json').read_text())
           games = manifest['games']
-          assert manifest['games_requested'] == manifest['games_labeled'] == 9, manifest
+          assert manifest['games_requested'] == manifest['games_labeled'] == 27, manifest
           assert manifest['games_failed'] == manifest['games_unlabeled'] == 0, manifest
           assert {g['rotation_steps'] for g in games} == {0, 2, 4}, games
+          assert not ({1, 3, 5} & {g['rotation_steps'] for g in games}), games
+          profiles = Counter(g['policy_exploration_profile'] for g in games)
+          assert profiles == {'greedy': 9, 'light': 9, 'explore': 9}, profiles
           winners = {i: Counter(g['winner'] for g in games if g['scenario_id'] == f'basic_{i}') for i in (1, 2, 3)}
-          assert all(sum(winners[i].values()) == 3 for i in (1, 2, 3)), winners
-          assert winners[1]['zerg'] == 3 and winners[3]['zerg'] == 3, winners
+          assert all(sum(winners[i].values()) == 9 for i in (1, 2, 3)), winners
           forbidden = {'command_hex_capture', 'simultaneous_command_hex_capture'}
           assert not any(g.get('termination_reason') in forbidden for g in games), games
           assert len((root / 'examples.jsonl').read_text().splitlines()) == manifest['example_count']
           print('training outcomes:', winners)
-          print('scenario 2 is diagnostic: Terran must win by elimination, not objective capture')
+          print('policy profiles:', profiles)
+          print('scenario 2 remains diagnostic: Terran must win by elimination, not objective capture')
           PY
       - name: Install CPU PyTorch
         run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
@@ -83,7 +86,7 @@ jobs:
           provenance = {'rules_version': os.environ['GITHUB_SHA'],
               'training_preset': 'basic_training', 'evaluation_excluded_from_training': True,
               'training_rotations': [0, 2, 4], 'evaluation_rotations': [1, 3, 5],
-              'basic_command_hexes_enabled': False,
+              'basic_command_hexes_enabled': False, 'training_policy_profiles': ['greedy', 'light', 'explore'],
               'pipeline_elapsed_seconds': elapsed, 'workers': 1, 'runner_type': 'ubuntu-latest',
               'games_labeled': manifest['games_labeled'], 'examples': manifest['example_count'],
               'checkpoint_sha256': hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
@@ -123,6 +126,7 @@ jobs:
           assert provenance['rules_version'] == __import__('os').environ['GITHUB_SHA']
           assert provenance['evaluation_excluded_from_training'] is True
           assert provenance['basic_command_hexes_enabled'] is False
+          assert provenance['training_policy_profiles'] == ['greedy', 'light', 'explore']
           assert provenance['checkpoint_sha256'] == hashlib.sha256((root / 'basic_value_model.pt').read_bytes()).hexdigest()
           PY
       - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
