@@ -2,450 +2,511 @@
 
 ## Goal
 
-The immediate user objective is Phase 1 in `docs/AI_PHASE1.md`: at least 75% neural
-wins among resolved games and at least 50% resolution independently on twenty
-familiar-map and twenty unfamiliar-map games, with equal decision-time budgets,
-a thirty-second turn limit, and a four-hour elapsed training pipeline. Learned
-proposal and evaluation heads are both allowed. The new `Phase One Candidate`
-workflow adds fresh adversarial sibling supervision and explicit promotion reports.
-Keep the handwritten champion until this contract passes; older same-width or
-decisive-only reports are diagnostics rather than Phase 1 success.
+Build a fair, challenging strategy-game AI that coordinates simultaneous actions, discovers useful tactics instead of only imitating handwritten heuristics, scales to materially larger armies, and stays inside the player's turn-time budget.
 
-A fair AI that coordinates simultaneous actions, avoids obvious blunders, discovers useful strategies, offers distinct play styles, and responds within the player's turn-time budget.
+The immediate Phase 1 promotion contract remains the contract in `docs/AI_PHASE1.md`: the neural challenger must achieve at least 75% neural wins among resolved games and at least 50% resolution independently on twenty familiar-map and twenty unfamiliar-map games, under equal decision-time budgets and the existing training-time/provenance gates. Until that contract passes, the handwritten champion remains the gameplay baseline/fallback.
 
-The roadmap should improve two things together:
+The roadmap should improve four things together:
 
-1. **AI decision quality** — generate strong candidate plans, evaluate them correctly, model opponent responses well, and spend search compute efficiently.
-2. **Game-backend support for strategy** — keep simulation deterministic and fast while making it easy to add objectives, information, economy, positioning, and other mechanics that create interesting decisions.
+1. **Plan generation** — propose coordinated multi-unit plans without enumerating the full combinatorial action space.
+2. **Search** — spend simulation compute on uncertain or promising plans, including lower-prior plans that may prove better after simulation.
+3. **Value learning** — correctly distinguish winning, drawing, losing, and non-converting states over multiple turns.
+4. **Game/backend support** — keep simultaneous resolution deterministic, fast, replayable, and eventually compatible with fog of war and larger armies.
 
-Do not treat a stronger value network as the default answer to every AI weakness. Before changing the model, determine whether the failure came from candidate generation, candidate ranking, opponent-response modeling, state representation, or backend/game-rule limitations.
+Do not treat a larger value network or a wider beam as the default answer to every weakness. Diagnose whether a failure came from plan generation, search/exploration, value/ranking, opponent modeling, representation/generalization, or game-rule limitations.
 
-## Current position
+## Current architecture
 
-The pure simulator, legal actions, bounded joint planning, opponent-response search, tactical intents, whole-game rollout, command-hex victory, counterfactual decision benchmark, seeded AI-vs-AI arena, richer self-play export, controlled policy exploration, and first neural value model all exist.
+The project already has most of the pieces needed for an AlphaZero/AlphaStar-inspired architecture:
 
-The measurement and baseline foundation is now substantially complete:
+- a deterministic pure-state simulator with canonical simultaneous-turn resolution;
+- whole-game rollout and terminal outcome generation;
+- bounded own-plan and opponent-response search;
+- handwritten tactical-intent candidate generation;
+- a neural value evaluator;
+- an autoregressive learned joint-plan policy that emits legal per-unit actions one unit/action at a time;
+- robust opponent-response evaluation;
+- self-play, counterfactual decision capture, held-out arenas, and reproducible scenario rotations;
+- policy proposals that supplement rather than replace normal search;
+- a candidate-oracle diagnostic and wider-search teacher infrastructure.
 
-- the arena has stable fast and full seed sets, reproducible procedural variants, mirrored faction swaps, deterministic sharding, and per-agent decision-time/simulation telemetry;
-- generated arena games receive a small horizon allowance so active objective races are less likely to be mislabeled as unresolved;
-- objective-aware proposal/final-plan recall and rotation-aware command objectives are on `main`;
-- the handwritten evaluator uses bounded relative material, health, resources, energy, objective value, and generic production-capacity value;
-- a prior 64-game 2x2-vs-4x4 arena found no aggregate strength benefit from wider 4x4 search despite roughly 3x the simulations;
-- a prior 16-game 2x2-vs-6x6 diagnostic showed a modest 6x6 edge, but at roughly 6x the simulations and about 5-6x the decision time, so 6x6 remains diagnostic rather than the default;
-- the September 2026 frozen fast-arena 4x4 diagnostic showed that candidate recall was a major confound in the earlier 2x2 evaluator comparison: handwritten won all 12 decisive games, neural won 0, five mirrored pairs were clean handwritten pair wins, and the other three pairs were unresolved rather than faction-tied;
-- in particular, `baneling_flank`, `medic_hold`, and `worker_screen` changed from faction-dominated 2x2 outcomes to handwritten wins from both factions at 4x4, while `hydra_crossfire` changed from a Zerg sweep to one handwritten win plus one unresolved mirror;
-- this means the current fast-arena fixtures are broadly useful evaluator tests; do not rebalance them merely because a 2x2 search omitted useful hold/reposition/disengage plans;
-- 4x4 is materially more expensive: the diagnostic averaged about 5.35 s per handwritten decision and 6.14 s per neural decision, with roughly 10.8 and 12.1 simulations per decision respectively, so it should be used deliberately rather than assumed to be the cheap default;
-- PR #52 landed a 42-game `diverse` self-play suite with 16 deterministic training-only procedural variants across the eight strategic families, with training seeds separated from frozen arena evaluation seeds;
-- PR #53 landed controlled deterministic near-best policy exploration, expanding the diverse suite to 58 games while exporting exploration supervision only after the replay actually diverges from its greedy reference;
-- Value Model Experiment #73 produced 55/58 labeled games, 652 examples, zero conflicting encoded-input groups, and roughly 75.4% held-out nonterminal winner-prediction accuracy versus 71.2% for the handwritten evaluator;
-- the same experiment still exposed tactical weakness in neural counterfactual ranking, including the Baneling-sacrifice decision, so the neural evaluator is not yet ready to replace the handwritten champion;
-- PR #54 strengthened the counterfactual answer key so opponent weights come from a pre-turn search-policy proxy, unresolved continuation mass is represented as value bounds, adversarial/best-response value is separate, and authored responses remain explicit stress cases;
-- PR #56 records the complete bounded candidate x opponent-response leaf matrix for self-play decisions so candidate-level supervision is available without changing live search;
-- PR #57 selectively continues high-value rejected candidates with the real simulator, prioritizing neural-vs-handwritten disagreement, close neural scores, and tactically large one-turn swings while leaving unresolved branches unlabeled;
-- the Candidate Oracle Recall diagnostic now compares the production candidate set against an intentionally wider offline teacher, evaluates the union under one shared counterfactual answer key, reports value-based recall/gap/severe misses/conditional selection accuracy and compute ratios, and can run on frozen suite states or exported self-play search decisions;
-- the curated counterfactual suite is intentionally a small set of stable tactical regression checks rather than an exhaustive strategy answer key;
-- the neural evaluator remains evidence rather than a gameplay upgrade, so the handwritten evaluator is still the champion/fallback.
+The current live robust search is **not MCTS**. It generates a bounded set of own plans and opponent plans, simulates their one-turn interactions, evaluates leaves, and ranks own plans primarily by worst-case response value. In the current basic random configuration, the plan budget is usually four own plans and four opponent plans. Learned proposals currently occupy only part of that own-plan budget.
 
-The next phase should answer three separate questions instead of collapsing them into one generic "AI strength" metric:
+The learned policy is already autoregressive: it constructs complete team plans by scoring legal next actions conditioned on the state and the friendly actions already chosen in the plan prefix. This is the right basic representation for a combinatorial action space, but a fixed top-k beam alone is not enough to provide strong exploration or multi-turn credit assignment.
 
-1. **Candidate oracle recall:** did production search generate a near-best plan at all?
-2. **Oracle value gap:** when it missed, how strategically costly was the miss?
-3. **Selection accuracy conditional on recall:** when a near-best plan was present, did the evaluator/search ranking actually choose it?
+## September 13, 2026 findings that change the roadmap
 
-This decomposition should drive the order of future work.
+### Value + policy self-play is promising but not yet stronger than the handwritten champion
 
-## Revised sequencing
+The corrected value+policy experiment improved the fixed tactical benchmark substantially while remaining mixed on the broader held-out randomized arena:
 
-The preferred sequence is:
+- final held-out randomized arena: neural 27, handwritten 29, unresolved 16; neural won 48.2% of decisive games;
+- prior value-only comparison was 43.3% neural among decisive games, so adding the policy was a modest overall improvement;
+- fixed counterfactual suite: neural 12, handwritten 6, unresolved 0, versus 6-12 for the prior value-only model;
+- Scenario 3 improved materially, including neural Zerg winning all three held-out mirrored games it controlled.
 
-**candidate-recall oracle -> batched neural evaluation -> candidate-generation/refinement experiments -> stronger sibling-ranking data -> risk-aware response scoring -> selective deeper search -> opponent league -> learned policy prior -> personality/fun tuning.**
+This is evidence that learned proposals can help, but not evidence that the current proposal/search loop is sufficient.
 
-Game-backend work should proceed in parallel where it unlocks faster search, richer objectives, deterministic replay, or better strategic mechanics.
+### 2 Marines vs 1 Zergling exposes a multi-turn conversion/generalization problem
 
-## AI improvements
+In `m2_z1`, when neural controls Terran/Marines, the neural side does not lose but often fails to convert an overwhelming position:
 
-### 1. Candidate Oracle Recall benchmark — implemented
+- neural Terran: 2 wins, 0 losses, 7 unresolved at the eight-turn cap;
+- handwritten Terran: 9 wins in 9 games, usually in three turns;
+- held-out rotation 1 succeeds, while rotations 3 and 5 contain most of the unresolved behavior;
+- unresolved games repeatedly attack while the Zergling fast-moves around the board, and the neural value remains extremely positive despite the failure to convert.
 
-The first Candidate Oracle Recall diagnostic is now implemented. It deliberately leaves gameplay search unchanged: production search and a wider offline teacher only source candidate plans, then their deduplicated union is evaluated under the same coverage-aware counterfactual answer key. Recall is therefore based on shared oracle-controlled value rather than exact action-array equality.
+This points to at least three separate issues:
 
-The benchmark supports both selected frozen counterfactual states and real exported self-play `search_decisions.jsonl` states. It emits `decisions.jsonl`, `severe_misses.jsonl`, and a manifest with aggregate and per-family summaries. Defaults use a `0.10` near-best value tolerance and a `0.50` severe-miss threshold; both are configurable. It also reports production-vs-oracle simulations and wall-clock time so future generators can be compared per unit of compute.
+1. **value calibration / temporal credit** — the value network can call a non-converting chase overwhelmingly favorable;
+2. **rotation generalization** — the current action/state representation still has meaningful rotation-specific weakness;
+3. **search depth / coordinated response selection** — one-turn leaf scoring does not necessarily reveal which coverage pattern forces a later kill.
 
-The implementation covers the roadmap contract:
+### Draws at the basic-random self-play horizon now have an explicit zero target
 
-- run an intentionally expensive offline search with larger own/opponent candidate budgets;
-- preserve production and wider-search candidates in one evaluation pool so a production-only plan can still be the oracle winner;
-- count recall when any production candidate is within the configured value tolerance of the best union candidate;
-- report near-oracle candidate recall, best-production-vs-best-oracle value gap, severe-miss rate, and selection accuracy conditional on recall;
-- aggregate by scenario/behavior family when source metadata provides a family;
-- record production/oracle search diagnostics and exact-oracle-winner recovery probes under progressively wider final-plan, per-unit-action, and opponent-conditioning budgets to help localize candidate loss;
-- retain severe misses as a dedicated mining artifact for candidate-generator and training-data follow-up;
-- keep the oracle offline-only; no gameplay policy or default search budget changes are made by this benchmark.
+For `basic_random_self_play`, unresolved turn-cap rollouts now opt into a value target of exactly `0.0`. They are not falsely marked terminal. Resolved wins/losses retain the existing faster-win discount, so the intended ordering is effectively:
 
-The loss-stage recovery probes are diagnostic rather than a causal proof: exact-plan recovery is useful for locating likely pruning pressure, while the headline recall metric remains value-based so strategically equivalent plans are not mislabeled as misses.
+`fast win > slow win > draw/unresolved horizon (0) > loss`
 
-The diagnostic question remains:
+This change is scoped to basic random self-play (and explicit opt-in datasets); do not assume all unresolved branches everywhere are automatically labeled draws.
 
-> Did the AI fail because it could not generate the idea, or because it generated the idea and valued it incorrectly?
+### Split-fire diagnostic: the concept is already present in the live policy/search
 
-Use the answer to decide whether the next experiment belongs in candidate generation/refinement or evaluator/ranking work.
+The focused `2M1Z Split-Fire Diagnostic` completed successfully using the existing final value+policy checkpoint.
 
-### 2. Batch neural leaf evaluation before making the model larger
+Across held-out rotations 1, 3, and 5 and inspected turns 2-4:
 
-The current neural runtime is persistent, but leaf states are still evaluated one request/forward pass at a time. Remove that avoidable overhead before scaling search or model size.
+- the **live neural proposal budget of 2 contained a split-fire plan on every inspected decision**;
+- that split-fire plan was consistently rank 2 under the learned policy;
+- the **live four-plan search also contained a split-fire candidate on every inspected decision**;
+- the expanded 32-plan neural beam contained **27 split-fire variants** at every inspected turn;
+- expanded heuristic/search candidates contained roughly 10-14 split-fire plans depending on the state;
+- rotation 1 converted to a Terran win in four turns;
+- rotations 3 and 5 still reached the turn limit despite split-fire plans being available, and the selected plan was sometimes itself split fire.
 
-- Add an `evaluate_many` path that accepts multiple simulated leaf states and returns aligned values in one request.
-- Stack encoded states and perform one/few PyTorch forward passes per batch rather than one forward pass per leaf.
-- Start with a low-risk integration such as batching all opponent-response leaves for one own candidate, preserving most current minimax/pruning behavior.
-- Measure separately:
-  - Godot simulation time;
-  - state serialization/IPC time;
-  - Python state encoding time;
-  - neural inference time;
-  - total search time.
-- Add deterministic state hashes and cache duplicate neural evaluations where identical states recur.
-- Only consider a larger network after input quality, candidate coverage, batching, and training supervision are no longer the dominant bottlenecks.
-
-The goal is not merely faster inference. The goal is to convert saved evaluator overhead into more useful candidate diversity, opponent responses, or selective continuation depth.
-
-### 3. Improve candidate generation with portfolio seeds and local refinement
-
-Do not rely only on widening the current per-unit/joint-plan beam. Wider search has already shown rapidly increasing cost and inconsistent strength gains.
-
-- Keep the existing bounded beam as the baseline/fallback.
-- Add a feature-flagged **portfolio/refinement generator** that starts from several strategically different complete-team plans, then locally improves them.
-- Portfolio seeds should remain generic and explainable, for example:
-  - focus/commit;
-  - hold/defend;
-  - reposition/flank;
-  - disengage/preserve;
-  - objective pressure;
-  - screening/interception;
-  - production/resource tempo when applicable.
-- Evaluate complete plans with the real simulator/search rather than allowing the template heuristic to determine the final answer.
-- Refine a seed by changing one unit action at a time, retaining improvements and repeating for a bounded number of iterations.
-- Preserve multiple diverse seeds because local refinement can get trapped in local optima.
-- Compare beam, wider beam, portfolio/refinement, and hybrid generators using:
-  - candidate oracle recall;
-  - oracle value gap;
-  - simulations;
-  - wall-clock decision time;
-  - same-budget arena strength.
-- Prefer smarter recall per unit of compute over brute-force width.
+Therefore the main current failure is **not simply that autoregressive generation cannot imagine split fire**. Widening the beam can improve tactical diversity, but it will not by itself solve the observed pathology. The next search architecture must answer a harder question:
 
-### 4. Train the value model on stronger sibling supervision
+> Which coordinated plan remains good across likely/adversarial simultaneous responses and actually converts over multiple turns?
 
-Keep terminal game outcome as the broad value target, but make sibling-ranking data increasingly reflect difficult tactical distinctions rather than only the current production candidate set.
+That is the main reason to move MCTS/PUCT earlier in the roadmap.
 
-- Keep pairwise ranking over sibling leaves from the same decision.
-- Hold the modeled opponent response fixed across compared own-plan siblings whenever possible so the label isolates the effect of the own plan.
-- Continue to ground ranking labels in real simulator continuations rather than handwritten evaluator imitation.
-- Primary ordering remains `win > draw > loss` with full confidence where resolved.
-- Faster wins may break ties between two wins at lower weight.
-- Do **not** prefer slower losses over faster losses merely because they survived longer.
-- Leave genuinely unresolved comparisons unlabeled rather than fabricating certainty.
+## Architecture decision: implement simultaneous-action MCTS/PUCT next
 
-Improve the sibling pool in four ways:
+The preferred architecture is now a hybrid of AlphaStar-style structured policy generation and AlphaZero-style search/value learning:
 
-1. **Oracle/refined siblings** — include strong plans discovered by the expensive candidate oracle or portfolio/refinement search, not only production-beam siblings.
-2. **Hard siblings** — oversample neural-vs-handwritten disagreements, close neural scores, meaningful continuation-value gaps, and tactically different but superficially similar states.
-3. **Local perturbations** — around a strong plan, change one unit action at a time to teach the evaluator why a particular coordinated execution is better.
-4. **Mistake mining** — after arena/self-play failures, rerun important decision states with the oracle and turn discovered better alternatives into new training comparisons.
+**full visible state -> shared encoder -> autoregressive plan policy for both sides -> simultaneous-action PUCT/MCTS -> pure simulator -> value network -> visit-count targets + terminal value targets**
 
-Track sibling-ranking accuracy by decision family, not only overall accuracy. A model that is 90% accurate on routine commit-vs-commit pairs but poor on sacrifice, objective/material, crossfire, or production/tempo tradeoffs is not yet strategically reliable.
+Do **not** implement ordinary alternating-move chess/Go MCTS. The game is simultaneous: both players choose from the same pre-turn information state and neither may condition the current-turn choice on the opponent's secretly selected current-turn plan.
 
-Use oracle-generated training targets as a teacher for the future learned policy as well, so the policy does not merely imitate the blind spots of the current production search.
+The existing bounded robust search should remain available as:
 
-### 5. Improve neural state representation before increasing network size
+- a fallback while MCTS is brought up;
+- a benchmark/champion comparison;
+- an offline diagnostic/teacher;
+- a way to verify that MCTS is not accidentally changing simultaneous-information semantics.
 
-- Keep explicit own/enemy command-hex channels so the model can see the alternate victory condition.
-- Add command occupancy/capture-progress state and strategically important status effects such as stun when report cards show those are still missing signals.
-- Add terrain/resource/objective features as those systems become strategically meaningful.
-- Add observation/fog features only after the backend exposes a canonical player-observation state.
-- Keep the current small residual CNN initially; better inputs, broader training data, and better candidate coverage are higher priority than more layers while the dataset remains modest.
-- Use candidate/oracle diagnostics to distinguish missing representation, missing training coverage, and missing candidate recall.
+### Why MCTS now
 
-### 6. Improve opponent-response scoring after candidate coverage is measured
+The current system is accumulating separate mechanisms for candidate width, opponent matrices, selective continuation, exploration profiles, and policy distillation. MCTS can unify much of this around a single repeated search loop:
 
-The current worst-response-first search is a strong safety baseline for simultaneous turns, but pure maximin can become unnecessarily conservative when one modeled response is extremely unlikely.
+1. use the policy prior to propose plausible plans;
+2. use visit counts and PUCT to decide which plans deserve more simulation;
+3. resolve both players' selected plans simultaneously;
+4. continue for multiple turns where useful;
+5. evaluate the frontier with the value network or a terminal game result;
+6. backpropagate the result into `N` and `Q` statistics;
+7. train the policy from MCTS visit counts rather than only imitating a single bounded-search winner.
 
-- Preserve hard forced-loss detection and adversarial stress cases.
-- Experiment with a risk-aware score that combines likely-response expected value with explicit downside protection.
-- Keep adversarial/best-response value separately visible in diagnostics.
-- For hard-AI experiments, use the already available candidate x opponent-response payoff matrix to evaluate a restricted two-player zero-sum matrix-game solve when the leaf utility assumptions are appropriate.
-- Do not replace current maximin until same-budget arena tests show that the alternative is stronger without creating reckless tactical failures.
+The policy supplies useful prior knowledge; MCTS supplies correction and exploration when that prior is wrong.
 
-### 7. Add selective multi-turn search, not uniform deeper search
+## Autoregressive plan generation: keep it, but do not make it a hard top-k gate
 
-Do not make every position two or more turns deep.
+### Why it is needed
 
-- Continue to treat one simultaneous turn plus strong leaf evaluation as the default.
-- Trigger deeper continuation only on unstable/important decisions, such as:
-  - near-terminal positions;
-  - objective capture races;
-  - high evaluator disagreement;
-  - close top candidate scores;
-  - sacrifice/tempo decisions whose value is deliberately delayed;
-  - large oracle/production uncertainty.
-- Compare selective continuation against equivalent compute spent on broader candidate generation.
-- Promote deeper search only when it improves strength/regret inside the player's turn-time budget.
+A team plan is combinatorial. If five units each have eight plausible actions, there are already `8^5 = 32,768` possible complete friendly plans. At fifteen units the flat joint-plan space becomes astronomically larger.
 
-### 8. Build an opponent league before relying on learned-policy self-play
+The policy should therefore **construct** plausible plans rather than enumerate all joint actions. Conceptually:
 
-Once candidate generation and value ranking are stronger, diversify the opponents that training/evaluation must withstand.
+`unit 1 action -> unit 2 action conditioned on unit 1 -> ... -> end of plan`
 
-- Preserve historical champion checkpoints/policies.
-- Add simple strategic archetypes where useful, such as aggressive objective pressure, preservation/retreat bias, economy/production bias, or tactical commit bias.
-- Evaluate exploit gaps against the league, not only against the newest self-play policy.
-- Use the league to reduce overfitting to one current opponent style and to generate more varied hard decision states.
+This is analogous to the structured/autoregressive action decomposition used by AlphaStar: learn how to compose a valid structured action instead of representing every full action combination as a separate output class.
 
-### 9. Add a learned policy/prior only after search-generated targets are strong
+### Main risk: good joint plans can be pruned by an early low-probability prefix
 
-Do not train the future policy head primarily to imitate the current bounded production search.
+Autoregressive generation can miss good plans. A complete team tactic may require an early unit action that looks mediocre in isolation. If beam pruning removes that prefix, the full tactic is never constructed, and MCTS cannot discover its value.
 
-- Distill priors from successful oracle/refined search decisions and strong self-play/search trajectories.
-- Prefer factorized per-unit or joint-plan-component priors before attempting a flat distribution over the combinatorial joint-plan space.
-- Use learned priors to allocate candidate/search budget, not to remove the simulator/search safety net immediately.
-- Retain tactical-intent diversity, objective recall, and a small exploration floor so unusual but important plans remain discoverable.
-- Measure policy quality by **candidate oracle recall per unit of compute** and same-budget full-game strength.
-- Only replace handcrafted proposal scoring when the learned prior produces stronger or more complete candidate sets within the gameplay budget.
+Protections:
 
-### 10. Tune difficulty and personality after strength is measurable
+- never rely on greedy decoding alone;
+- preserve multiple prefixes with beam search and/or stochastic sampling;
+- preserve **diversity**, not merely the 32 highest-scoring near-duplicates;
+- include an exploration floor so lower-prior but legal plans can enter search;
+- during training, allow a broader plan set than runtime inference;
+- measure **candidate oracle recall**, not only policy top-1 accuracy;
+- train the policy from MCTS visit distributions so successful lower-prior discoveries become higher-prior future proposals.
 
-- Set difficulty primarily with search budget, candidate/refinement budget, continuation budget, risk tolerance, and evaluator strength.
-- Set personalities through tactical/strategic priors rather than hidden stat cheats.
-- Allow easier AI to make controlled, legible mistakes rather than random nonsense.
-- Validate raw strength and player preference separately through blind playtests.
+The split-fire diagnostic is a useful caution: top-2 already contains one split plan, while a 32-plan beam contains many more. The problem can be **which split/coverage plan** matters, not merely whether the generic tactical family is present.
 
-## Game backend improvements that unlock better AI and a better game
+## Scaling plan generation to 15+ units
 
-The AI roadmap depends on the game backend continuing to make strategic states cheap, deterministic, expressive, and understandable. Keep one canonical simulation authority rather than creating an AI-only rules engine.
+Autoregression remains viable, but the search/generation mechanism should evolve with army size.
 
-### 1. Add a canonical state/index/hash layer before any wholesale state rewrite
+### Roughly 1-5 units
 
-- Keep the dictionary-based state format for now unless profiling proves it is the dominant bottleneck.
-- Add thin canonical indexes such as `unit_by_id`, occupancy-by-cell, and group lookup so repeated full scans are avoidable.
-- Add a deterministic canonical state hash usable for neural-evaluation caching, replay verification, transposition-style reuse, and regression debugging.
-- Separate static scenario/unit-definition data from frequently copied dynamic state where practical.
-- Profile before introducing more complex delta/scratch-state simulation.
+Use complete-team autoregressive plans with a modest diverse beam. MCTS can search complete plans directly.
 
-### 2. Keep `TurnExecutionCore` canonical, but modularize its internals
+### Roughly 5-10 units
 
-Do not fork simulation logic between gameplay and AI. Preserve the current architecture in which pure simulation delegates to the same turn-resolution rules.
+Use wider/diverse beam generation and progressive widening in MCTS. Avoid spending the entire candidate budget on near-identical variants. Consider stochastic lower-ranked proposals during self-play.
 
-As complexity grows, split responsibilities behind the canonical facade into pure rule/resolver modules, for example:
+### Roughly 10-15+ units
 
-- movement/collision;
-- combat/targeting;
-- effects/status;
-- economy/resources/production;
-- objectives/victory;
-- shared rule queries.
+Move toward **hierarchical/grouped planning** rather than one flat 15-unit sentence. A likely structure is:
 
-This should improve testability and iteration speed without creating two sources of truth.
+1. strategic intent or objective;
+2. dynamically selected unit groups/roles;
+3. group-level commands such as contain, flank, focus, screen, retreat, capture, or advance;
+4. lower-level autoregressive actions inside each group.
 
-### 3. Generalize objectives and scenarios
+The groups should eventually be learned/dynamic rather than hard-coded squads. Attention/entity representations and pointer-style unit selection are natural tools for this stage.
 
-The command hex is a useful anti-stalling pressure mechanism, but it should not become the only strategic geometry the AI learns.
+Also test plan-order robustness. If unit 1 is always decoded before unit 2, the network may learn arbitrary ordering artifacts. Prefer canonical tactical ordering, permutation augmentation, or architectures that reduce sensitivity to unit enumeration order.
 
-- Introduce data-driven `ScenarioDefinition` / `ObjectiveDefinition` concepts.
-- Support command-hex capture as a default/fallback objective while allowing scenario-specific primary objectives.
-- Make it easy to express multiple control points, escort/defend, resource pressure, production races, survival/escape, and similar strategic families without bespoke engine branches.
-- Use procedural variants to vary geometry and prevent overfitting to one objective layout.
+## Opponent plans: combine AlphaStar-style learning with explicit simultaneous search
 
-### 4. Add a canonical player-observation API before fog/scouting mechanics
+AlphaStar largely learns opponent behavior statistically through self-play/league training rather than explicitly enumerating a full opponent plan tree at every decision. Our game has a different structure: each turn is a sealed simultaneous plan, so explicit reasoning over plausible opponent plans is especially valuable.
 
-Before adding imperfect information, define the exact state visible to each player.
+For the current no-fog game, use the same full visible state for both sides and the same/shared policy machinery to propose plans from each perspective:
 
-- Gameplay AI should eventually plan from `ObservationState(player)` rather than unrestricted world state when fog/stealth exists.
-- Keep hidden full state available to the simulator/server, not to the planning policy.
-- Use the same observation contract for human-client information and AI information so fair-play guarantees are testable.
+- `P(our plan | full state, our faction)`
+- `P(opponent plan | full state, opponent faction)`
 
-### 5. Prefer generic traits/effect operators over unit-specific rule branches
+Neither side receives the other side's currently selected plan.
 
-As new mechanics are added, compose them from reusable concepts such as damage, stun, movement modification, interception, spawning, resource transfer, capture progress, vision, and timed effects.
+MCTS should then spend simulations across simultaneous plan pairs without giving either player illegal sequential information. Candidate/opponent selection can begin from independent policy priors, with robust/risk-aware backup rules and matrix-game diagnostics available for hard cases.
 
-This keeps the backend extensible and gives the AI consistent semantic features rather than a growing collection of special-case unit logic.
+Important: an opponent-policy probability is **not truth**. Retain downside protection and occasional lower-probability opponent exploration so the AI does not become exploitable by a surprising but legal response.
 
-### 6. Add deterministic ReplayV1 and reason-coded events
+## Simultaneous MCTS design
 
-- Record enough data to reproduce a match deterministically from initial state + submitted simultaneous actions + seeds/configuration.
-- Include state hashes at useful boundaries so replay divergence can be located precisely.
-- Emit reason-coded resolution events that can explain movement conflicts, missed attacks, blocks/intercepts, objective progress, effects, spawns, and victory triggers.
-- Use the same event stream for debugging, visualization, and eventually player-facing combat explanations.
+### Node semantics
 
-Readability matters for fun: simultaneous outcomes should feel surprising because the opponent outguessed the player, not because resolution rules are opaque.
+A node represents a complete public game state at a turn boundary. With no fog of war, that state is fully observable.
 
-### 7. Add invariants and metamorphic tests for simultaneous resolution
+For each side, track plan-edge statistics such as:
 
-In addition to authored examples, test properties that should hold across many generated states, such as:
+- policy prior `P(s,a)`;
+- visit count `N(s,a)`;
+- mean backed-up value `Q(s,a)`;
+- optional response-pair statistics when needed for simultaneous-game solving/debugging.
 
-- deterministic replay of the same state/actions/seed;
-- faction/name permutations do not change rule semantics;
-- mirrored/rotated equivalent states resolve equivalently when the rules are symmetric;
-- unit/resource conservation rules hold where applicable;
-- no unit occupies an impossible cell after resolution;
-- objective capture is checked at the defined full-turn boundary;
-- AI simulation and gameplay/server execution produce identical next states for the same inputs.
+### PUCT exploration
 
-### 8. Prioritize mechanics that create simultaneous strategic prediction
+Use a PUCT-style selection term conceptually like:
 
-A smarter AI cannot create depth if the game offers only one dominant decision axis. Favor mechanics that create meaningful tradeoffs between prediction, commitment, information, positioning, objectives, and tempo.
+`Q(s,a) + c_puct * P(s,a) * sqrt(N(s)) / (1 + N(s,a))`
 
-Strong candidates include:
+The exact simultaneous-game adaptation and constants should be treated as experimental. The important behavior is:
 
-- interception/overwatch or other ways to punish predicted movement;
-- telegraphed attacks with positional counterplay;
-- cover/terrain that changes movement-vs-damage tradeoffs;
-- scouting/fog/stealth once the observation API exists;
-- multiple objectives that force splitting and screening;
-- production/reinforcement systems that create immediate-pressure-vs-growth decisions;
-- support/screening mechanics that make coordinated multi-unit plans valuable.
+- high-prior/high-value plans get early attention;
+- under-visited plans retain an exploration bonus;
+- repeated poor simulations reduce a plan's attractiveness;
+- a low-prior tactic can become dominant if search repeatedly discovers that it wins.
 
-Do not add many abilities merely for variety. Add mechanics that create new kinds of decisions the search and value model can learn to distinguish.
+### Simultaneous turn selection
 
-## Arena efficiency policy
+Do not model a turn as “Terran chooses, then Zerg observes Terran and chooses.” Both plans must be selected from the same parent information state before resolution.
 
-Spend compute on **more independent seeded positions before wider search** by default. Keep the ordinary PR arena inexpensive and use wider/full diagnostics for promotion decisions. Record win/loss/draw, unresolved rate, termination reason, non-progress streak, decision time, simulation count, candidate-intent coverage, candidate-oracle recall, oracle value gap, and conditional selection accuracy where practical.
+Initial implementation options, in increasing sophistication:
 
-Use mirrored pairs to cancel faction/scenario bias and stable seed sets to make before/after comparisons meaningful. New training seeds must not overlap frozen evaluation seeds.
+1. independently select one plan for each side with PUCT and resolve the pair;
+2. maintain pairwise payoff/visit statistics for important plan combinations;
+3. use a restricted simultaneous zero-sum matrix-game solve at heavily visited nodes where mixed strategies matter.
 
-Do not assume a larger plan-response budget is stronger. Compare strength and oracle recall per unit of compute. The current evidence supports separate uses:
+Start simple, retain diagnostics, and only promote complexity if same-budget results justify it.
 
-- **2x2:** cheap baseline/regression signal;
-- **4x4:** preferred diagnostic when evaluator quality or candidate recall is being tested and 2x2 may suppress tactical-intent diversity;
-- **6x6/8x8 or offline oracle budgets:** diagnostic/teacher tools, not automatic gameplay defaults.
+### Leaf evaluation and depth
 
-A faction-dominated result at 2x2 is not enough evidence to declare a fixture bad. Rerun the same frozen pair at 4x4 first. The September 2026 diagnostic showed that this distinction matters: all decisive 4x4 games favored the handwritten evaluator, eliminating the faction-tied pattern seen at 2x2.
+Continue until:
 
-## Counterfactual regression policy
+- terminal outcome;
+- simulation/depth budget;
+- time budget;
+- or a frontier state where the value network is used.
 
-Keep the curated counterfactual suite intentionally small and focused on obvious tactical regressions that should remain meaningful across many rule changes. Prefer roughly 4-6 stable cases over a large catalog of hand-authored strategic situations.
+Unlike the current one-turn search, MCTS should be able to discover plans whose value appears only after several simultaneous turns, such as coverage that forces an escape path and kills on the following turn.
 
-Do not use the curated suite as the primary definition of good strategy. When rules change, update or remove a case if its old answer is no longer naturally correct. Promote a new case only when self-play, arena games, oracle analysis, or playtesting reveals a recurring embarrassing tactical mistake worth guarding against.
+### Training targets
 
-Use arena strength, candidate-oracle recall/value gap, self-play outcomes, held-out sibling ranking, and held-out value-model performance as the primary evolving-game measurements.
+For self-play:
 
-## Self-play exploration policy
+- policy target = normalized MCTS visit distribution over plans (or compatible autoregressive decomposition of that distribution);
+- value target = terminal game result from the acting player's perspective, with faster-win discount where intentionally retained;
+- basic-random horizon draw target = 0 under the current opt-in rule.
 
-Exploration is a **training-data tool**, not a source of evaluation noise. Search still generates and ranks plans deterministically. Training may occasionally select a non-best plan only from a small near-best prefix and only within a bounded worst-case score gap. Every exploration choice must be reproducible from recorded state/profile/seed provenance.
+Do not train the policy merely to copy the raw neural prior or the current bounded search's top plan. Search should improve the target.
 
-Exploration replays export supervised examples only after their trajectory diverges from the identical greedy reference. This prevents a state-only value model from receiving opposite outcome labels for the same pre-divergence input.
+## MCTS implementation sequence
 
-Do not use unconstrained random legal actions. The purpose is to expose plausible alternate strategies and outcomes, not to teach the value model from intentionally nonsensical play.
+### MCTS-0 — preserve baselines and semantics
 
-## Sibling-ranking supervision policy
+Before replacing gameplay search:
 
-Ranking supervision must be grounded in real simulator continuations. Pair leaves by the decision that generated them and, where possible, hold the modeled opponent response fixed across the pair.
+- keep current robust search unchanged behind its existing/default mode;
+- add deterministic state/plan signatures suitable for tree statistics and transpositions;
+- add tests proving both players' current-turn choices are based on the same pre-turn state;
+- keep the existing 2M1Z split diagnostic as a regression fixture.
 
-Use terminal outcome ordering as the primary signal. Faster wins may break ties between two wins at lower weight. Do not prefer slower losses over faster losses. Unresolved continuations remain unlabeled rather than receiving guessed preferences.
+### MCTS-1 — one-node PUCT over current generated plans
 
-As the candidate oracle matures, increasingly source sibling pairs from oracle/refined candidates, local one-unit perturbations around strong plans, evaluator disagreements, and actual arena/self-play mistakes. Do not let the sibling dataset become a closed loop that only teaches the network to rank plans the current bounded generator already knows how to propose.
+Use the existing autoregressive/handwritten candidate machinery to produce a fixed initial plan set. Replace fixed ranking/allocation with repeated PUCT simulations at the root while still evaluating one simultaneous turn.
 
-Split ranking pairs by the same held-out scenario-family grouping used for ordinary value examples so sibling states from a held-out family cannot leak into training.
+Goal: validate visit-count accounting and show that search can re-rank a lower-prior plan from simulated evidence.
 
-Report both overall sibling-ranking accuracy and family-specific accuracy for strategically difficult tradeoffs.
+### MCTS-2 — multi-turn tree
 
-## Promotion gates
+After each simultaneous resolution, create/reuse a child state and repeat policy proposal + PUCT selection. Backpropagate terminal/value estimates through the visited path.
 
-### Candidate-generator promotion gate
+Goal: solve conversion problems that one-turn leaf scoring cannot distinguish.
 
-A new candidate generator should improve near-oracle recall and/or reduce severe oracle value gaps without unacceptable decision-time cost. It must also preserve deterministic behavior, intent/objective coverage, and same-budget full-game strength.
+### MCTS-3 — progressive widening and proposal diversity
 
-### Neural evaluator promotion gate
+Do not materialize every possible plan immediately. Add plans as node visits grow:
 
-The first neural gameplay milestone is not lower training loss. It is:
+- start with a small high-prior set;
+- progressively request more autoregressive proposals;
+- include stochastic/diverse lower-prior plans during training;
+- deduplicate exact plans but preserve tactically distinct alternatives.
 
-**same search budget + neural evaluator vs same search budget + handwritten evaluator on frozen mirrored arena seeds.**
+Goal: scale search without making the current policy top-k an irreversible pruning gate.
 
-A neural candidate should show improvement across full-game strength, counterfactual decision quality, and held-out sibling ordering before replacing the handwritten baseline.
+### MCTS-4 — batched neural inference and transpositions
 
-Interpret evaluator failures only on decisions where candidate recall is adequate. If both evaluators were denied a near-oracle plan, classify the primary failure as candidate generation rather than evaluator ranking.
+MCTS will only be practical if inference/simulation throughput improves:
 
-Because 2x2 can hide evaluator-sensitive plans, a promotion candidate should also be checked at 4x4 on the frozen fast arena or another candidate-recall-controlled same-budget set before interpreting faction-tied 2x2 outcomes as evaluator equivalence.
+- batch policy/value evaluation for multiple frontier nodes;
+- cache identical state evaluations;
+- use deterministic state hashes for transposition reuse;
+- measure simulator, serialization/IPC, encoding, and PyTorch inference time separately;
+- convert saved overhead into more useful simulations rather than immediately increasing network size.
 
-### Learned-policy promotion gate
+### MCTS-5 — self-play visit targets
 
-A learned prior must improve candidate oracle recall and/or full-game strength **per unit of search compute** before replacing handcrafted proposal/pruning as the default.
+Once search is trustworthy, train the policy from visit counts and the value network from final outcomes. Compare against the current search-distillation approach.
+
+Track whether search-discovered tactics move upward in policy probability over successive generations.
+
+## Rotation and symmetry generalization
+
+The `m2_z1` rotation split is strong enough that rotation handling is now a first-class roadmap item.
+
+Current action features include absolute coordinates/deltas and do not provide full rotational equivariance. Add one or more of:
+
+- rotational data augmentation across all six hex rotations;
+- canonical player-relative orientation before neural encoding;
+- rotation-equivariant spatial features where practical;
+- regression tests requiring equivalent policy/value behavior on rotated copies of the same tactical state.
+
+Do this alongside MCTS rather than assuming search will hide representation failures. Search cannot efficiently compensate for a systematically wrong value/policy prior in one orientation forever.
+
+## Exploration policy
+
+Separate **training exploration** from **gameplay strength**.
+
+Training may use:
+
+- wider/progressively widened candidate sets;
+- root prior noise or another controlled exploration perturbation;
+- stochastic sampling from MCTS visit counts;
+- deliberate lower-ranked/diverse plan injection;
+- larger simulation budgets where affordable.
+
+Gameplay may use:
+
+- smaller deterministic/low-temperature visit selection;
+- fewer initial plans with progressive widening only when the position remains uncertain;
+- strict turn-time limits.
+
+Avoid unconstrained random legal actions. Exploration should remain policy-guided and reproducible.
+
+## Opponent league
+
+Retain an AlphaStar-like league concept even after MCTS is added. MCTS improves local decisions; a league improves the distribution of strategies the networks learn to face.
+
+Keep:
+
+- historical champion checkpoints;
+- current self-play opponents;
+- exploiters/archetypes that pressure known weaknesses such as rushing, preservation, objective racing, economy/production, or unusual movement;
+- held-out opponents for promotion tests.
+
+The league should prevent the policy/value network from becoming excellent only against its current mirror.
+
+## Fog of war: defer hidden-state inference, preserve the interface boundary now
+
+Fog of war is **not implemented yet**, so the current MCTS/policy should use full public state. Do not prematurely add belief-state complexity.
+
+Before fog/scouting is implemented, define a canonical player-observation API:
+
+- simulator/server retains authoritative full state;
+- each player/AI receives `ObservationState(player)`;
+- the planning policy and MCTS tree are built from the information legally visible to that player;
+- previously observed hidden information can later be handled by memory/belief models rather than leaking server state.
+
+When fog arrives, AlphaStar-style recurrent/entity memory becomes more relevant. Until then, the uncertainty to solve is primarily **opponent intent**, not hidden world state.
+
+## Value model priorities
+
+MCTS does not remove the need for a good value model. It makes value errors easier to diagnose because visit statistics show which lines were actually explored.
+
+Priorities:
+
+- calibrate draw/non-conversion states around zero rather than assigning huge positive values to endless chases;
+- retain terminal outcome as the strongest value supervision;
+- use faster wins as a secondary preference, not a replacement for win/draw/loss ordering;
+- mine MCTS disagreement states where prior policy/value and backed-up search value differ materially;
+- preserve counterfactual/sibling ranking diagnostics as secondary supervision;
+- report calibration and ranking by scenario family/rotation, not only overall accuracy.
+
+## Candidate generation / policy promotion metrics
+
+Top-1 policy accuracy is not enough. Track:
+
+- oracle recall of at least one near-best plan;
+- tactical-family/diversity coverage;
+- first rank of oracle-quality plans;
+- MCTS visit share assigned to plans that began with low prior;
+- probability/visit calibration across rotations;
+- plan coverage per unit of compute;
+- same-budget full-game strength.
+
+A policy is useful when it makes good search cheaper, not merely when it imitates yesterday's search winner.
+
+## Game/backend work that unlocks better search
+
+### Deterministic state/index/hash layer
+
+- add canonical `unit_by_id`, occupancy, group/objective indexes;
+- add deterministic state hashes for MCTS transpositions, value caching, replay verification, and debugging;
+- separate static scenario/unit-definition data from frequently copied dynamic state where practical;
+- profile before a wholesale state rewrite.
+
+### Keep one canonical simultaneous rules engine
+
+Do not fork gameplay and AI rules. Continue to resolve MCTS simulations through the same canonical pure rule/resolution path used by the game.
+
+As complexity grows, modularize movement/collision, combat, effects, economy/production, objectives, and shared rule queries behind the canonical facade.
+
+### Replay and diagnostics
+
+Add deterministic replay records and reason-coded events so an MCTS line can be reconstructed and explained. Store enough provenance to answer:
+
+- what state was searched;
+- which plan priors existed;
+- which plan pairs were visited;
+- visit/Q statistics;
+- value-network frontier estimates;
+- selected plan;
+- actual resolved result.
+
+### Scenario/objective generalization
+
+Command hexes are useful anti-stalling pressure but should not become the only strategic geometry. Keep data-driven objectives/scenarios for elimination, control, survival/escape, production races, escort/defend, and multi-objective pressure.
+
+## Evaluation and promotion gates
+
+### MCTS integration gate
+
+MCTS should not become the default because it is theoretically attractive. Promote it only when it:
+
+- preserves simultaneous-information legality;
+- passes deterministic/replay tests;
+- improves tactical conversion or full-game strength at a measured compute cost;
+- stays inside the player turn-time budget;
+- does not materially increase pathological loops or search failures.
+
+### Policy gate
+
+A learned autoregressive policy must improve candidate/oracle recall and/or MCTS strength per unit of compute. It must preserve an exploration path for unusual but important plans.
+
+### Value gate
+
+A neural value candidate should improve held-out outcome calibration/ranking and same-budget game strength. Evaluate results by rotation and strategic family as well as overall.
+
+### Phase 1 gate
+
+The existing Phase 1 contract remains authoritative until explicitly changed. MCTS experiments are not automatic promotions and must not mine reserved evaluation games into training.
 
 ## Revised milestones
 
-### Milestone A — Search quality and speed foundation
+### Milestone A — simultaneous MCTS foundation
 
-**AI**
-- Candidate Oracle Recall benchmark and severe-miss mining. **Implemented; use the benchmark to identify candidate-generation misses and mine better siblings.**
-- Batched neural leaf evaluation with timing breakdown.
-- Portfolio/refinement candidate generator behind a feature flag.
+- keep current robust search as fallback/baseline;
+- add state/plan hashes and MCTS node statistics;
+- implement fixed-candidate simultaneous root PUCT;
+- prove no sequential current-turn information leakage;
+- add instrumentation for `P`, `N`, `Q`, simulations, and elapsed time;
+- retain the 2M1Z split-fire diagnostic.
 
-**Backend**
-- Profile simulator hotspots.
-- Add canonical state indexes and deterministic state hash.
-- Optimize dynamic-state copying only where profiling justifies it.
-- Replace or update stale architecture/migration documentation with the current normative simulation contract.
+**Gate:** deterministic/legal search that can re-rank plans from simulations without regressing baseline integration.
 
-**Gate**
-- Better candidate recall/value gap at comparable compute.
-- No deterministic/regression failures.
-- Neural evaluation overhead materially reduced.
+### Milestone B — multi-turn search + rotation fixes
 
-### Milestone B — Better decision policy
+- extend PUCT through multiple simultaneous turns;
+- use neural value at frontier and terminal outcomes when reached;
+- add rotational augmentation/canonicalization and rotated regression tests;
+- batch frontier neural evaluation;
+- add transposition/value caching.
 
-**AI**
-- Train sibling ranking from production + oracle/refined + mistake-mined siblings.
-- Add family-level sibling diagnostics.
-- Experiment with risk-aware opponent-response scoring.
-- Experiment with restricted matrix-game solving for hard AI where appropriate.
+**Gate:** materially better conversion on `m2_z1` rotations 3/5 and improved same-budget arena strength or tactical regret.
 
-**Backend**
-- Modularize `TurnExecutionCore` internals without creating a second rules engine.
-- Add ReplayV1 + deterministic replay checks.
-- Add generic objective/scenario definitions.
+### Milestone C — AlphaZero-style self-play targets
 
-**Gate**
-- Lower serious tactical regret.
-- Better conditional selection accuracy when a near-oracle candidate is available.
-- No increase in passive/pathological-loop behavior.
-- Same-budget arena improvement against the current champion.
+- train autoregressive policy from MCTS visit distributions;
+- train value from terminal outcomes, including scoped draw=0 horizon targets;
+- use controlled root exploration during training;
+- compare learned-prior + MCTS against current robust search/distillation at equal compute.
 
-### Milestone C — Strategic depth
+**Gate:** search discoveries become policy priors over successive generations, reducing simulations required for the same strength.
 
-**AI**
-- Selective multi-turn continuation triggers.
-- Historical champion/archetype opponent league.
-- Train value model across richer scenario families.
+### Milestone D — opponent league and strategic depth
 
-**Backend/game**
-- Data-driven scenario/objective catalog.
-- Canonical player-observation API.
-- Add a small number of strategically distinct mechanics, prioritizing prediction, information, multi-objective pressure, and tempo-vs-production decisions.
+- preserve historical checkpoints and add exploiters/archetypes;
+- broaden scenario families and production/objective mechanics;
+- evaluate exploit gaps and strategy diversity;
+- continue full-game, counterfactual, and oracle-recall diagnostics.
 
-**Gate**
-- No single strategy dominates procedural scenario variants.
-- Exploit gaps against historical/archetype opponents shrink.
-- Blind playtests report multiple viable plans and readable AI behavior.
+**Gate:** no single narrow strategy dominates held-out procedural variants, and exploit gaps shrink.
 
-### Milestone D — Learned policy and personalities
+### Milestone E — 10-15+ unit scaling
 
-**AI**
-- Distill policy priors from stronger search/oracle targets.
-- Factorized per-unit prior plus coordination/joint-plan component signal.
-- Difficulty and personality through budgets, risk, and strategic priors.
+- add progressive widening and explicit diversity controls;
+- benchmark beam width/candidate count vs unit count;
+- prototype dynamic grouping/hierarchical plan generation;
+- add group/entity attention or pointer-style selection if flat autoregression becomes inefficient;
+- verify unit-order/permutation robustness.
 
-**Backend/game**
-- Expand generic traits/effect operators.
-- Increase scenario/asymmetry catalog only after the objective/observation abstractions are stable.
+**Gate:** larger-army candidate recall and decision quality scale without exponential runtime growth.
 
-**Ship gate**
-- AI beats the previous champion at equal compute.
-- Candidate recall and tactical regret improve.
-- Turn-time budget is met.
-- Objective/fog/loop cases pass.
-- Human preference improves in blind playtests.
+### Milestone F — fog/scouting and personalities
+
+- expose canonical player-observation states;
+- add memory/belief modeling only when hidden information exists;
+- maintain fair information access for AI and humans;
+- tune difficulty/personality through search budget, risk, exploration temperature, and strategic priors rather than hidden stat cheats.
+
+## Immediate next steps
+
+1. **Implement the first simultaneous PUCT/MCTS layer using the existing policy/value/simulator rather than adding more ad hoc exploration heuristics.** Keep current robust search as the control/fallback.
+2. Start with fixed candidate sets so the first experiment isolates visit-count search from candidate-generation changes.
+3. Preserve both sides' same-state simultaneous planning semantics; do not implement fake alternating turns.
+4. Add multi-turn expansion next, because the completed split-fire diagnostic shows that the relevant tactic is already present in live candidates while rotations 3/5 still fail to convert.
+5. In parallel, add rotational augmentation/canonicalization and use the new basic-random draw=0 targets in the next training run.
+6. Once MCTS is stable, train the policy from visit counts and add progressive widening/diverse proposals so the policy prior guides search without becoming a hard top-k gate.
+7. Revisit hierarchical/grouped planning when controlled scaling tests show flat autoregressive complete-team plans becoming inefficient around larger armies; expect this to matter by roughly 10-15+ active units rather than redesigning prematurely for today's tiny boards.
 
 ## Ship gate
 
-Promote a new AI only when it beats the current champion on held-out seeded full games, reduces serious tactical regret, stays inside the turn-time budget, respects fog of war and scenario objectives, avoids non-progress/pathological loops, and players prefer playing against it.
+Promote a new AI only when it beats the current champion on held-out seeded full games, reduces serious tactical regret, stays inside the turn-time budget, respects simultaneous information and later fog-of-war constraints, avoids non-progress/pathological loops, and produces behavior players find challenging and legible.
 
-Do not optimize solely for win rate. A shippable opponent should make strong decisions for understandable reasons, expose the player to multiple viable strategies, and remain fair under the same information and rules available to the player.
-
-**Immediate next step: run the Candidate Oracle Recall diagnostic across the frozen benchmark and sampled self-play decisions, inspect the severe-miss artifact, and use those results to choose between candidate-generation/refinement work and evaluator/ranking work. In parallel, batch neural leaf evaluation so evaluator overhead is not unnecessarily consuming search budget. Then feed oracle/refined candidates and mined mistakes into the response-controlled sibling-ranking dataset.**
+Do not optimize solely for win rate. A shippable opponent should make strong decisions for understandable reasons, discover coordinated plans rather than depend on authored answers, expose the player to multiple viable strategies, and remain fair under the same information and rules available to the player.
