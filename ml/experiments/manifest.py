@@ -7,6 +7,7 @@ from typing import Any
 
 SCHEMA_VERSION = 1
 _ALLOWED_PARTITION_ROLES = {"training", "diagnostic", "frozen_eval"}
+_ALLOWED_GATE_OPERATORS = {">=", ">", "<=", "<", "=="}
 
 
 class ManifestError(ValueError):
@@ -34,6 +35,19 @@ def load_manifest(path: str | Path) -> dict[str, Any]:
         raise ManifestError(f"unable to load manifest {manifest_path}: {exc}") from exc
     validate_manifest(data)
     return data
+
+
+def _validate_gates(gates: Any, prefix: str) -> None:
+    _require(isinstance(gates, list), f"{prefix} must be a list")
+    for index, gate in enumerate(gates):
+        label = f"{prefix}[{index}]"
+        _require(isinstance(gate, dict), f"{label} must be an object")
+        for key in ("name", "path", "op", "value"):
+            _require(key in gate, f"{label}.{key} is required")
+        _require(isinstance(gate["name"], str) and gate["name"], f"{label}.name must be non-empty")
+        _require(isinstance(gate["path"], str) and gate["path"], f"{label}.path must be non-empty")
+        _require(gate["op"] in _ALLOWED_GATE_OPERATORS, f"{label}.op is invalid")
+        _require(isinstance(gate["value"], (int, float, bool)), f"{label}.value must be numeric or boolean")
 
 
 def validate_manifest(data: dict[str, Any]) -> None:
@@ -73,6 +87,8 @@ def validate_manifest(data: dict[str, Any]) -> None:
             _require(prior is None, f"seed {seed} overlaps partitions {prior!r} and {name!r}")
             occupied_seeds[seed] = name
 
+    _validate_gates(data.get("gates", []), "gates")
+
     tiers = data.get("tiers")
     _require(isinstance(tiers, dict) and tiers, "tiers must be a non-empty object")
     for tier_name, tier in tiers.items():
@@ -86,6 +102,7 @@ def validate_manifest(data: dict[str, Any]) -> None:
         _require(isinstance(shards, int) and shards > 0, f"tiers.{tier_name}.shards_per_partition must be > 0")
         promotion_eligible = tier.get("promotion_eligible")
         _require(isinstance(promotion_eligible, bool), f"tiers.{tier_name}.promotion_eligible must be boolean")
+        _validate_gates(tier.get("gates", []), f"tiers.{tier_name}.gates")
 
         roles = {partitions[name]["role"] for name in tier_partitions}
         if promotion_eligible:
@@ -101,15 +118,6 @@ def validate_manifest(data: dict[str, Any]) -> None:
     _require("frozen_eval" not in mineable_roles, "frozen_eval may never be reused for mistake mining")
     _require(training_roles <= _ALLOWED_PARTITION_ROLES, "data_policy.training_roles contains an unknown role")
     _require(mineable_roles <= _ALLOWED_PARTITION_ROLES, "data_policy.mineable_roles contains an unknown role")
-
-    gates = data.get("gates", [])
-    _require(isinstance(gates, list), "gates must be a list")
-    for index, gate in enumerate(gates):
-        _require(isinstance(gate, dict), f"gates[{index}] must be an object")
-        for key in ("name", "path", "op", "value"):
-            _require(key in gate, f"gates[{index}].{key} is required")
-        _require(gate["op"] in {">=", ">", "<=", "<", "=="}, f"gates[{index}].op is invalid")
-        _require(isinstance(gate["value"], (int, float, bool)), f"gates[{index}].value must be numeric or boolean")
 
 
 def _partition_shards(partition_name: str, partition: dict[str, Any], shard_count: int) -> list[dict[str, Any]]:
@@ -182,7 +190,7 @@ def build_plan(
             "data_policy",
             {"training_roles": ["training"], "mineable_roles": ["training", "diagnostic"]},
         ),
-        "gates": data.get("gates", []),
+        "gates": [*data.get("gates", []), *tier.get("gates", [])],
         "expected_shards": all_shards,
         "completed_shard_ids": sorted(completed),
         "pending_shards": pending_shards,
