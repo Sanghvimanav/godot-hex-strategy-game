@@ -46,6 +46,7 @@ static func refine(
 	var root_states: Array = []
 	var root_recordings: Array = []
 	var second_turn_simulations := 0
+	var root_simulations := 0
 	for candidate in [first, second]:
 		var elapsed_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
 		var remaining_ms := budget_ms - elapsed_ms - 500.0
@@ -56,6 +57,8 @@ static func refine(
 		submitted[group_name] = (candidate.get("actions", []) as Array).duplicate(true)
 		submitted[opponent_group_name] = (candidate.get("worst_response_actions", []) as Array).duplicate(true)
 		var simulation := PureStateSimulator.simulate_turn(game_state, submitted)
+		root_simulations += 1
+		diagnostic["additional_simulations"] = root_simulations + second_turn_simulations
 		var next_state: Dictionary = simulation.get("next_state", {})
 		if next_state.is_empty():
 			diagnostic["reason"] = "root_simulation_failed"
@@ -68,6 +71,7 @@ static func refine(
 		root_recordings.append((simulation.get("recording", {}) as Dictionary).duplicate(true))
 		var next_settings := evaluator_settings.duplicate(true)
 		next_settings["selective_continuation"] = false
+		next_settings["score_command_capture"] = true
 		# Divide remaining time across the current and as-yet-unsearched root.
 		next_settings["decision_time_budget_ms"] = remaining_ms / float(2 - scores.size())
 		var continuation := PureStateOpponentResponseSearch.search(
@@ -78,10 +82,11 @@ static func refine(
 			mini(2, int(settings.get("opponent_max_plans", 0))),
 			{}, str(settings.get("evaluator", "handwritten")), next_settings
 		)
+		second_turn_simulations += int(continuation.get("simulations_run", 0))
+		diagnostic["additional_simulations"] = root_simulations + second_turn_simulations
 		if not bool(continuation.get("valid", false)) or bool(continuation.get("time_budget_exhausted", false)):
 			diagnostic["reason"] = "continuation_incomplete"
 			return result
-		second_turn_simulations += int(continuation.get("simulations_run", 0))
 		scores.append(float(continuation.get("best_worst_case_score", 0.0)))
 
 	# Compare like-for-like second-turn scores. Keep the one-turn winner on ties.
@@ -89,7 +94,6 @@ static func refine(
 	diagnostic["reason"] = "compared"
 	diagnostic["second_turn_scores"] = scores.duplicate()
 	diagnostic["second_turn_simulations"] = second_turn_simulations
-	result["simulations_run"] = int(result.get("simulations_run", 0)) + second_turn_simulations + 2
 	if scores[1] > scores[0] and not is_equal_approx(scores[1], scores[0]):
 		ranked[0] = second
 		ranked[1] = first

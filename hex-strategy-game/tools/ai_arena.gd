@@ -44,6 +44,12 @@ func _run_arena() -> void:
 		return
 	var champion_settings := PureStateArenaSuite.agent_settings(champion_profile, champion_evaluator)
 	var challenger_settings := PureStateArenaSuite.agent_settings(challenger_profile, challenger_evaluator)
+	if champion_settings.is_empty() or challenger_settings.is_empty():
+		push_error("Unknown arena agent config champion=%s/%s challenger=%s/%s" % [
+			champion_profile, champion_evaluator, challenger_profile, challenger_evaluator,
+		])
+		get_tree().quit(1)
+		return
 	var decision_time_budget_ms := float(args.get("decision-time-budget-ms", "0"))
 	for settings in [champion_settings, challenger_settings]:
 		var evaluation: Dictionary = settings.get("evaluator_settings", {}).duplicate(true)
@@ -52,18 +58,11 @@ func _run_arena() -> void:
 			evaluation["checkpoint_path"] = str(args["checkpoint"])
 			evaluation["learned_proposals"] = str(args.get("learned-proposals", "false")) == "true"
 		settings["evaluator_settings"] = evaluation
-	if champion_settings.is_empty() or challenger_settings.is_empty():
-		push_error(
-			"Unknown arena agent config champion=%s/%s challenger=%s/%s" % [
-				champion_profile,
-				champion_evaluator,
-				challenger_profile,
-				challenger_evaluator,
-			]
-		)
-		get_tree().quit(1)
-		return
-
+	if str(args.get("challenger-selective-continuation", "false")) == "true":
+		var challenger_eval: Dictionary = challenger_settings.get("evaluator_settings", {}).duplicate(true)
+		challenger_eval["selective_continuation"] = true
+		challenger_eval["continuation_score_margin"] = float(args.get("challenger-continuation-score-margin", "100"))
+		challenger_settings["evaluator_settings"] = challenger_eval
 	var all_jobs := PureStateArenaSuite.get_preset(preset, seed_base, map_profile)
 	if all_jobs.is_empty():
 		push_error("Unknown or empty arena preset '%s'. Available: %s" % [preset, str(PureStateArenaSuite.available_presets())])

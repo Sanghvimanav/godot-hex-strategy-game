@@ -86,6 +86,11 @@ static func choose_actions(
 		search = PureStateSelectiveContinuation.refine(
 			game_state, group_name, opponent_group_name, search, resolved, started_usec
 		)
+		var continuation_diagnostics: Dictionary = search.get("selective_continuation", {})
+		search["simulations_run"] = int(search.get("simulations_run", 0)) + int(continuation_diagnostics.get("additional_simulations", 0))
+		# Include refinement even if it declined to replace the one-turn winner.
+		# Promotion checks use this measured elapsed time, not the inner search time.
+		search["elapsed_ms"] = float(Time.get_ticks_usec() - started_usec) / 1000.0
 
 	var selection := PureStatePolicyExploration.select_result(
 		search,

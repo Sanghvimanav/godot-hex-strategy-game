@@ -11,7 +11,37 @@ static func run_all(tests: Node) -> bool:
 	ok = _test_search_is_bounded_deterministic_and_pure(tests) and ok
 	ok = _test_response_search_avoids_predictable_shot(tests) and ok
 	ok = _test_collapse_stays_winning_under_responses(tests) and ok
+	ok = _test_complete_command_capture_is_terminal_in_opt_in_continuations(tests) and ok
 	return ok
+
+
+static func _test_complete_command_capture_is_terminal_in_opt_in_continuations(tests: Node) -> bool:
+	var before := _one_hp_zergling_vs_marine_state()
+	before["command_hexes"] = {"zerg": [-5, 0], "terran": [5, 0]}
+	var groups: Array = before.get("groups", [])
+	var zerg: Dictionary = groups[1]
+	var zerg_units: Array = zerg.get("units", [])
+	(zerg_units[0] as Dictionary)["cell"] = [5, 0]
+	var after := before.duplicate(true)
+	var enabled := {"score_command_capture": true}
+	var win := PureStateOpponentResponseSearch._capture_terminal_breakdown(before, after, "zerg", "terran", enabled)
+	if float(win.get("total", 0.0)) != 100000.0:
+		tests._fail("one full held command turn must score an exact win")
+		return false
+	var disabled := PureStateOpponentResponseSearch._capture_terminal_breakdown(before, after, "zerg", "terran", {})
+	if not disabled.is_empty():
+		tests._fail("normal one-turn search must not change its terminal scoring")
+		return false
+	var terran: Dictionary = groups[0]
+	var terran_units: Array = terran.get("units", [])
+	(terran_units[0] as Dictionary)["cell"] = [-5, 0]
+	after = before.duplicate(true)
+	var draw := PureStateOpponentResponseSearch._capture_terminal_breakdown(before, after, "zerg", "terran", enabled)
+	if float(draw.get("total", -1.0)) != 0.0 or str(draw.get("terminal_reason", "")) != "simultaneous_command_capture":
+		tests._fail("two completed captures must score as a terminal draw")
+		return false
+	tests._pass("opt-in second-turn objective scoring matches win and simultaneous-draw rules")
+	return true
 
 
 static func _test_search_is_bounded_deterministic_and_pure(tests: Node) -> bool:

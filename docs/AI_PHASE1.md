@@ -42,9 +42,11 @@ two closest one-turn plans by searching one more simultaneous turn from each
 plan's modeled worst response. It reserves 30% of an explicit decision-time
 budget for this comparison and falls back to the original one-turn result when
 the second-turn comparison cannot finish. The default remains one-turn search;
-this is a worst-response probe, not exhaustive depth-two minimax, and must not
-be used as promotion evidence without equal-budget tests and terminal-objective
-handling for second-turn leaves.
+this is a worst-response probe, not exhaustive depth-two minimax. The opt-in
+second-turn leaves now score completed command captures and simultaneous draws
+using the same complete-turn occupancy rule as the rollout. Always report the
+number of attempts, complete comparisons and changed choices. A passed
+implementation test is not evidence of superior arena strength.
 
 ## Initial experiment
 
@@ -180,3 +182,30 @@ does not guarantee stronger play. The new checkpoint contains the value/ranking
 heads; proposal-head training is deferred until stronger targets/admission are
 validated. Frozen evaluation, separate twenty-game gates, equal 25-second ceilings,
 absolute 30-second cap, and four-hour elapsed pipeline gate remain unchanged.
+
+### Experiment 5 result and selective-depth ablation
+
+Run `34720260594` completed September 12, 2026. Familiar games resolved 19/20
+with 4 neural wins (21.1%); unfamiliar resolved 19/20 with 3 neural wins (15.8%).
+There were no failed games; maximum decisions were 26.33 and 24.95 seconds.
+Eight-worker training, labeling and setup took 9,322.72 seconds. All gates
+except resolved-game win rate passed. Its checkpoint SHA-256 is
+`e437e4fcf5138656a2601f7dc5925922ad12a4d3defe920d7708d369a638c7a8`.
+The fresh data did not improve arena wins over experiment 4; these frozen
+evaluation games must not become training or mistake-mining inputs.
+
+Experiment 6 reuses that identical checkpoint without training or new labels.
+The neural challenger alone enables selective second-turn continuation for
+close top plans (100 score-point margin), searching both sides from the same
+subsequent pre-turn state under a 25-second total decision budget. Its first
+turn reserves 30% of the budget for refinement; the unchanged handwritten
+champion has the same 25-second decision budget and hardware. Terminal draws
+and captures on second-turn leaves receive exact canonical objective scores.
+The ablation is bounded to the first-turn worst modeled response per candidate,
+so it is not full depth-two minimax. Record applied/skipped/changed counts and
+actual end-to-end decision time, including failed refinement. Freeze the same
+familiar/unfamiliar evaluation seeds, maps and game rules. The provenance report
+retains the original parent training time, workers, runner, checkpoint hash and
+source rules SHA, adds this run's setup elapsed time, and identifies the new
+evaluation code SHA. No data from either holdout enters training. If any gate
+fails, keep the checkpoint and default one-turn policy unpromoted.

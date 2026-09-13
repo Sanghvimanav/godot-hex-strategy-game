@@ -15,24 +15,18 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PARENT_RUN: '34717471103'
+  PARENT_RUN: '34720260594'
   GODOT_VERSION: '4.6.0'
 
 jobs:
-  data:
-    name: Fresh adversarial training shard ${{ matrix.shard }}
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - uses: actions/download-artifact@v4
         with:
           name: phase-one-candidate
@@ -40,105 +34,46 @@ jobs:
           merge-multiple: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ env.PARENT_RUN }}
-      - uses: chickensoft-games/setup-godot@v2.4.1
-        with:
-          version: ${{ env.GODOT_VERSION }}
-          use-dotnet: false
-          include-templates: false
-      - name: Import
-        working-directory: hex-strategy-game
-        run: godot --headless --editor --import --quit
-      - name: Generate 96 training-only games and alternative plans
-        working-directory: hex-strategy-game
-        run: |
-          godot --headless --path . res://tools/neural_self_play_dataset.tscn -- \
-            --profile=balanced --opponent-evaluator=handwritten \
-            --checkpoint="$GITHUB_WORKSPACE/artifacts/parent/candidate/ranked_value_model.pt" \
-            --game-count=96 --seed-base=6100001 --extra-turns=4 \
-            --capture-decisions-per-game=4 --shard-index=${{ matrix.shard }} --shard-count=8 \
-            --out="$GITHUB_WORKSPACE/artifacts/fresh"
-      - name: Label fresh alternatives under a shared opponent response
-        working-directory: hex-strategy-game
-        run: |
-          godot --headless --path . res://tools/search_decision_neural_sibling_pairs.tscn -- \
-            --neural-checkpoint="$GITHUB_WORKSPACE/artifacts/parent/candidate/ranked_value_model.pt" \
-            --max-decisions=24 --allow-unplayed-reference=true --out="$GITHUB_WORKSPACE/artifacts/fresh"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: phase-one-training-${{ matrix.shard }}
-          path: artifacts/fresh/
-          retention-days: 30
-
-  train:
-    needs: data
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - uses: actions/download-artifact@v4
-        with:
-          name: phase-one-candidate
-          path: artifacts/parent
-          merge-multiple: true
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ env.PARENT_RUN }}
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: phase-one-training-*
-          path: artifacts/fresh
-      - name: Audit and assemble training data
-        run: python -m ml.value_model.prepare_phase_one_training --fresh artifacts/fresh --parent artifacts/parent --output artifacts/dataset
-      - name: Train candidate with fresh ranking supervision
-        env:
-          OMP_NUM_THREADS: '2'
-          MKL_NUM_THREADS: '2'
-        run: |
-          python -m ml.value_model.train_ranked_iterative \
-            --init-checkpoint artifacts/parent/candidate/ranked_value_model.pt \
-            --data artifacts/dataset/examples.jsonl --ranking-data artifacts/dataset/ranking_pairs.jsonl \
-            --output artifacts/candidate/ranked_value_model.pt \
-            --encoder-version=2 --preserve-parent-game-split \
-            --parent-ranking-data artifacts/parent/dataset/ranking_pairs.jsonl \
-            --epochs=5 --ranking-weight=3 --learning-rate=0.0001 \
-            --split-key=game_id --split-seed=0 --seed=0 > artifacts/training_metrics.json
-      - name: Record elapsed pipeline time and provenance
+      - name: Verify reused checkpoint and account for parent training
         run: |
           python - <<'PY'
-          import datetime, hashlib, json, os, pathlib, urllib.request
+          import datetime, hashlib, json, os, pathlib, shutil, urllib.request
           url = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
           run = json.load(urllib.request.urlopen(url))
           start = datetime.datetime.fromisoformat(run['created_at'].replace('Z', '+00:00'))
-          seconds = (datetime.datetime.now(datetime.timezone.utc) - start).total_seconds()
+          setup_seconds = (datetime.datetime.now(datetime.timezone.utc) - start).total_seconds()
+          source = json.loads(pathlib.Path('artifacts/parent/candidate/training_provenance.json').read_text())
+          assert source['checkpoint_sha256'] == hashlib.sha256(pathlib.Path('artifacts/parent/candidate/ranked_value_model.pt').read_bytes()).hexdigest()
+          assert source['evaluation_excluded_from_training'] is True
           checkpoint = pathlib.Path('artifacts/candidate/ranked_value_model.pt')
-          data = json.loads(pathlib.Path('artifacts/dataset/dataset_report.json').read_text())
-          report = {'pipeline_elapsed_seconds': seconds, 'workers': 8,
-                    'generation_workers': 8, 'model_training_workers': 1,
-                    'initial_checkpoint_sha256': hashlib.sha256(pathlib.Path('artifacts/parent/candidate/ranked_value_model.pt').read_bytes()).hexdigest(),
-                    'runner_type': 'ubuntu-latest', 'rules_version': os.environ['GITHUB_SHA'],
-                    'checkpoint_sha256': hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
-                    'parent_run': os.environ['PARENT_RUN'], 'dataset': data,
-                    'evaluation_excluded_from_training': data['evaluation_excluded_from_training']}
-          checkpoint.with_name('training_provenance.json').write_text(json.dumps(report, indent=2))
-          if seconds >= 14400:
+          checkpoint.parent.mkdir(parents=True, exist_ok=True)
+          shutil.copyfile('artifacts/parent/candidate/ranked_value_model.pt', checkpoint)
+          pathlib.Path('artifacts/source_training_provenance.json').write_text(json.dumps(source, indent=2) + '\n')
+          report = dict(source)
+          report.update({'experiment': 'selective_continuation_fixed_checkpoint',
+                         'parent_run': os.environ['PARENT_RUN'],
+                         'source_rules_version': source['rules_version'],
+                         'rules_version': os.environ['GITHUB_SHA'],
+                         'source_pipeline_elapsed_seconds': source['pipeline_elapsed_seconds'],
+                         'current_setup_elapsed_seconds': setup_seconds,
+                         'pipeline_elapsed_seconds': source['pipeline_elapsed_seconds'] + setup_seconds,
+                         'new_training_seconds': 0,
+                         'evaluation_workers': 8,
+                         'checkpoint_sha256': hashlib.sha256(checkpoint.read_bytes()).hexdigest()})
+          checkpoint.with_name('training_provenance.json').write_text(json.dumps(report, indent=2) + '\n')
+          if report['pipeline_elapsed_seconds'] >= 14400:
               raise SystemExit('Four-hour training budget exceeded')
           PY
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: phase-one-candidate
           path: |
             artifacts/candidate/
-            artifacts/training_metrics.json
-            artifacts/dataset/
+            artifacts/source_training_provenance.json
           retention-days: 30
 
   evaluate:
-    needs: train
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -177,6 +112,7 @@ jobs:
             --champion-evaluator=handwritten --challenger-evaluator=neural \
             --decision-time-budget-ms=25000 --runner-type=ubuntu-latest \
             --learned-proposals=false \
+            --challenger-selective-continuation=true --challenger-continuation-score-margin=100 \
             --checkpoint="$GITHUB_WORKSPACE/artifacts/candidate/candidate/ranked_value_model.pt" \
             --rules-version="$GITHUB_SHA" --shard-index=${{ matrix.shard }} --shard-count=4 \
             --out="$GITHUB_WORKSPACE/artifacts/evaluation"
