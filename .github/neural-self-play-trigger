@@ -1,1 +1,1 @@
-neural-self-play-v4: corrected GDScript parse and cancel superseded experiment runs
+neural-self-play-v5: regenerate seed and neural self-play with unresolved turn-limit targets labeled draw=0
