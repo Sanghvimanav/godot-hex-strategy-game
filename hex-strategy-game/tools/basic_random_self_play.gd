@@ -5,8 +5,9 @@ extends Node
 ## two alternative paths, only states after the first divergence from the greedy
 ## trajectory are exported. This gives the value model counterfactual evidence
 ## without assigning conflicting outcomes to an identical pre-divergence state.
-## Greedy trajectories may also capture bounded robust search decisions for
-## autoregressive joint-plan policy distillation.
+## Greedy trajectories may capture either the legacy robust-search teacher matrix
+## or, when explicitly enabled, MCTS root visit distributions for autoregressive
+## policy training. The robust path remains the default.
 
 const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
 const PureStateBasicRandomSuite = preload("res://src/simulation/pure_state_basic_random_suite.gd")
@@ -17,6 +18,8 @@ const PureStateSearchDecisionData = preload("res://src/simulation/pure_state_sea
 
 const PROFILES := ["greedy", "light", "explore"]
 const MANIFEST_SCHEMA_VERSION := 1
+const SEARCH_POLICY_ROBUST := "robust"
+const SEARCH_POLICY_MCTS := "mcts"
 
 
 func _ready() -> void:
@@ -32,8 +35,16 @@ func _run() -> void:
 	var game_count := int(args.get("game-count", str(PureStateBasicRandomSuite.DEFAULT_TRAINING_GAMES)))
 	var capture_decisions_per_game := maxi(0, int(args.get("capture-decisions-per-game", "0")))
 	var learned_proposals := _parse_bool(args.get("learned-proposals", "false"))
+	var search_policy := str(args.get("search-policy", SEARCH_POLICY_ROBUST)).to_lower()
+	var puct_simulations := maxi(1, int(args.get("puct-simulations", "32")))
+	var puct_max_depth := maxi(1, int(args.get("puct-max-depth", "3")))
+	var puct_c := maxf(0.0, float(args.get("puct-c", "1.5")))
 	if evaluator not in ["handwritten", "neural"]:
 		push_error("Unsupported evaluator: %s" % evaluator)
+		get_tree().quit(1)
+		return
+	if search_policy not in [SEARCH_POLICY_ROBUST, SEARCH_POLICY_MCTS]:
+		push_error("Unsupported search policy: %s" % search_policy)
 		get_tree().quit(1)
 		return
 	if evaluator == "neural" and checkpoint.is_empty():
@@ -42,6 +53,10 @@ func _run() -> void:
 		return
 	if evaluator != "neural" and learned_proposals:
 		push_error("Learned proposals require the neural evaluator")
+		get_tree().quit(1)
+		return
+	if search_policy == SEARCH_POLICY_MCTS and evaluator != "neural":
+		push_error("MCTS self-play currently requires the neural policy/value checkpoint")
 		get_tree().quit(1)
 		return
 
@@ -57,7 +72,10 @@ func _run() -> void:
 		if not (job_variant is Dictionary):
 			continue
 		var job: Dictionary = job_variant
-		var greedy_settings_a := _settings_for(job, evaluator, checkpoint, "greedy", 0, learned_proposals)
+		var greedy_settings_a := _settings_for(
+			job, evaluator, checkpoint, "greedy", 0, learned_proposals,
+			search_policy, puct_simulations, puct_max_depth, puct_c
+		)
 		var greedy_settings_b := greedy_settings_a.duplicate(true)
 		var greedy_rollout := PureStateGameRollout.play_game_with_settings(
 			job.get("state", {}) as Dictionary,
@@ -78,7 +96,10 @@ func _run() -> void:
 			if profile == "greedy":
 				rollout = greedy_rollout
 			else:
-				var settings_a := _settings_for(job, evaluator, checkpoint, profile, policy_seed, learned_proposals)
+				var settings_a := _settings_for(
+					job, evaluator, checkpoint, profile, policy_seed, learned_proposals,
+					search_policy, puct_simulations, puct_max_depth, puct_c
+				)
 				var settings_b := settings_a.duplicate(true)
 				rollout = PureStateGameRollout.play_game_with_settings(
 					job.get("state", {}) as Dictionary,
@@ -98,6 +119,7 @@ func _run() -> void:
 				"rules_version": rules_version,
 				"dataset": "basic_random_self_play",
 				"evaluator": evaluator,
+				"search_policy": search_policy,
 				"scenario_seed": int(job.get("scenario_seed", 0)),
 				"rotation_steps": int(job.get("rotation_steps", 0)),
 				"marines": int(job.get("marines", 0)),
@@ -109,6 +131,10 @@ func _run() -> void:
 				"counterfactual_path": profile != "greedy",
 				"learned_proposals": learned_proposals,
 			}
+			if search_policy == SEARCH_POLICY_MCTS:
+				source["puct_simulations"] = puct_simulations
+				source["puct_max_depth"] = puct_max_depth
+				source["puct_c"] = puct_c
 			var trajectory_id := "%s-%s-%s" % [str(job.get("game_id", "game")), evaluator, profile]
 			var built := PureStateTrainingData.build_examples_from_rollout(
 				rollout, "terran", "zerg", trajectory_id, source
@@ -116,9 +142,9 @@ func _run() -> void:
 			if bool(built.get("labeled", false)):
 				all_examples.append_array((built.get("examples", []) as Array).duplicate(true))
 
-			# One robust candidate matrix already supplies counterfactual alternatives,
-			# so capture only greedy trajectories instead of triplicating the same
-			# starting decisions across the light/explore replay variants.
+			# Capture only greedy trajectories. Robust mode keeps the existing teacher
+			# matrix; MCTS mode deterministically reruns the same decision and exports
+			# the normalized root visit distribution as the policy teacher.
 			if profile == "greedy" and capture_decisions_per_game > 0:
 				var history: Array = rollout.get("history", [])
 				for group_name_variant in ["terran", "zerg"]:
@@ -140,23 +166,40 @@ func _run() -> void:
 						if not (state_before_variant is Dictionary) or not (selected_variant is Array):
 							continue
 						var decision_source := source.duplicate(true)
-						decision_source["search_decision_policy"] = "robust_candidate_distillation"
-						var row := PureStateSearchDecisionData.capture_decision(
-							state_before_variant as Dictionary,
-							group_name,
-							opponent_group,
-							(selected_variant as Array).duplicate(true),
-							int(job.get("max_actions_per_unit", PureStateBasicRandomSuite.MAX_ACTIONS_PER_UNIT)),
-							int(job.get("own_max_plans", PureStateBasicRandomSuite.OWN_MAX_PLANS)),
-							int(job.get("opponent_max_plans", PureStateBasicRandomSuite.OPPONENT_MAX_PLANS)),
-							"%s-%s" % [trajectory_id, group_name],
-							int(turn.get("turn", history_index + 1)),
-							{},
-							decision_source
-						)
+						var decision_game_id := "%s-%s" % [trajectory_id, group_name]
+						var row: Dictionary
+						if search_policy == SEARCH_POLICY_MCTS:
+							decision_source["search_decision_policy"] = "mcts_visit_distribution"
+							row = _capture_mcts_decision(
+								state_before_variant as Dictionary,
+								group_name,
+								opponent_group,
+								(selected_variant as Array).duplicate(true),
+								greedy_settings_a,
+								decision_game_id,
+								int(turn.get("turn", history_index + 1)),
+								decision_source
+							)
+						else:
+							decision_source["search_decision_policy"] = "robust_candidate_distillation"
+							row = PureStateSearchDecisionData.capture_decision(
+								state_before_variant as Dictionary,
+								group_name,
+								opponent_group,
+								(selected_variant as Array).duplicate(true),
+								int(job.get("max_actions_per_unit", PureStateBasicRandomSuite.MAX_ACTIONS_PER_UNIT)),
+								int(job.get("own_max_plans", PureStateBasicRandomSuite.OWN_MAX_PLANS)),
+								int(job.get("opponent_max_plans", PureStateBasicRandomSuite.OPPONENT_MAX_PLANS)),
+								decision_game_id,
+								int(turn.get("turn", history_index + 1)),
+								{},
+								decision_source
+							)
 						if bool(row.get("valid", false)):
 							all_search_decisions.append(row)
 							captured += 1
+						elif search_policy == SEARCH_POLICY_MCTS:
+							push_error("MCTS visit capture failed: %s" % str(row.get("error", "unknown")))
 
 			var status := str(rollout.get("status", ""))
 			var winner := str(rollout.get("winner", ""))
@@ -178,6 +221,7 @@ func _run() -> void:
 				"marines": int(job.get("marines", 0)),
 				"zerglings": int(job.get("zerglings", 0)),
 				"evaluator": evaluator,
+				"search_policy": search_policy,
 				"policy_profile": profile,
 				"policy_seed": policy_seed,
 				"counterfactual_path": profile != "greedy",
@@ -197,12 +241,13 @@ func _run() -> void:
 				"status": status,
 				"history": (rollout.get("history", []) as Array).duplicate(true),
 			})
-			print("[basic-random-self-play] %s m=%d z=%d r=%d evaluator=%s profile=%s status=%s winner=%s start=%d examples=%d" % [
+			print("[basic-random-self-play] %s m=%d z=%d r=%d evaluator=%s search=%s profile=%s status=%s winner=%s start=%d examples=%d" % [
 				trajectory_id,
 				int(job.get("marines", 0)),
 				int(job.get("zerglings", 0)),
 				int(job.get("rotation_steps", 0)),
 				evaluator,
+				search_policy,
 				profile,
 				status,
 				winner,
@@ -220,6 +265,7 @@ func _run() -> void:
 		"suite_version": PureStateBasicRandomSuite.VERSION,
 		"rules_version": rules_version,
 		"evaluator": evaluator,
+		"search_policy": search_policy,
 		"training_rotations": PureStateBasicRandomSuite.TRAINING_ROTATIONS,
 		"evaluation_rotations_excluded": PureStateBasicRandomSuite.EVALUATION_ROTATIONS,
 		"command_hexes_enabled": false,
@@ -233,6 +279,9 @@ func _run() -> void:
 		"capture_decisions_per_game": capture_decisions_per_game,
 		"search_decision_count": all_search_decisions.size(),
 		"learned_proposals": learned_proposals,
+		"puct_simulations": puct_simulations if search_policy == SEARCH_POLICY_MCTS else 0,
+		"puct_max_depth": puct_max_depth if search_policy == SEARCH_POLICY_MCTS else 0,
+		"puct_c": puct_c if search_policy == SEARCH_POLICY_MCTS else 0.0,
 		"games": summaries,
 	}
 	var ok := _write_text(out_dir.path_join("examples.jsonl"), PureStateTrainingData.to_jsonl(all_examples))
@@ -240,19 +289,91 @@ func _run() -> void:
 	ok = _write_jsonl(out_dir.path_join("traces.jsonl"), all_traces) and ok
 	if capture_decisions_per_game > 0:
 		ok = _write_jsonl(out_dir.path_join("search_decisions.jsonl"), all_search_decisions) and ok
-	print("[basic-random-self-play] summary evaluator=%s base_games=%d trajectories=%d examples=%d decisions=%d learned_proposals=%s outcomes=%s" % [
-		evaluator, jobs.size(), summaries.size(), all_examples.size(), all_search_decisions.size(), str(learned_proposals), str(outcomes)
+	print("[basic-random-self-play] summary evaluator=%s search=%s base_games=%d trajectories=%d examples=%d decisions=%d learned_proposals=%s outcomes=%s" % [
+		evaluator, search_policy, jobs.size(), summaries.size(), all_examples.size(), all_search_decisions.size(), str(learned_proposals), str(outcomes)
 	])
 	PureStateNeuralEvaluator.shutdown()
 	get_tree().quit(0 if ok else 1)
 
 
-func _settings_for(job: Dictionary, evaluator: String, checkpoint: String, profile: String, seed: int, learned_proposals: bool) -> Dictionary:
+func _capture_mcts_decision(
+	state: Dictionary,
+	group_name: String,
+	opponent_group: String,
+	selected_actions: Array,
+	settings: Dictionary,
+	game_id: String,
+	turn_index: int,
+	source: Dictionary
+) -> Dictionary:
+	var decision := GameplayAI.choose_actions(state, group_name, opponent_group, settings)
+	if not bool(decision.get("valid", false)):
+		return {"valid": false, "error": "mcts_decision_failed", "game_id": game_id}
+	var diagnostics: Dictionary = decision.get("diagnostics", {})
+	if str(diagnostics.get("mcts_stage", "")) != "MCTS-2":
+		return {"valid": false, "error": "mcts2_required", "game_id": game_id}
+	var visit_distribution_variant = diagnostics.get("root_visit_distribution", [])
+	if not (visit_distribution_variant is Array) or (visit_distribution_variant as Array).is_empty():
+		return {"valid": false, "error": "missing_root_visit_distribution", "game_id": game_id}
+	if decision.get("actions", []) != selected_actions:
+		return {"valid": false, "error": "mcts_rerun_not_deterministic", "game_id": game_id}
+	var visits := 0
+	for row_variant in visit_distribution_variant:
+		if row_variant is Dictionary:
+			visits += int((row_variant as Dictionary).get("visits", 0))
+	if visits != int(diagnostics.get("simulations_run", -1)):
+		return {"valid": false, "error": "mcts_visit_accounting_mismatch", "game_id": game_id}
+	return {
+		"valid": true,
+		"schema_version": 2,
+		"game_id": game_id,
+		"turn_index": turn_index,
+		"perspective_group": group_name,
+		"opponent_group": opponent_group,
+		"starting_state": state.duplicate(true),
+		"selected_actions": selected_actions.duplicate(true),
+		"mcts_stage": str(diagnostics.get("mcts_stage", "")),
+		"mcts_search_type": str(diagnostics.get("search_type", "")),
+		"mcts_simulations": int(diagnostics.get("simulations_run", 0)),
+		"mcts_max_depth": int(diagnostics.get("puct_max_depth", 0)),
+		"mcts_visit_distribution": (visit_distribution_variant as Array).duplicate(true),
+		"source": source.duplicate(true),
+	}
+
+
+func _settings_for(
+	job: Dictionary,
+	evaluator: String,
+	checkpoint: String,
+	profile: String,
+	seed: int,
+	learned_proposals: bool,
+	search_policy: String,
+	puct_simulations: int,
+	puct_max_depth: int,
+	puct_c: float
+) -> Dictionary:
 	var max_actions := int(job.get("max_actions_per_unit", PureStateBasicRandomSuite.MAX_ACTIONS_PER_UNIT))
 	var own_plans := int(job.get("own_max_plans", PureStateBasicRandomSuite.OWN_MAX_PLANS))
 	var opponent_plans := int(job.get("opponent_max_plans", PureStateBasicRandomSuite.OPPONENT_MAX_PLANS))
 	var settings: Dictionary
-	if evaluator == "neural":
+	if evaluator == "neural" and search_policy == SEARCH_POLICY_MCTS:
+		settings = GameplayAI.neural_puct_settings(
+			max_actions,
+			own_plans,
+			max_actions,
+			opponent_plans,
+			checkpoint,
+			{
+				"learned_proposals": learned_proposals,
+				"puct_policy_source": "neural",
+				"puct_simulations": puct_simulations,
+				"puct_max_depth": puct_max_depth,
+				"puct_c": puct_c,
+				"puct_value_scale": 1000.0,
+			}
+		)
+	elif evaluator == "neural":
 		settings = GameplayAI.neural_settings(
 			max_actions,
 			own_plans,
