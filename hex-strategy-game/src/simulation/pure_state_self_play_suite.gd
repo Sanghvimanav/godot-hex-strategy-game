@@ -8,7 +8,7 @@ class_name PureStateSelfPlaySuite
 
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
-const SUITE_VERSION := 5
+const SUITE_VERSION := 6
 const DEFAULT_MAX_ACTIONS_PER_UNIT := 8
 
 const BUDGET_PROFILES := {
@@ -29,11 +29,29 @@ const _VARIATION_OFFSETS := [
 
 
 static func available_presets() -> Array[String]:
-	return ["smoke", "starter", "diverse"]
+	return ["smoke", "starter", "diverse", "basic_training"]
 
 
 static func get_preset(preset_name: String) -> Array:
 	match preset_name:
+		"basic_training":
+			var jobs: Array = []
+			for scenario in range(1, 4):
+				for rotation in [0, 2, 4]:
+					var marines := 1 if scenario == 1 else (3 if scenario == 2 else 2)
+					var zerglings := 4 if scenario == 3 else 2
+					var cap := 3 if scenario == 1 else (8 if scenario == 2 else 4)
+					var survivor := "terran" if scenario != 2 else "zerg"
+					jobs.append({
+						"game_id": "basic-s%d-r%d" % [scenario, rotation],
+						"scenario_id": "basic_%d" % scenario,
+						"budget_profile": "balanced", "rotation_steps": rotation,
+						"group_a": "terran", "group_b": "zerg", "max_turns": cap,
+						"turn_limit_winner": survivor, "reward_discount": 0.95,
+						"max_actions_per_unit": 8, "own_max_plans": 4, "opponent_max_plans": 4,
+						"state": basic_state(marines, zerglings, rotation, cap, survivor),
+					})
+			return jobs
 		"smoke":
 			return [
 				_make_job("collapse-fast-r0", "collapse", "fast", 0, 3),
@@ -108,6 +126,32 @@ static func build_state(scenario_id: String) -> Dictionary:
 		"fester_siege":
 			return _fester_siege_state()
 	return {}
+
+
+## Same-faction stacks are legal; opposing edge cells remain distance two apart.
+## Initial health/energy use the real unit definitions, never a forced winner.
+## Command-hex objectives are opt-in so each game can choose whether it needs one.
+static func basic_state(
+	marines: int,
+	zerglings: int,
+	rotation: int,
+	cap: int = 4,
+	survivor: String = "",
+	command_hexes_enabled: bool = false
+) -> Dictionary:
+	var terran: Array = []
+	var zerg: Array = []
+	for i in range(marines):
+		terran.append(_make_unit(i + 1, "res://src/unit/definitions/marine.tres", Vector2i(1, 0)))
+	for i in range(zerglings):
+		zerg.append(_make_unit(marines + i + 1, "res://src/unit/definitions/zergling.tres", Vector2i(-1, 0)))
+	return rotate_state({
+		"scenario_id": "basic_m%d_z%d" % [marines, zerglings],
+		"hex_radius": 1, "command_hexes_enabled": command_hexes_enabled, "tile_resources": {},
+		"curriculum": {"max_turns": cap, "turn_limit_winner": survivor},
+		"groups": [{"name": "terran", "resources": {}, "units": terran},
+			{"name": "zerg", "resources": {}, "units": zerg}],
+	}, rotation)
 
 
 static func rotate_state(state: Dictionary, rotation_steps: int) -> Dictionary:

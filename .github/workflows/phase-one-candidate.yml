@@ -1,0 +1,159 @@
+name: Phase One Candidate
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/phase-one-goal]
+    paths: [.github/phase-one-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: phase-one-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PARENT_RUN: '34720260594'
+  GODOT_VERSION: '4.6.0'
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        with:
+          name: phase-one-candidate
+          path: artifacts/parent
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.PARENT_RUN }}
+      - name: Verify reused checkpoint and account for parent training
+        run: |
+          python - <<'PY'
+          import datetime, hashlib, json, os, pathlib, shutil, urllib.request
+          url = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          run = json.load(urllib.request.urlopen(url))
+          start = datetime.datetime.fromisoformat(run['created_at'].replace('Z', '+00:00'))
+          setup_seconds = (datetime.datetime.now(datetime.timezone.utc) - start).total_seconds()
+          source = json.loads(pathlib.Path('artifacts/parent/candidate/training_provenance.json').read_text())
+          assert source['checkpoint_sha256'] == hashlib.sha256(pathlib.Path('artifacts/parent/candidate/ranked_value_model.pt').read_bytes()).hexdigest()
+          assert source['evaluation_excluded_from_training'] is True
+          checkpoint = pathlib.Path('artifacts/candidate/ranked_value_model.pt')
+          checkpoint.parent.mkdir(parents=True, exist_ok=True)
+          shutil.copyfile('artifacts/parent/candidate/ranked_value_model.pt', checkpoint)
+          pathlib.Path('artifacts/source_training_provenance.json').write_text(json.dumps(source, indent=2) + '\n')
+          report = dict(source)
+          report.update({'experiment': 'selective_continuation_fixed_checkpoint',
+                         'parent_run': os.environ['PARENT_RUN'],
+                         'source_rules_version': source['rules_version'],
+                         'rules_version': os.environ['GITHUB_SHA'],
+                         'source_pipeline_elapsed_seconds': source['pipeline_elapsed_seconds'],
+                         'current_setup_elapsed_seconds': setup_seconds,
+                         'pipeline_elapsed_seconds': source['pipeline_elapsed_seconds'] + setup_seconds,
+                         'new_training_seconds': 0,
+                         'evaluation_workers': 8,
+                         'checkpoint_sha256': hashlib.sha256(checkpoint.read_bytes()).hexdigest()})
+          checkpoint.with_name('training_provenance.json').write_text(json.dumps(report, indent=2) + '\n')
+          if report['pipeline_elapsed_seconds'] >= 14400:
+              raise SystemExit('Four-hour training budget exceeded')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase-one-candidate
+          path: |
+            artifacts/candidate/
+            artifacts/source_training_provenance.json
+          retention-days: 30
+
+  evaluate:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [familiar, unfamiliar]
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: phase-one-candidate
+          path: artifacts/candidate
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: ${{ env.GODOT_VERSION }}
+          use-dotnet: false
+          include-templates: false
+      - name: Import
+        working-directory: hex-strategy-game
+        run: godot --headless --editor --import --quit
+      - name: Frozen mirrored evaluation
+        working-directory: hex-strategy-game
+        env:
+          MAP_GROUP: ${{ matrix.group }}
+        run: |
+          map_profile=compact_v1
+          if [[ "$MAP_GROUP" == unfamiliar ]]; then map_profile=phase1_unfamiliar_v1; fi
+          godot --headless --path . res://tools/ai_arena.tscn -- \
+            --preset="phase1_$MAP_GROUP" --map-profile="$map_profile" \
+            --champion-profile=broad --challenger-profile=broad \
+            --champion-evaluator=handwritten --challenger-evaluator=neural \
+            --decision-time-budget-ms=25000 --runner-type=ubuntu-latest \
+            --learned-proposals=false \
+            --challenger-selective-continuation=true --challenger-continuation-score-margin=100 \
+            --checkpoint="$GITHUB_WORKSPACE/artifacts/candidate/candidate/ranked_value_model.pt" \
+            --rules-version="$GITHUB_SHA" --shard-index=${{ matrix.shard }} --shard-count=4 \
+            --out="$GITHUB_WORKSPACE/artifacts/evaluation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase-one-${{ matrix.group }}-${{ matrix.shard }}
+          path: artifacts/evaluation/
+          retention-days: 30
+
+  report:
+    needs: evaluate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: phase-one-familiar-*
+          path: artifacts/familiar
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: phase-one-unfamiliar-*
+          path: artifacts/unfamiliar
+      - uses: actions/download-artifact@v4
+        with:
+          name: phase-one-candidate
+          path: artifacts/candidate
+      - name: Merge and check Phase 1 gates
+        run: |
+          python hex-strategy-game/tools/merge_ai_arena.py --input-root artifacts/familiar --out artifacts/merged/familiar
+          python hex-strategy-game/tools/merge_ai_arena.py --input-root artifacts/unfamiliar --out artifacts/merged/unfamiliar
+          python ml/value_model/phase_one_gate.py \
+            --familiar artifacts/merged/familiar/manifest.json \
+            --unfamiliar artifacts/merged/unfamiliar/manifest.json \
+            --training artifacts/candidate/candidate/training_provenance.json \
+            --output artifacts/phase_one_report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase-one-report
+          path: |
+            artifacts/phase_one_report.json
+            artifacts/merged/
+          retention-days: 30

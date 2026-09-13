@@ -1,0 +1,211 @@
+name: Basic Tactical Curriculum
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/phase-one-goal]
+    paths: [.github/basic-curriculum-trigger]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: basic-tactical-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Generate greedy plus exploratory training games
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/self_play_dataset.tscn -- \
+            --preset=basic_training --rules-version="$GITHUB_SHA" \
+            --out="$GITHUB_WORKSPACE/artifacts/training"
+      - name: Audit rotations, exploration, objective-free outcomes, and training provenance
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+          root = Path('artifacts/training')
+          manifest = json.loads((root / 'manifest.json').read_text())
+          games = manifest['games']
+          assert manifest['games_requested'] == manifest['games_labeled'] == 27, manifest
+          assert manifest['games_failed'] == manifest['games_unlabeled'] == 0, manifest
+          assert {g['rotation_steps'] for g in games} == {0, 2, 4}, games
+          assert not ({1, 3, 5} & {g['rotation_steps'] for g in games}), games
+          profiles = Counter(g['policy_exploration_profile'] for g in games)
+          assert profiles == {'greedy': 9, 'light': 9, 'explore': 9}, profiles
+          winners = {i: Counter(g['winner'] for g in games if g['scenario_id'] == f'basic_{i}') for i in (1, 2, 3)}
+          assert all(sum(winners[i].values()) == 9 for i in (1, 2, 3)), winners
+          forbidden = {'command_hex_capture', 'simultaneous_command_hex_capture'}
+          assert not any(g.get('termination_reason') in forbidden for g in games), games
+          assert len((root / 'examples.jsonl').read_text().splitlines()) == manifest['example_count']
+          print('training outcomes:', winners)
+          print('policy profiles:', profiles)
+          print('scenario 2 remains diagnostic: Terran must win by elimination, not objective capture')
+          PY
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Train opt-in V3 value model on all training orientations
+        run: |
+          # External rotations 1/3/5 are the true holdout. With this tiny curriculum,
+          # do not sacrifice one of the three training rotations to internal validation:
+          # run #3 found only two Scenario-2 Terran wins and rotation 0 contained one.
+          python -m ml.value_model.train \
+            --data=artifacts/training/examples.jsonl \
+            --output=artifacts/candidate/basic_value_model.pt \
+            --encoder-version=3 --epochs=20 --batch-size=32 \
+            --hidden-channels=16 --residual-blocks=1 \
+            --split-key=source.rotation_steps --validation-fraction=0
+      - name: Check training elapsed and write checkpoint provenance
+        run: |
+          python - <<'PY'
+          import datetime, hashlib, json, os
+          from pathlib import Path
+          from urllib.request import urlopen
+          url = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          created = datetime.datetime.fromisoformat(json.load(urlopen(url))['created_at'].replace('Z', '+00:00'))
+          elapsed = (datetime.datetime.now(datetime.timezone.utc) - created).total_seconds()
+          assert elapsed < 14400, f'training pipeline exceeds four hours: {elapsed:.1f}s'
+          root = Path('artifacts/candidate')
+          checkpoint = root / 'basic_value_model.pt'
+          manifest = json.loads(Path('artifacts/training/manifest.json').read_text())
+          provenance = {'rules_version': os.environ['GITHUB_SHA'],
+              'training_preset': 'basic_training', 'evaluation_excluded_from_training': True,
+              'training_rotations': [0, 2, 4], 'evaluation_rotations': [1, 3, 5],
+              'basic_command_hexes_enabled': False, 'training_policy_profiles': ['greedy', 'light', 'explore'],
+              'training_validation_fraction': 0.0,
+              'pipeline_elapsed_seconds': elapsed, 'workers': 1, 'runner_type': 'ubuntu-latest',
+              'games_labeled': manifest['games_labeled'], 'examples': manifest['example_count'],
+              'checkpoint_sha256': hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
+              'encoder_version': 3, 'proposal_policy_trained': False}
+          (root / 'provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
+          print(json.dumps(provenance, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: basic-tactical-candidate
+          path: artifacts/
+          retention-days: 30
+
+  evaluate:
+    needs: train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [basic_s1, basic]
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: basic-tactical-candidate
+          path: artifacts/candidate-root
+      - name: Verify exact checkpoint
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          root = Path('artifacts/candidate-root/candidate')
+          provenance = json.loads((root / 'provenance.json').read_text())
+          assert provenance['rules_version'] == __import__('os').environ['GITHUB_SHA']
+          assert provenance['evaluation_excluded_from_training'] is True
+          assert provenance['basic_command_hexes_enabled'] is False
+          assert provenance['training_policy_profiles'] == ['greedy', 'light', 'explore']
+          assert provenance['training_validation_fraction'] == 0.0
+          assert provenance['checkpoint_sha256'] == hashlib.sha256((root / 'basic_value_model.pt').read_bytes()).hexdigest()
+          PY
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Equal-compute mirrored holdout arena
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/ai_arena.tscn -- \
+            --preset=${{ matrix.preset }} --map-profile=basic_radius1_v1 \
+            --champion-profile=balanced --challenger-profile=balanced \
+            --champion-evaluator=handwritten --challenger-evaluator=neural \
+            --decision-time-budget-ms=5000 --runner-type=ubuntu-latest \
+            --learned-proposals=false --checkpoint="$GITHUB_WORKSPACE/artifacts/candidate-root/candidate/basic_value_model.pt" \
+            --rules-version="$GITHUB_SHA" --shard-index=${{ matrix.shard }} --shard-count=3 \
+            --out="$GITHUB_WORKSPACE/artifacts/evaluation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: basic-tactical-${{ matrix.preset }}-${{ matrix.shard }}
+          path: artifacts/evaluation/
+          retention-days: 30
+
+  report:
+    needs: evaluate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: basic-tactical-basic_s1-*
+          path: artifacts/heldout-s1
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: basic-tactical-basic-[0-9]*
+          path: artifacts/heldout-arena
+      - name: Merge and audit separate diagnostic groups
+        run: |
+          python hex-strategy-game/tools/merge_ai_arena.py --input-root artifacts/heldout-s1 --out artifacts/merged/s1
+          python hex-strategy-game/tools/merge_ai_arena.py --input-root artifacts/heldout-arena --out artifacts/merged/arena
+          python - <<'PY'
+          import json
+          from collections import Counter, defaultdict
+          from pathlib import Path
+          reports = {}
+          for name, expected in [('s1', 6), ('arena', 54)]:
+              m = json.loads(Path(f'artifacts/merged/{name}/manifest.json').read_text())
+              assert m['games_played'] == expected and m['pairs_played'] * 2 == expected, m
+              assert m['decision_time_budget_ms'] == 5000, m
+              assert m['counts'].get('failed', 0) == 0, m
+              assert m['challenger_search']['max_decision_ms'] <= 30000, m
+              assert m['champion_search']['max_decision_ms'] <= 30000, m
+              assert m['termination_counts'].get('command_hex_capture', 0) == 0, m
+              assert m['termination_counts'].get('simultaneous_command_hex_capture', 0) == 0, m
+              families = defaultdict(Counter)
+              for game in m['games']:
+                  families[game['base_scenario_id']][game['winner_agent']] += 1
+              reports[name] = {'counts': m['counts'], 'terminations': m['termination_counts'],
+                               'matchups': {k: dict(v) for k, v in families.items()},
+                               'challenger_max_decision_ms': m['challenger_search']['max_decision_ms'],
+                               'champion_max_decision_ms': m['champion_search']['max_decision_ms']}
+          out = Path('artifacts/merged/basic_report.json')
+          out.write_text(json.dumps(reports, indent=2, sort_keys=True) + '\n')
+          print(out.read_text())
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: basic-tactical-report
+          path: artifacts/merged/
+          retention-days: 30

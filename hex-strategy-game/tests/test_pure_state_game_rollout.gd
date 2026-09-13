@@ -17,7 +17,9 @@ static func _test_rollout_reaches_terminal_collapse_without_mutation(tests: Node
 	tests._log("test_pure_state_game_rollout: terminal collapse smoke game")
 	var state := _collapse_state()
 	var before := state.duplicate(true)
-	var result := PureStateGameRollout.play_game(state, "zerg", "terran", 3, 8, 2, 2)
+	state["turn_index"] = 7
+	before = state.duplicate(true)
+	var result := PureStateGameRollout.play_game(state, "zerg", "terran", 3, 8, 2, 2, true)
 	if state != before:
 		tests._fail("full-game rollout must not mutate source state")
 		return false
@@ -38,6 +40,9 @@ static func _test_rollout_reaches_terminal_collapse_without_mutation(tests: Node
 		tests._fail("unexpected final collapse counts: %s" % counts)
 		return false
 	var history: Array = result.get("history", [])
+	if int(history[0].get("state_before", {}).get("turn_index", -1)) != 7 or int(history[0].get("state_after", {}).get("turn_index", -1)) != 8:
+		tests._fail("continuation rollout must preserve and advance the neural turn feature")
+		return false
 	if history.size() != 1:
 		tests._fail("terminal one-turn game should record exactly one history entry")
 		return false

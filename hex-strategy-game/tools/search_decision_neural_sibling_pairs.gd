@@ -96,7 +96,7 @@ func _run() -> void:
 		var decision: Dictionary = decision_by_key[key] as Dictionary
 		var family: String = str(descriptor.get("family", "unknown"))
 		selected_by_family[family] = int(selected_by_family.get(family, 0)) + 1
-		var response_index: int = _shared_response_index(decision)
+		var response_index: int = _shared_response_index(decision, str(args.get("allow-unplayed-reference", "false")) == "true")
 		if response_index < 0:
 			invalid += 1
 			continue
@@ -301,14 +301,22 @@ func _decision_fallback_priority(decision: Dictionary) -> float:
 	return absf(high - low)
 
 
-func _shared_response_index(decision: Dictionary) -> int:
+func _shared_response_index(decision: Dictionary, allow_unplayed_reference: bool = false) -> int:
 	var candidates_variant: Variant = decision.get("candidates", [])
 	if not (candidates_variant is Array):
 		return -1
 	var candidates: Array = candidates_variant as Array
 	var played_index: int = int(decision.get("selected_candidate_index", -1))
 	if played_index < 0 or played_index >= candidates.size():
-		return -1
+		if not allow_unplayed_reference or candidates.is_empty():
+			return -1
+		# Wider offline capture can contain alternatives without the played plan.
+		# Use the strongest captured plan only to choose one shared stress response;
+		# all sibling labels still come from terminal simulator continuations.
+		played_index = 0
+		for index in range(1, candidates.size()):
+			if float(candidates[index].get("handwritten_worst_case_score", 0.0)) > float(candidates[played_index].get("handwritten_worst_case_score", 0.0)):
+				played_index = index
 	var candidate_variant: Variant = candidates[played_index]
 	if not (candidate_variant is Dictionary):
 		return -1

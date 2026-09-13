@@ -16,6 +16,29 @@ from . import train_ranked
 from .model import HexValueNet
 
 
+def split_with_parent_games(examples, args, parent_training):
+    """Keep previously held-out games out of a warm-start training split."""
+    if args.split_key != "game_id":
+        raise ValueError("parent split preservation requires game_id grouping")
+    if "training_game_ids" not in parent_training or "validation_game_ids" not in parent_training:
+        raise ValueError("parent checkpoint must record both game splits")
+    trained = set(parent_training["training_game_ids"])
+    heldout = set(parent_training["validation_game_ids"])
+    if trained & heldout:
+        raise ValueError("parent game splits overlap")
+    if any(not row.get("game_id") for row in examples):
+        raise ValueError("all examples require a game_id")
+    unseen = [row for row in examples if str(row["game_id"]) not in trained | heldout]
+    seed = args.seed if args.split_seed is None else args.split_seed
+    new_train, new_eval = train_ranked.split_examples_by_group(
+        unseen, validation_fraction=args.validation_fraction, seed=seed, group_key="game_id")
+    train = [row for row in examples if str(row["game_id"]) in trained] + new_train
+    validation = [row for row in examples if str(row["game_id"]) in heldout] + new_eval
+    if not train or not validation:
+        raise ValueError("preserved game splits must both remain nonempty")
+    return seed, train, validation
+
+
 class WarmStartHexValueNet(HexValueNet):
     """HexValueNet that restores the parent value/search heads at construction."""
 
@@ -61,11 +84,26 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Parent ranked_value_model.pt used to initialize value and policy heads.",
     )
+    parser.add_argument("--preserve-parent-game-split", action="store_true",
+                        help="Retain the parent's held-out game IDs when adding new data.")
+    parser.add_argument("--parent-ranking-data",
+                        help="Parent ranking rows, to retain rank-only training game IDs.")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
+    if args.preserve_parent_game_split:
+        parent = torch.load(args.init_checkpoint, map_location="cpu", weights_only=False)
+        parent_training = dict(parent.get("training_config", {}))
+        if args.parent_ranking_data:
+            pairs = train_ranked.load_ranking_pairs(args.parent_ranking_data)
+            heldout = set(parent_training.get("validation_game_ids", []))
+            trained = set(parent_training.get("training_game_ids", []))
+            parent_training["training_game_ids"] = sorted(trained | ({str(p["game_id"]) for p in pairs} - heldout))
+        args.parent_validation_game_ids = parent_training.get("validation_game_ids", [])
+        train_ranked._split_examples_for_training = lambda examples, split_args, focus: split_with_parent_games(
+            examples, split_args, parent_training)
     WarmStartHexValueNet.init_checkpoint = args.init_checkpoint
     # train_ranked resolves HexValueNet from its module global when train() runs,
     # so swapping only that constructor keeps all training/evaluation logic shared.

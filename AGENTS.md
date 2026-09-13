@@ -8,6 +8,11 @@ This is a **Godot 4.6 hex strategy game** (`hex-strategy-game/`).
 
 ### AI Work: Start Here
 
+- Phase 1's user-approved acceptance contract is `docs/AI_PHASE1.md`. It supersedes
+  earlier promotion criteria: compare equal wall-clock budgets, and gate familiar
+  and unfamiliar twenty-game groups separately. Do not train on reserved Phase 1
+  maps/seeds or silently reduce the denominator by dropping failed games.
+
 - Read the root `AI_ROADMAP.md` before changing gameplay AI, search, self-play, value-model training, benchmarks, or arena evaluation. It is the strategic source of truth for what the AI is trying to achieve and how improvements are measured.
 - The canonical gameplay AI entry point is `hex-strategy-game/src/battle/ai/gameplay_ai.gd`. Keep gameplay callers routed through it rather than creating parallel AI entry points.
 - The handwritten evaluator is the current default/champion. Neural leaf evaluation is explicit opt-in, fail-closed when its runtime/checkpoint is unavailable, and should be compared against handwritten evaluation at the **same search budget** before promotion.
