@@ -41,8 +41,9 @@ def validate_shard_result(result: dict[str, Any]) -> None:
     _require(result.get("schema_version") == SCHEMA_VERSION, "shard result schema_version must be 1")
     shard_id = result.get("shard_id")
     _require(isinstance(shard_id, str) and shard_id, "shard_id is required")
-    partition = result.get("partition")
-    _require(isinstance(partition, str) and partition, f"{shard_id}: partition is required")
+    for key in ("experiment_id", "tier", "manifest_sha256", "partition"):
+        value = result.get(key)
+        _require(isinstance(value, str) and value, f"{shard_id}: {key} is required")
 
     games = result.get("games")
     _require(isinstance(games, dict), f"{shard_id}: games must be an object")
@@ -50,7 +51,7 @@ def validate_shard_result(result: dict[str, Any]) -> None:
 
     provenance = result.get("provenance")
     _require(isinstance(provenance, dict), f"{shard_id}: provenance must be an object")
-    _require(isinstance(provenance.get("rules_sha"), str), f"{shard_id}: provenance.rules_sha is required")
+    _require(isinstance(provenance.get("rules_sha"), str) and provenance["rules_sha"], f"{shard_id}: provenance.rules_sha is required")
     checkpoint_sha = provenance.get("checkpoint_sha256")
     _require(checkpoint_sha is None or isinstance(checkpoint_sha, str), f"{shard_id}: checkpoint hash must be a string or null")
 
@@ -87,6 +88,35 @@ def load_shard_results(results_dir: str | Path) -> list[dict[str, Any]]:
     return results
 
 
+def _same_run_identity(plan: dict[str, Any], result: dict[str, Any]) -> bool:
+    return (
+        result["experiment_id"] == plan.get("experiment_id")
+        and result["tier"] == plan.get("tier")
+        and result["manifest_sha256"] == plan.get("manifest_sha256")
+        and result["provenance"]["rules_sha"] == plan.get("provenance", {}).get("rules_sha")
+        and result["provenance"].get("checkpoint_sha256") == plan.get("provenance", {}).get("checkpoint_sha256")
+    )
+
+
+def matching_shard_results(plan: dict[str, Any], results: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return only exact-run results, while failing on conflicting shards for that run."""
+    expected = {item["shard_id"]: item for item in plan.get("expected_shards", [])}
+    _require(expected, "plan contains no expected shards")
+    matched: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for result in results:
+        validate_shard_result(result)
+        if not _same_run_identity(plan, result):
+            continue
+        shard_id = result["shard_id"]
+        _require(shard_id in expected, f"unexpected shard result {shard_id!r} for this run")
+        _require(shard_id not in seen, f"duplicate shard result {shard_id!r}")
+        _require(result["partition"] == expected[shard_id]["partition"], f"{shard_id}: partition does not match plan")
+        seen.add(shard_id)
+        matched.append(result)
+    return matched
+
+
 def completed_shard_ids(results: Iterable[dict[str, Any]]) -> set[str]:
     ids: set[str] = set()
     for result in results:
@@ -119,8 +149,7 @@ def _add_result(aggregate: dict[str, Any], result: dict[str, Any]) -> None:
 def _finalize(aggregate: dict[str, Any]) -> dict[str, Any]:
     games = aggregate["games"]
     resolved = games["wins"] + games["losses"] + games["draws"]
-    total = resolved + games["unresolved"]
-    resolved_win_denom = resolved
+    total = resolved + games["unresolved"] + games["failures"]
 
     metrics: dict[str, float | None] = {}
     for name, accumulator in aggregate["metrics"].items():
@@ -134,7 +163,7 @@ def _finalize(aggregate: dict[str, Any]) -> dict[str, Any]:
             "resolved": resolved,
             "total": total,
             "resolution_rate": resolved / total if total else None,
-            "resolved_win_rate": games["wins"] / resolved_win_denom if resolved_win_denom else None,
+            "resolved_win_rate": games["wins"] / resolved if resolved else None,
         },
         "metrics": metrics,
         "timing": {
@@ -182,6 +211,9 @@ def build_scorecard(plan: dict[str, Any], shard_results: list[dict[str, Any]]) -
     for result in shard_results:
         validate_shard_result(result)
         shard_id = result["shard_id"]
+        _require(result["experiment_id"] == plan["experiment_id"], f"{shard_id}: experiment_id does not match plan")
+        _require(result["tier"] == plan["tier"], f"{shard_id}: tier does not match plan")
+        _require(result["manifest_sha256"] == plan["manifest_sha256"], f"{shard_id}: manifest hash does not match plan")
         _require(shard_id in expected, f"unexpected shard result {shard_id!r}")
         _require(shard_id not in seen, f"duplicate shard result {shard_id!r}")
         seen.add(shard_id)
@@ -221,6 +253,7 @@ def build_scorecard(plan: dict[str, Any], shard_results: list[dict[str, Any]]) -
         "groups": {name: _finalize(value) for name, value in sorted(group_aggregates.items())},
     }
 
+    failures = scorecard["overall"]["games"]["failures"]
     gate_results: list[dict[str, Any]] = [
         {
             "name": "all_shards_complete",
@@ -230,7 +263,16 @@ def build_scorecard(plan: dict[str, Any], shard_results: list[dict[str, Any]]) -
             "actual": not missing,
             "passed": not missing,
             "reason": None if not missing else "missing_shards",
-        }
+        },
+        {
+            "name": "no_failed_games",
+            "path": "overall.games.failures",
+            "op": "==",
+            "expected": 0,
+            "actual": failures,
+            "passed": failures == 0,
+            "reason": None if failures == 0 else "failed_games",
+        },
     ]
     for gate in plan.get("gates", []):
         try:
