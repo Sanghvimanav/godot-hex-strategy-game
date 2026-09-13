@@ -1,5 +1,7 @@
 extends Node
 ## Mirrored held-out arena for randomized radius-one Marine-vs-Zergling starts.
+## The handwritten champion is unchanged; the neural challenger may opt into the
+## simultaneous PUCT/MCTS policy so training and evaluation search can be aligned.
 
 const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
 const PureStateBasicRandomSuite = preload("res://src/simulation/pure_state_basic_random_suite.gd")
@@ -8,6 +10,8 @@ const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural
 const DeterministicShard = preload("res://tools/deterministic_shard.gd")
 
 const MANIFEST_SCHEMA_VERSION := 1
+const SEARCH_POLICY_ROBUST := "robust"
+const SEARCH_POLICY_MCTS := "mcts"
 
 
 func _ready() -> void:
@@ -26,12 +30,20 @@ func _run() -> void:
 	var decision_time_budget_ms := float(args.get("decision-time-budget-ms", "5000"))
 	var runner_type := str(args.get("runner-type", OS.get_name()))
 	var learned_proposals := _parse_bool(args.get("learned-proposals", "false"))
+	var search_policy := str(args.get("search-policy", SEARCH_POLICY_ROBUST)).to_lower()
+	var puct_simulations := maxi(1, int(args.get("puct-simulations", "32")))
+	var puct_max_depth := maxi(1, int(args.get("puct-max-depth", "3")))
+	var puct_c := maxf(0.0, float(args.get("puct-c", "1.5")))
 	if checkpoint.is_empty():
 		push_error("Arena requires --checkpoint")
 		get_tree().quit(1)
 		return
 	if mode not in ["random", "counterfactual"]:
 		push_error("Unknown arena mode: %s" % mode)
+		get_tree().quit(1)
+		return
+	if search_policy not in [SEARCH_POLICY_ROBUST, SEARCH_POLICY_MCTS]:
+		push_error("Unknown search policy: %s" % search_policy)
 		get_tree().quit(1)
 		return
 	if shard_count <= 0 or shard_index < 0 or shard_index >= shard_count:
@@ -47,14 +59,32 @@ func _run() -> void:
 		PureStateBasicRandomSuite.MAX_ACTIONS_PER_UNIT,
 		PureStateBasicRandomSuite.OPPONENT_MAX_PLANS
 	)
-	var challenger_settings := GameplayAI.neural_settings(
-		PureStateBasicRandomSuite.MAX_ACTIONS_PER_UNIT,
-		PureStateBasicRandomSuite.OWN_MAX_PLANS,
-		PureStateBasicRandomSuite.MAX_ACTIONS_PER_UNIT,
-		PureStateBasicRandomSuite.OPPONENT_MAX_PLANS,
-		checkpoint,
-		{"learned_proposals": learned_proposals}
-	)
+	var challenger_settings: Dictionary
+	if search_policy == SEARCH_POLICY_MCTS:
+		challenger_settings = GameplayAI.neural_puct_settings(
+			PureStateBasicRandomSuite.MAX_ACTIONS_PER_UNIT,
+			PureStateBasicRandomSuite.OWN_MAX_PLANS,
+			PureStateBasicRandomSuite.MAX_ACTIONS_PER_UNIT,
+			PureStateBasicRandomSuite.OPPONENT_MAX_PLANS,
+			checkpoint,
+			{
+				"learned_proposals": learned_proposals,
+				"puct_policy_source": "neural",
+				"puct_simulations": puct_simulations,
+				"puct_max_depth": puct_max_depth,
+				"puct_c": puct_c,
+				"puct_value_scale": 1000.0,
+			}
+		)
+	else:
+		challenger_settings = GameplayAI.neural_settings(
+			PureStateBasicRandomSuite.MAX_ACTIONS_PER_UNIT,
+			PureStateBasicRandomSuite.OWN_MAX_PLANS,
+			PureStateBasicRandomSuite.MAX_ACTIONS_PER_UNIT,
+			PureStateBasicRandomSuite.OPPONENT_MAX_PLANS,
+			checkpoint,
+			{"learned_proposals": learned_proposals}
+		)
 	for settings in [champion_settings, challenger_settings]:
 		var evaluator_settings: Dictionary = settings.get("evaluator_settings", {}).duplicate(true)
 		evaluator_settings["decision_time_budget_ms"] = decision_time_budget_ms
@@ -136,8 +166,9 @@ func _run() -> void:
 			"winner_agent": winner_agent,
 			"history": (result.get("history", []) as Array).duplicate(true),
 		})
-		print("[basic-random-arena] %s mode=%s m=%d z=%d r=%d challenger=%s result=%s/%s" % [
-			str(job.get("game_id", "")), mode, int(job.get("marines", 0)), int(job.get("zerglings", 0)),
+		print("[basic-random-arena] %s mode=%s search=%s m=%d z=%d r=%d challenger=%s result=%s/%s" % [
+			str(job.get("game_id", "")), mode, search_policy,
+			int(job.get("marines", 0)), int(job.get("zerglings", 0)),
 			int(job.get("rotation_steps", 0)), challenger_group, winner_agent, termination_reason
 		])
 
@@ -155,7 +186,11 @@ func _run() -> void:
 		"challenger_profile": "balanced",
 		"champion_evaluator": "handwritten",
 		"challenger_evaluator": "neural",
+		"challenger_search_policy": search_policy,
 		"learned_proposals": learned_proposals,
+		"puct_simulations": puct_simulations if search_policy == SEARCH_POLICY_MCTS else 0,
+		"puct_max_depth": puct_max_depth if search_policy == SEARCH_POLICY_MCTS else 0,
+		"puct_c": puct_c if search_policy == SEARCH_POLICY_MCTS else 0.0,
 		"champion_settings": champion_settings,
 		"challenger_settings": challenger_settings,
 		"preset_games": all_jobs.size(),
@@ -171,7 +206,7 @@ func _run() -> void:
 	}
 	var ok := _write_json(out_dir.path_join("manifest.json"), manifest)
 	ok = _write_jsonl(out_dir.path_join("traces.jsonl"), traces) and ok
-	print("[basic-random-arena] summary mode=%s games=%d pairs=%d learned_proposals=%s counts=%s" % [mode, game_summaries.size(), game_summaries.size() / 2, str(learned_proposals), str(counts)])
+	print("[basic-random-arena] summary mode=%s search=%s games=%d pairs=%d learned_proposals=%s counts=%s" % [mode, search_policy, game_summaries.size(), game_summaries.size() / 2, str(learned_proposals), str(counts)])
 	PureStateNeuralEvaluator.shutdown()
 	get_tree().quit(0 if ok and int(counts.get("failed", 0)) == 0 else 1)
 
