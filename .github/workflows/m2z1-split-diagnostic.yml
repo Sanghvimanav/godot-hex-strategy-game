@@ -1,0 +1,72 @@
+name: 2M1Z Split-Fire Diagnostic
+
+on:
+  push:
+    branches: [ai/phase-one-goal]
+    paths: [.github/m2z1-diagnostic-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Download latest completed value+policy checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: neural-self-play-final
+          path: model-artifact
+          github-token: ${{ github.token }}
+          run-id: 34766533679
+      - name: Diagnose split-fire candidate coverage
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/m2z1_split_diagnostic.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/model-artifact/final/basic_self_play_policy_model.pt" \
+            --out="$GITHUB_WORKSPACE/artifacts/m2z1_split_diagnostic.json"
+      - name: Summarize diagnostic
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('artifacts/m2z1_split_diagnostic.json')
+          r = json.loads(p.read_text())
+          assert r['unresolved_draw_target_audit'] is True
+          assert [x['rotation'] for x in r['rotations']] == [1, 3, 5]
+          rows=[]
+          for rot in r['rotations']:
+              for turn in rot['turns']:
+                  rows.append({
+                      'rotation': rot['rotation'],
+                      'turn': turn['turn'],
+                      'selected_split': turn['selected_is_split_fire'],
+                      'live_search_split': turn['live_search'].get('split_fire_present'),
+                      'expanded_search_split': turn['expanded_search'].get('split_fire_present'),
+                      'live_policy_split': turn['live_neural_proposals'].get('split_fire_present'),
+                      'expanded_policy_split': turn['expanded_neural_proposals'].get('split_fire_present'),
+                      'expanded_policy_split_rank': turn['expanded_neural_proposals'].get('first_split_rank'),
+                  })
+          print(json.dumps({'rotations': r['rotations'], 'coverage': rows}, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: m2z1-split-diagnostic
+          path: artifacts/m2z1_split_diagnostic.json
+          retention-days: 30
