@@ -1,0 +1,294 @@
+name: MCTS Visit Policy Recovery
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/phase-one-goal]
+    paths: [.github/mcts-visit-policy-recovery-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: mcts-visit-policy-recovery-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOURCE_RUN_ID: '34784986112'
+
+jobs:
+  candidate_train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-policy-baseline
+          path: baseline-artifact
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mcts-visit-targets-*
+          path: mcts-shards
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Build mixed robust plus MCTS visit supervision
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          robust = Path('baseline-artifact/combined/search_decisions.jsonl')
+          mcts_files = sorted(Path('mcts-shards').glob('*/search_decisions.jsonl'))
+          assert len(mcts_files) == 3, mcts_files
+          robust_rows = [json.loads(x) for x in robust.read_text().splitlines() if x.strip()]
+          mcts_rows = [json.loads(x) for p in mcts_files for x in p.read_text().splitlines() if x.strip()]
+          assert len(robust_rows) == 144, len(robust_rows)
+          assert len(mcts_rows) == 36, len(mcts_rows)
+          assert all(r.get('source', {}).get('rotation_steps') in {0, 2, 4} for r in mcts_rows), mcts_rows
+          assert not any(r.get('source', {}).get('rotation_steps') in {1, 3, 5} for r in mcts_rows), mcts_rows
+          Path('artifacts/mixed').mkdir(parents=True, exist_ok=True)
+          with Path('artifacts/mixed/search_decisions.jsonl').open('w') as f:
+              for row in robust_rows + mcts_rows:
+                  f.write(json.dumps(row, separators=(',', ':')) + '\n')
+          Path('artifacts/mixed/manifest.json').write_text(json.dumps({
+              'source_run_id': 34784986112,
+              'robust_decisions': len(robust_rows),
+              'mcts_visit_decisions': len(mcts_rows),
+              'training_rotations': [0, 2, 4],
+              'heldout_rotations_excluded': [1, 3, 5],
+              'mcts_stage': 'MCTS-2',
+              'puct_simulations': 24,
+              'puct_max_depth': 3,
+          }, indent=2) + '\n')
+          PY
+      - name: Train MCTS-visit candidate policy
+        run: |
+          mkdir -p artifacts/candidate
+          python -m ml.value_model.train_joint_plan_policy \
+            --base-checkpoint=baseline-artifact/final/basic_self_play_model.pt \
+            --search-decisions=artifacts/mixed/search_decisions.jsonl \
+            --output=artifacts/candidate/mcts_visit_policy_model.pt \
+            --epochs=25 --validation-fraction=0.2 --seed=0 --device=cpu
+      - name: Audit soft MCTS supervision and runtime
+        run: |
+          python - <<'PY'
+          import json, subprocess, torch
+          from pathlib import Path
+          p = torch.load('artifacts/candidate/mcts_visit_policy_model.pt', map_location='cpu', weights_only=False)
+          metrics = p['joint_plan_policy_metrics']
+          assert metrics['mcts_visit_decisions'] == 36, metrics
+          assert metrics['robust_distillation_decisions'] == 144, metrics
+          assert metrics['soft_visit_prefix_examples'] > 0, metrics
+          assert p['joint_plan_policy_config']['target'] == 'mixed_mcts_visits_and_robust_search', p['joint_plan_policy_config']
+          proc = subprocess.run(
+              ['python', 'hex-strategy-game/tools/neural_value_runtime.py', '--checkpoint', 'artifacts/candidate/mcts_visit_policy_model.pt'],
+              input='', text=True, capture_output=True, timeout=20,
+          )
+          ready = json.loads(proc.stdout.splitlines()[0])
+          assert ready.get('ready') is True and ready.get('joint_plan_policy') is True, (ready, proc.stderr)
+          Path('artifacts/candidate/policy_metrics.json').write_text(json.dumps(metrics, indent=2) + '\n')
+          print(json.dumps({'runtime': ready, 'metrics': metrics}, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-visit-policy-recovery-candidate
+          path: artifacts/
+          retention-days: 30
+
+  candidate_m2z1:
+    needs: candidate_train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-visit-policy-recovery-candidate
+          path: candidate-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Candidate held-out 2M1Z robust vs MCTS-2
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/m2z1_puct_diagnostic.tscn -- \
+            --puct-simulations=16 --puct-max-depth=3 \
+            --checkpoint="$GITHUB_WORKSPACE/candidate-artifact/candidate/mcts_visit_policy_model.pt" \
+            --out="$GITHUB_WORKSPACE/artifacts/candidate_m2z1.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-visit-policy-recovery-m2z1
+          path: artifacts/candidate_m2z1.json
+          retention-days: 30
+
+  evaluate_candidate_random:
+    needs: candidate_train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-visit-policy-recovery-candidate
+          path: candidate-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Held-out random arena
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/basic_random_arena.tscn -- \
+            --mode=random --pair-count=36 --decision-time-budget-ms=5000 \
+            --learned-proposals=true \
+            --checkpoint="$GITHUB_WORKSPACE/candidate-artifact/candidate/mcts_visit_policy_model.pt" \
+            --rules-version="$GITHUB_SHA" --runner-type=ubuntu-latest \
+            --shard-index=${{ matrix.shard }} --shard-count=3 \
+            --out="$GITHUB_WORKSPACE/artifacts/evaluation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-visit-policy-recovery-random-${{ matrix.shard }}
+          path: artifacts/evaluation/
+          retention-days: 30
+
+  evaluate_candidate_counterfactual:
+    needs: candidate_train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-visit-policy-recovery-candidate
+          path: candidate-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Held-out fixed counterfactual arena
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/basic_random_arena.tscn -- \
+            --mode=counterfactual --decision-time-budget-ms=5000 \
+            --learned-proposals=true \
+            --checkpoint="$GITHUB_WORKSPACE/candidate-artifact/candidate/mcts_visit_policy_model.pt" \
+            --rules-version="$GITHUB_SHA" --runner-type=ubuntu-latest \
+            --shard-index=${{ matrix.shard }} --shard-count=3 \
+            --out="$GITHUB_WORKSPACE/artifacts/evaluation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-visit-policy-recovery-counterfactual-${{ matrix.shard }}
+          path: artifacts/evaluation/
+          retention-days: 30
+
+  report:
+    needs: [candidate_m2z1, evaluate_candidate_random, evaluate_candidate_counterfactual]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mcts-visit-policy-recovery-random-*
+          path: random-shards
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mcts-visit-policy-recovery-counterfactual-*
+          path: counterfactual-shards
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-visit-policy-recovery-m2z1
+          path: diagnostics/candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-policy-baseline-m2z1
+          path: diagnostics/baseline
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Merge and summarize
+        run: |
+          python hex-strategy-game/tools/merge_ai_arena.py --input-root random-shards --out artifacts/random
+          python hex-strategy-game/tools/merge_ai_arena.py --input-root counterfactual-shards --out artifacts/counterfactual
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          random = json.loads(Path('artifacts/random/manifest.json').read_text())
+          cf = json.loads(Path('artifacts/counterfactual/manifest.json').read_text())
+          baseline = json.loads(Path('diagnostics/baseline/baseline_m2z1.json').read_text())
+          candidate = json.loads(Path('diagnostics/candidate/candidate_m2z1.json').read_text())
+          summary = {
+              'source_run_id': 34784986112,
+              'reference_random': {'neural': 30, 'handwritten': 27, 'unresolved': 15},
+              'reference_counterfactual': {'neural': 12, 'handwritten': 6, 'unresolved': 0},
+              'candidate_random': {
+                  'counts': random['counts'],
+                  'family_counts': random['family_counts'],
+                  'faction_counts': random.get('challenger_faction_counts', {}),
+                  'pair_counts': random.get('pair_counts', {}),
+              },
+              'candidate_counterfactual': {
+                  'counts': cf['counts'],
+                  'family_counts': cf['family_counts'],
+              },
+              'm2z1': {
+                  'baseline_robust_terran_wins': baseline['robust_terran_wins'],
+                  'baseline_mcts_terran_wins': baseline['puct_terran_wins'],
+                  'candidate_robust_terran_wins': candidate['robust_terran_wins'],
+                  'candidate_mcts_terran_wins': candidate['puct_terran_wins'],
+              },
+          }
+          Path('artifacts/mcts_visit_policy_recovery_summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+          print(json.dumps(summary, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-visit-policy-recovery-report
+          path: artifacts/
+          retention-days: 30
