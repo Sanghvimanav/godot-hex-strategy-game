@@ -37,6 +37,15 @@ rules between experiments, reevaluate both agents under the same new rules.
 Monitor unresolved rates and behavior to improve aggression and fun over time.
 Human-discovered exploits after a pass become subsequent training priorities.
 
+An optional `evaluator_settings.selective_continuation` prototype compares the
+two closest one-turn plans by searching one more simultaneous turn from each
+plan's modeled worst response. It reserves 30% of an explicit decision-time
+budget for this comparison and falls back to the original one-turn result when
+the second-turn comparison cannot finish. The default remains one-turn search;
+this is a worst-response probe, not exhaustive depth-two minimax, and must not
+be used as promotion evidence without equal-budget tests and terminal-objective
+handling for second-turn leaves.
+
 ## Initial experiment
 
 `Phase One Candidate` starts from Iteration 2 (run `34240515308`), generates 64

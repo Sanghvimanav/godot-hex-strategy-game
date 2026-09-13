@@ -7,6 +7,7 @@ class_name GameplayAI
 ## the default; neural leaf evaluation is an explicit, fail-closed experiment.
 
 const PureStateOpponentResponseSearch = preload("res://src/simulation/pure_state_opponent_response_search.gd")
+const PureStateSelectiveContinuation = preload("res://src/simulation/pure_state_selective_continuation.gd")
 const PureStatePolicyExploration = preload("res://src/simulation/pure_state_policy_exploration.gd")
 const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural_evaluator.gd")
 
@@ -59,6 +60,12 @@ static func choose_actions(
 		return _invalid_result("invalid_fixed_other_group_actions", resolved)
 	var fixed_actions: Dictionary = fixed_actions_variant
 
+	var started_usec := Time.get_ticks_usec()
+	var search_settings := evaluator_settings.duplicate(true)
+	var selective := bool(search_settings.get("selective_continuation", false)) and exploration_profile == PureStatePolicyExploration.PROFILE_GREEDY
+	var total_budget_ms := float(search_settings.get("decision_time_budget_ms", 0.0))
+	if selective and total_budget_ms > 0.0:
+		search_settings["decision_time_budget_ms"] = total_budget_ms * 0.7
 	var search := PureStateOpponentResponseSearch.search(
 		game_state,
 		group_name,
@@ -69,12 +76,16 @@ static func choose_actions(
 		int(resolved.get("opponent_max_plans", 0)),
 		fixed_actions,
 		evaluator,
-		evaluator_settings
+		search_settings
 	)
 	if not bool(search.get("valid", false)):
 		var search_error := str(search.get("error", ""))
 		var decision_error := "evaluation_failed" if search_error == "evaluation_failed" else "decision_failed"
 		return _invalid_result(decision_error, resolved, search)
+	if selective and total_budget_ms > 0.0:
+		search = PureStateSelectiveContinuation.refine(
+			game_state, group_name, opponent_group_name, search, resolved, started_usec
+		)
 
 	var selection := PureStatePolicyExploration.select_result(
 		search,
