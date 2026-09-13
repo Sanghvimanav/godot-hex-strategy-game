@@ -141,6 +141,8 @@ static func capture_decision(
 			)
 			var simulation := PureStateSimulator.simulate_turn(game_state, submitted)
 			var next_state: Dictionary = simulation.get("next_state", {})
+			if game_state.has("turn_index"):
+				next_state["turn_index"] = int(game_state["turn_index"]) + 1
 			if next_state.is_empty():
 				invalid["error"] = "simulation_failed"
 				return invalid

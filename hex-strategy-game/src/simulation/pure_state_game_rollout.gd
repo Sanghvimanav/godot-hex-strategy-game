@@ -74,6 +74,7 @@ static func play_game_with_settings(
 		return invalid
 
 	var state := game_state.duplicate(true)
+	var initial_turn_index := int(state.get("turn_index", 0))
 	var command_hexes := PureStateCommandHexRules.ensure_command_hexes(state, group_a, group_b)
 	var command_occupants := PureStateCommandHexRules.initial_occupants(state, group_a, group_b, command_hexes)
 	var history: Array = []
@@ -83,6 +84,9 @@ static func play_game_with_settings(
 		return _build_result(true, "terminal", str(initial_outcome.get("winner", "")), 0, state, history, group_a, group_b, "elimination")
 
 	for turn_index in range(max_turns):
+		# Match the turn feature exported by PureStateTrainingData. Both agents
+		# receive the same clock; simulated leaves represent the following turn.
+		state["turn_index"] = initial_turn_index + turn_index
 		# Both searches intentionally read the same pre-turn state. Neither side gets
 		# privileged knowledge of the other side's selected simultaneous action.
 		var decision_a := GameplayAI.choose_actions(
@@ -121,6 +125,7 @@ static func play_game_with_settings(
 		var submitted := _submitted_actions(state, group_a, actions_a, group_b, actions_b)
 		var simulation := PureStateSimulator.simulate_turn(state, submitted)
 		var next_state: Dictionary = simulation.get("next_state", {})
+		next_state["turn_index"] = initial_turn_index + turn_index + 1
 		if next_state.is_empty():
 			return _build_result(false, "simulation_failed", "", turn_index, state, history, group_a, group_b)
 		next_state["command_hexes"] = command_hexes.duplicate(true)
@@ -246,6 +251,8 @@ static func play_game_with_settings(
 static func _add_search_metrics(record: Dictionary, group_name: String, diagnostics: Dictionary) -> void:
 	record[group_name + "_search_elapsed_ms"] = float(diagnostics.get("elapsed_ms", 0.0))
 	record[group_name + "_search_simulations"] = int(diagnostics.get("simulations_run", 0))
+	if diagnostics.has("selective_continuation"):
+		record[group_name + "_selective_continuation"] = (diagnostics.get("selective_continuation", {}) as Dictionary).duplicate(true)
 
 
 static func _outcome(state: Dictionary, group_a: String, group_b: String) -> Dictionary:
@@ -331,8 +338,8 @@ static func _max_non_progress_streak(history: Array) -> int:
 
 static func _search_metrics(history: Array, group_a: String, group_b: String) -> Dictionary:
 	var result := {
-		group_a: {"decisions": 0, "elapsed_ms": 0.0, "max_elapsed_ms": 0.0, "simulations": 0},
-		group_b: {"decisions": 0, "elapsed_ms": 0.0, "max_elapsed_ms": 0.0, "simulations": 0},
+		group_a: {"decisions": 0, "elapsed_ms": 0.0, "max_elapsed_ms": 0.0, "simulations": 0, "continuation_applied": 0, "continuation_changed_plan": 0, "continuation_reason_counts": {}},
+		group_b: {"decisions": 0, "elapsed_ms": 0.0, "max_elapsed_ms": 0.0, "simulations": 0, "continuation_applied": 0, "continuation_changed_plan": 0, "continuation_reason_counts": {}},
 	}
 	for turn_variant in history:
 		if not (turn_variant is Dictionary):
@@ -350,6 +357,15 @@ static func _search_metrics(history: Array, group_a: String, group_b: String) ->
 			metrics["elapsed_ms"] = float(metrics.get("elapsed_ms", 0.0)) + elapsed
 			metrics["max_elapsed_ms"] = maxf(float(metrics.get("max_elapsed_ms", 0.0)), elapsed)
 			metrics["simulations"] = int(metrics.get("simulations", 0)) + int(turn.get(simulations_key, 0))
+			var continuation: Dictionary = turn.get(group_name + "_selective_continuation", {})
+			if not continuation.is_empty():
+				if bool(continuation.get("applied", false)):
+					metrics["continuation_applied"] = int(metrics.get("continuation_applied", 0)) + 1
+				if bool(continuation.get("changed_plan", false)):
+					metrics["continuation_changed_plan"] = int(metrics.get("continuation_changed_plan", 0)) + 1
+				var reasons: Dictionary = metrics.get("continuation_reason_counts", {})
+				var reason := str(continuation.get("reason", "unknown"))
+				reasons[reason] = int(reasons.get(reason, 0)) + 1
 	for group_name_variant in [group_a, group_b]:
 		var group_name: String = str(group_name_variant)
 		var metrics: Dictionary = result[group_name]

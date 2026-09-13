@@ -73,6 +73,7 @@ static func _test_terminal_game_emits_paired_value_examples(tests: Node) -> bool
 	# deployment-aware objective axis is the (-q,+r) diagonal. Training examples
 	# must include those normalized objectives while the caller state stays pure.
 	var expected_initial_state := before.duplicate(true)
+	expected_initial_state["turn_index"] = 0
 	expected_initial_state["command_hexes"] = {
 		"zerg": [-5, 5],
 		"terran": [5, -5],

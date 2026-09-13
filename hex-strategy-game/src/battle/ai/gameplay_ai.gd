@@ -4,13 +4,17 @@ class_name GameplayAI
 ##
 ## Gameplay, self-play, and arenas should call choose_actions instead of depending
 ## directly on a concrete search or evaluator. The handwritten evaluator remains
-## the default; neural leaf evaluation is an explicit, fail-closed experiment.
+## the default; neural leaf evaluation and simultaneous PUCT are explicit,
+## fail-closed experiments.
 
 const PureStateOpponentResponseSearch = preload("res://src/simulation/pure_state_opponent_response_search.gd")
+const PureStateSimultaneousPUCT = preload("res://src/simulation/pure_state_simultaneous_puct.gd")
+const PureStateSelectiveContinuation = preload("res://src/simulation/pure_state_selective_continuation.gd")
 const PureStatePolicyExploration = preload("res://src/simulation/pure_state_policy_exploration.gd")
 const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural_evaluator.gd")
 
 const POLICY_OPPONENT_RESPONSE := "opponent_response"
+const POLICY_SIMULTANEOUS_PUCT := "simultaneous_puct"
 const EVALUATOR_HANDWRITTEN := "handwritten"
 const EVALUATOR_NEURAL := "neural"
 
@@ -40,7 +44,7 @@ static func choose_actions(
 	var exploration_profile := str(resolved.get("exploration_profile", PureStatePolicyExploration.PROFILE_GREEDY))
 	var exploration_seed := int(resolved.get("exploration_seed", 0))
 
-	if policy != POLICY_OPPONENT_RESPONSE:
+	if policy not in [POLICY_OPPONENT_RESPONSE, POLICY_SIMULTANEOUS_PUCT]:
 		return _invalid_result("unsupported_policy", resolved)
 	if evaluator not in [EVALUATOR_HANDWRITTEN, EVALUATOR_NEURAL]:
 		return _invalid_result("unsupported_evaluator", resolved)
@@ -59,22 +63,57 @@ static func choose_actions(
 		return _invalid_result("invalid_fixed_other_group_actions", resolved)
 	var fixed_actions: Dictionary = fixed_actions_variant
 
-	var search := PureStateOpponentResponseSearch.search(
-		game_state,
-		group_name,
-		opponent_group_name,
-		int(resolved.get("own_max_actions_per_unit", 0)),
-		int(resolved.get("own_max_plans", 0)),
-		int(resolved.get("opponent_max_actions_per_unit", 0)),
-		int(resolved.get("opponent_max_plans", 0)),
-		fixed_actions,
-		evaluator,
-		evaluator_settings
+	var started_usec := Time.get_ticks_usec()
+	var search_settings := evaluator_settings.duplicate(true)
+	var selective := (
+		policy == POLICY_OPPONENT_RESPONSE
+		and bool(search_settings.get("selective_continuation", false))
+		and exploration_profile == PureStatePolicyExploration.PROFILE_GREEDY
 	)
+	var total_budget_ms := float(search_settings.get("decision_time_budget_ms", 0.0))
+	if selective and total_budget_ms > 0.0:
+		search_settings["decision_time_budget_ms"] = total_budget_ms * 0.7
+
+	var search: Dictionary
+	if policy == POLICY_SIMULTANEOUS_PUCT:
+		search = PureStateSimultaneousPUCT.search(
+			game_state,
+			group_name,
+			opponent_group_name,
+			int(resolved.get("own_max_actions_per_unit", 0)),
+			int(resolved.get("own_max_plans", 0)),
+			int(resolved.get("opponent_max_actions_per_unit", 0)),
+			int(resolved.get("opponent_max_plans", 0)),
+			fixed_actions,
+			evaluator,
+			search_settings
+		)
+	else:
+		search = PureStateOpponentResponseSearch.search(
+			game_state,
+			group_name,
+			opponent_group_name,
+			int(resolved.get("own_max_actions_per_unit", 0)),
+			int(resolved.get("own_max_plans", 0)),
+			int(resolved.get("opponent_max_actions_per_unit", 0)),
+			int(resolved.get("opponent_max_plans", 0)),
+			fixed_actions,
+			evaluator,
+			search_settings
+		)
 	if not bool(search.get("valid", false)):
 		var search_error := str(search.get("error", ""))
 		var decision_error := "evaluation_failed" if search_error == "evaluation_failed" else "decision_failed"
 		return _invalid_result(decision_error, resolved, search)
+	if selective and total_budget_ms > 0.0:
+		search = PureStateSelectiveContinuation.refine(
+			game_state, group_name, opponent_group_name, search, resolved, started_usec
+		)
+		var continuation_diagnostics: Dictionary = search.get("selective_continuation", {})
+		search["simulations_run"] = int(search.get("simulations_run", 0)) + int(continuation_diagnostics.get("additional_simulations", 0))
+		# Include refinement even if it declined to replace the one-turn winner.
+		# Promotion checks use this measured elapsed time, not the inner search time.
+		search["elapsed_ms"] = float(Time.get_ticks_usec() - started_usec) / 1000.0
 
 	var selection := PureStatePolicyExploration.select_result(
 		search,
@@ -143,6 +182,26 @@ static func neural_settings(
 		"opponent_max_actions_per_unit": opponent_max_actions_per_unit,
 		"opponent_max_plans": opponent_max_plans,
 	})
+
+
+static func neural_puct_settings(
+	own_max_actions_per_unit: int,
+	own_max_plans: int,
+	opponent_max_actions_per_unit: int,
+	opponent_max_plans: int,
+	checkpoint_path: String = PureStateNeuralEvaluator.DEFAULT_CHECKPOINT_PATH,
+	evaluator_overrides: Dictionary = {}
+) -> Dictionary:
+	var result := neural_settings(
+		own_max_actions_per_unit,
+		own_max_plans,
+		opponent_max_actions_per_unit,
+		opponent_max_plans,
+		checkpoint_path,
+		evaluator_overrides
+	)
+	result["policy"] = POLICY_SIMULTANEOUS_PUCT
+	return result
 
 
 static func _invalid_result(

@@ -20,6 +20,9 @@ const EDGE_DIRECTIONS := [
 
 
 static func ensure_command_hexes(game_state: Dictionary, group_a: String, group_b: String) -> Dictionary:
+	if not bool(game_state.get("command_hexes_enabled", true)):
+		game_state["command_hexes"] = {}
+		return {}
 	var existing_variant = game_state.get("command_hexes", {})
 	if existing_variant is Dictionary:
 		var existing: Dictionary = existing_variant

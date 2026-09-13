@@ -9,12 +9,14 @@ class_name PureStateSelfPlayDiversity
 const PureStateSelfPlaySuite = preload("res://src/simulation/pure_state_self_play_suite.gd")
 const PureStatePolicyExploration = preload("res://src/simulation/pure_state_policy_exploration.gd")
 
-const VERSION := 2
+const VERSION := 3
 const PROCEDURAL_VARIANT_COUNT := 16
 const POLICY_REPLAY_COUNT := 16
 const TOTAL_TRAINING_VARIANT_COUNT := PROCEDURAL_VARIANT_COUNT + POLICY_REPLAY_COUNT
+const BASIC_POLICY_REPLAY_COUNT := 18
 const TRAINING_SEED_MIN := 510101
 const POLICY_SEED_MIN := 520101
+const BASIC_POLICY_SEED_MIN := 530100
 
 const TRAINING_SEEDS := [
 	510101,
@@ -76,10 +78,44 @@ const POLICY_PROFILES := [
 
 static func expand_jobs(base_jobs: Array, preset_name: String) -> Array:
 	var jobs := base_jobs.duplicate(true)
+	if preset_name == "basic_training":
+		jobs.append_array(basic_policy_replay_jobs(base_jobs))
+		return jobs
 	if preset_name != "diverse":
 		return jobs
 	jobs.append_array(procedural_jobs())
 	jobs.append_array(policy_replay_jobs())
+	return jobs
+
+
+## Replay the exact nine basic-training starts with controlled near-best policy
+## exploration. This stays entirely on training rotations 0/2/4, so held-out
+## rotations 1/3/5 remain untouched while the dataset can discover trajectories
+## that greedy handwritten-vs-handwritten play never visits (especially Terran
+## wins in the 3 Marines vs 2 Zerglings drill).
+static func basic_policy_replay_jobs(base_jobs: Array) -> Array:
+	var jobs: Array = []
+	for job_index in range(base_jobs.size()):
+		if not (base_jobs[job_index] is Dictionary):
+			continue
+		var base_job: Dictionary = base_jobs[job_index]
+		for profile_index in range(POLICY_PROFILES.size()):
+			var replay: Dictionary = base_job.duplicate(true)
+			var profile_name := str(POLICY_PROFILES[profile_index])
+			var seed := BASIC_POLICY_SEED_MIN + job_index * 10 + profile_index + 1
+			replay["game_id"] = "%s-policy-%s-p%d" % [
+				str(base_job.get("game_id", "basic")),
+				profile_name,
+				seed,
+			]
+			replay["training_variant"] = true
+			replay["policy_replay"] = true
+			replay["policy_exploration"] = {
+				"profile": profile_name,
+				"seed": seed,
+			}
+			replay["diversity_version"] = VERSION
+			jobs.append(replay)
 	return jobs
 
 

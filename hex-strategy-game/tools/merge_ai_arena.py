@@ -72,6 +72,9 @@ def main() -> int:
         "preset_games",
         "preset_pairs",
         "shard_count",
+        "decision_time_budget_ms",
+        "runner_type",
+        "checkpoint_sha256",
     ]
     for shard in shards[1:]:
         for key in invariant_keys:
@@ -268,6 +271,9 @@ def main() -> int:
         "preset": first["preset"],
         "seed_base": first["seed_base"],
         "rules_version": first["rules_version"],
+        "decision_time_budget_ms": first.get("decision_time_budget_ms", 0),
+        "runner_type": first.get("runner_type", ""),
+        "checkpoint_sha256": first.get("checkpoint_sha256", ""),
         "map_profile": first.get("map_profile", "legacy_v1"),
         "checkpoint_source": args.checkpoint_source,
         "champion_profile": first["champion_profile"],

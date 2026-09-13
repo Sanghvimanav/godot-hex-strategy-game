@@ -21,6 +21,8 @@ const PureStateCounterConditioning = preload("res://src/simulation/pure_state_co
 const PureStateSimulator = preload("res://src/simulation/pure_state_simulator.gd")
 const PureStateEvaluator = preload("res://src/simulation/pure_state_evaluator.gd")
 const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural_evaluator.gd")
+const PureStateNeuralPlans = preload("res://src/simulation/pure_state_neural_plans.gd")
+const PureStateCommandHexRules = preload("res://src/simulation/pure_state_command_hex_rules.gd")
 
 const EVALUATOR_HANDWRITTEN := "handwritten"
 const EVALUATOR_NEURAL := "neural"
@@ -44,6 +46,9 @@ static func search(
 	evaluator_settings: Dictionary = {}
 ) -> Dictionary:
 	var started_usec := Time.get_ticks_usec()
+	var decision_time_budget_ms := maxf(0.0, float(evaluator_settings.get("decision_time_budget_ms", 0.0)))
+	var last_candidate_ms := 0.0
+	var time_budget_exhausted := false
 	var invalid := _empty_result(group_name, opponent_group_name, evaluator_mode)
 	if group_name.is_empty() or opponent_group_name.is_empty() or group_name == opponent_group_name:
 		return invalid
@@ -99,6 +104,26 @@ static func search(
 	if own_candidates.is_empty():
 		return invalid
 
+	var learned_proposals := 0
+	if evaluator_mode == EVALUATOR_NEURAL and bool(evaluator_settings.get("learned_proposals", false)):
+		var learned_limit := maxi(1, int(own_max_plans / 2))
+		var learned := PureStateNeuralPlans.get_candidate_plans(game_state, group_name, opponent_group_name,
+			own_max_actions_per_unit, learned_limit, evaluator_settings)
+		if not learned.is_empty():
+			var mixed: Array = []
+			var seen: Dictionary = {}
+			for candidate in learned + own_candidates:
+				var signature := JSON.stringify(candidate.get("actions", []))
+				if seen.has(signature):
+					continue
+				seen[signature] = true
+				mixed.append(candidate)
+				if candidate.get("proposal_source", "") == "neural_joint_policy":
+					learned_proposals += 1
+				if mixed.size() >= own_max_plans:
+					break
+			own_candidates = mixed
+
 	var own_intent_counts := PureStatePlanIntents.count_intents(own_candidates)
 	var opponent_intent_counts := PureStatePlanIntents.count_intents(opponent_candidates)
 	var ranked: Array = []
@@ -116,6 +141,13 @@ static func search(
 	var neural_runtime_ms := 0.0
 
 	for own_variant in own_candidates:
+		# Stop between complete candidate evaluations. Never promote a plan whose
+		# dangerous responses were omitted just because the clock ran out.
+		var spent_ms := float(Time.get_ticks_usec() - started_usec) / 1000.0
+		if decision_time_budget_ms > 0.0 and not best_full.is_empty() and spent_ms + last_candidate_ms >= decision_time_budget_ms:
+			time_budget_exhausted = true
+			break
+		var candidate_started_usec := Time.get_ticks_usec()
 		if not (own_variant is Dictionary):
 			continue
 		var own: Dictionary = own_variant
@@ -143,27 +175,32 @@ static func search(
 				)
 				var simulation := PureStateSimulator.simulate_turn(game_state, submitted)
 				var next_state: Dictionary = simulation.get("next_state", {})
+				next_state["turn_index"] = int(game_state.get("turn_index", 0)) + 1
+				var terminal_breakdown := _capture_terminal_breakdown(
+					game_state, next_state, group_name, opponent_group_name, evaluator_settings
+				)
 				leaf_entries.append({
 					"opponent": opponent,
 					"opponent_actions": opponent_actions,
 					"next_state": next_state,
 					"recording": simulation.get("recording", {}),
+					"terminal_breakdown": terminal_breakdown,
 				})
-				leaf_states.append(next_state)
+				if terminal_breakdown.is_empty():
+					leaf_states.append(next_state)
 
 			# Batched neural evaluation simulates every opponent leaf before minimax
 			# pruning is examined. Count the actual simulations performed, not only
 			# the responses later consumed by the ranking loop.
-			simulations_run += leaf_states.size()
-			var breakdowns := PureStateNeuralEvaluator.evaluate_many_breakdowns(
-				leaf_states,
-				group_name,
-				opponent_group_name,
-				evaluator_settings
-			)
-			neural_batch_calls += 1
+			simulations_run += leaf_entries.size()
+			var breakdowns: Array = []
+			if not leaf_states.is_empty():
+				breakdowns = PureStateNeuralEvaluator.evaluate_many_breakdowns(
+					leaf_states, group_name, opponent_group_name, evaluator_settings
+				)
+				neural_batch_calls += 1
 			neural_batch_leaf_requests += leaf_states.size()
-			if breakdowns.size() != leaf_entries.size():
+			if breakdowns.size() != leaf_states.size():
 				invalid["error"] = "evaluation_failed"
 				invalid["evaluation_error"] = "neural_batch_size_mismatch"
 				invalid["simulations_run"] = simulations_run
@@ -176,9 +213,13 @@ static func search(
 				var runtime_timing: Dictionary = batch_diag.get("runtime_timing_ms", {})
 				neural_runtime_ms += float(runtime_timing.get("total_ms", 0.0))
 
+			var evaluated_index := 0
 			for leaf_index in range(leaf_entries.size()):
 				var entry: Dictionary = leaf_entries[leaf_index]
-				var breakdown: Dictionary = breakdowns[leaf_index]
+				var breakdown: Dictionary = entry.get("terminal_breakdown", {})
+				if breakdown.is_empty():
+					breakdown = breakdowns[evaluated_index]
+					evaluated_index += 1
 				if not bool(breakdown.get("valid", false)):
 					invalid["error"] = "evaluation_failed"
 					invalid["evaluation_error"] = str(breakdown.get("error", ""))
@@ -223,13 +264,14 @@ static func search(
 				)
 				var simulation := PureStateSimulator.simulate_turn(game_state, submitted)
 				var next_state: Dictionary = simulation.get("next_state", {})
-				var breakdown := _evaluate_leaf(
-					next_state,
-					group_name,
-					opponent_group_name,
-					evaluator_mode,
-					evaluator_settings
+				next_state["turn_index"] = int(game_state.get("turn_index", 0)) + 1
+				var breakdown := _capture_terminal_breakdown(
+					game_state, next_state, group_name, opponent_group_name, evaluator_settings
 				)
+				if breakdown.is_empty():
+					breakdown = _evaluate_leaf(
+						next_state, group_name, opponent_group_name, evaluator_mode, evaluator_settings
+					)
 				if not bool(breakdown.get("valid", false)):
 					invalid["error"] = "evaluation_failed"
 					invalid["evaluation_error"] = str(breakdown.get("error", ""))
@@ -261,6 +303,7 @@ static func search(
 
 		if response_count <= 0 or worst_result.is_empty():
 			continue
+		last_candidate_ms = float(Time.get_ticks_usec() - candidate_started_usec) / 1000.0
 
 		var result := {
 			"actions": own_actions,
@@ -309,6 +352,9 @@ static func search(
 		"simulations_run": simulations_run,
 		"pruned_candidates": pruned_candidates,
 		"elapsed_ms": elapsed_ms,
+		"decision_time_budget_ms": decision_time_budget_ms,
+		"time_budget_exhausted": time_budget_exhausted,
+		"learned_proposals": learned_proposals,
 		"neural_batch_evaluation": use_neural_batch,
 		"neural_batch_calls": neural_batch_calls,
 		"neural_batch_leaf_requests": neural_batch_leaf_requests,
@@ -347,6 +393,38 @@ static func _evaluate_leaf(
 			evaluator_settings
 		)
 	return PureStateEvaluator.evaluate_breakdown(game_state, group_name)
+
+
+static func _capture_terminal_breakdown(
+	before: Dictionary,
+	after: Dictionary,
+	group_name: String,
+	opponent_group_name: String,
+	evaluator_settings: Dictionary
+) -> Dictionary:
+	if not bool(evaluator_settings.get("score_command_capture", false)):
+		return {}
+	var hexes_variant = before.get("command_hexes", {})
+	if not (hexes_variant is Dictionary):
+		return {}
+	var hexes: Dictionary = hexes_variant
+	if not hexes.has(group_name) or not hexes.has(opponent_group_name):
+		return {}
+	var previous := PureStateCommandHexRules.initial_occupants(before, group_name, opponent_group_name, hexes)
+	var capture := PureStateCommandHexRules.capture_after_complete_turn(
+		after, group_name, opponent_group_name, hexes, previous
+	)
+	var completed: Dictionary = capture.get("completed", {})
+	var own := bool(completed.get(group_name, false))
+	var enemy := bool(completed.get(opponent_group_name, false))
+	if not own and not enemy:
+		return {}
+	# The rollout treats simultaneous complete captures as a terminal draw.
+	var score := 0.0
+	if own != enemy:
+		score = PureStateEvaluator.TERMINAL_WEIGHT if own else -PureStateEvaluator.TERMINAL_WEIGHT
+	return {"valid": true, "total": score, "terminal": score,
+		"terminal_reason": "simultaneous_command_capture" if own and enemy else "command_capture"}
 
 
 static func _build_player_actions(

@@ -19,6 +19,7 @@ from .data import (
 )
 from .metrics import sign_accuracy
 from .model import HexValueNet
+from .strategic_state import make_encoder
 
 
 def _seed_everything(seed: int) -> None:
@@ -118,7 +119,7 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
         seed=args.seed,
         group_key=args.split_key,
     )
-    encoder = HexStateEncoder()
+    encoder = make_encoder(getattr(args, "encoder_version", 1))
     all_conflicts = _input_conflict_metrics(all_examples, encoder)
     train_conflicts = _input_conflict_metrics(train_examples, encoder)
     validation_conflicts = _input_conflict_metrics(validation_examples, encoder)
@@ -127,7 +128,12 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
 
     device = torch.device(args.device)
-    model = HexValueNet(hidden_channels=args.hidden_channels, residual_blocks=args.residual_blocks).to(device)
+    model = HexValueNet(
+        board_channels=encoder.board_channels,
+        global_features=encoder.global_features,
+        hidden_channels=args.hidden_channels,
+        residual_blocks=args.residual_blocks,
+    ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     loss_fn = nn.MSELoss()
 
@@ -161,6 +167,7 @@ def train(args: argparse.Namespace) -> dict[str, float | int | str | list[str]]:
             "board_size": encoder.board_size,
             "max_radius": encoder.max_radius,
             "unit_types": list(encoder.unit_types),
+            "encoder_version": getattr(args, "encoder_version", 1),
         },
         "training_config": vars(args),
     }
@@ -224,6 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--residual-blocks", type=int, default=2)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--encoder-version", type=int, choices=(1, 2, 3), default=1)
     parser.add_argument("--handwritten-baseline", default=None)
     return parser
 

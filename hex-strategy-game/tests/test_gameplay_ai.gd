@@ -4,12 +4,16 @@ extends RefCounted
 const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
 const PureStateOpponentResponseSearch = preload("res://src/simulation/pure_state_opponent_response_search.gd")
 const PureStatePolicyExploration = preload("res://src/simulation/pure_state_policy_exploration.gd")
+const PureStateSelectiveContinuation = preload("res://src/simulation/pure_state_selective_continuation.gd")
 const TurnExecutionCore = preload("res://src/battle/turn_execution_core.gd")
 
 
 static func run_all(tests: Node) -> bool:
 	var ok := true
 	ok = _test_handwritten_entry_point_matches_existing_search(tests) and ok
+	ok = _test_simultaneous_puct_is_opt_in_and_accounts_visits(tests) and ok
+	ok = _test_selective_continuation_is_opt_in_and_preserves_wide_gaps(tests) and ok
+	ok = _test_selective_continuation_compares_two_nonterminal_plans(tests) and ok
 	ok = _test_policy_exploration_is_seeded_and_near_best_only(tests) and ok
 	ok = _test_neural_evaluator_requires_explicit_checkpoint(tests) and ok
 	ok = _test_unsupported_evaluator_fails_closed(tests) and ok
@@ -59,6 +63,116 @@ static func _test_handwritten_entry_point_matches_existing_search(tests: Node) -
 		return false
 
 	tests._pass("one entry point preserves current actions and diagnostics")
+	return true
+
+
+static func _test_simultaneous_puct_is_opt_in_and_accounts_visits(tests: Node) -> bool:
+	tests._log("test_gameplay_ai: simultaneous PUCT is opt-in and uses one shared pre-turn state")
+	var state := _one_hp_zergling_vs_marine_state()
+	state["turn_index"] = 3
+	var before := state.duplicate(true)
+	var settings := GameplayAI.handwritten_settings(4, 3, 4, 3)
+	settings["policy"] = GameplayAI.POLICY_SIMULTANEOUS_PUCT
+	settings["evaluator_settings"] = {
+		"puct_policy_source": "heuristic",
+		"puct_simulations": 12,
+		"puct_c": 1.5,
+	}
+	var decision := GameplayAI.choose_actions(state, "zerg", "terran", settings)
+	if not bool(decision.get("valid", false)):
+		tests._fail("opt-in root PUCT should return a valid decision: %s" % decision)
+		return false
+	if state != before:
+		tests._fail("PUCT must not mutate the shared pre-turn source state")
+		return false
+	if str(decision.get("policy", "")) != GameplayAI.POLICY_SIMULTANEOUS_PUCT:
+		tests._fail("decision should identify simultaneous PUCT explicitly")
+		return false
+	var diagnostics: Dictionary = decision.get("diagnostics", {})
+	if str(diagnostics.get("search_type", "")) != "simultaneous_puct_root" or str(diagnostics.get("mcts_stage", "")) != "MCTS-1":
+		tests._fail("PUCT diagnostics should identify the MCTS-1 root search")
+		return false
+	if not bool(diagnostics.get("simultaneous_pre_turn", false)) or int(diagnostics.get("root_turn_index", -1)) != 3:
+		tests._fail("both plan sets must be sourced from the same pre-turn boundary")
+		return false
+	if int(diagnostics.get("simulations_run", 0)) != 12:
+		tests._fail("PUCT should complete the requested deterministic simulation budget")
+		return false
+	if decision.get("actions", []) != diagnostics.get("best_actions", []):
+		tests._fail("greedy PUCT decision must select the visit-ranked root winner")
+		return false
+	var own_visits := 0
+	for edge_variant in diagnostics.get("own_edge_stats", []):
+		if edge_variant is Dictionary:
+			own_visits += int((edge_variant as Dictionary).get("visits", 0))
+	var opponent_visits := 0
+	for edge_variant in diagnostics.get("opponent_edge_stats", []):
+		if edge_variant is Dictionary:
+			opponent_visits += int((edge_variant as Dictionary).get("visits", 0))
+	var pair_visits := 0
+	for pair_variant in diagnostics.get("pair_stats", []):
+		if pair_variant is Dictionary:
+			pair_visits += int((pair_variant as Dictionary).get("visits", 0))
+	if own_visits != 12 or opponent_visits != 12 or pair_visits != 12:
+		tests._fail("every simultaneous simulation must back up one own edge, one opponent edge, and one pair")
+		return false
+	tests._pass("root PUCT preserves simultaneous information and visit accounting")
+	return true
+
+
+static func _test_selective_continuation_is_opt_in_and_preserves_wide_gaps(tests: Node) -> bool:
+	var state := _one_hp_zergling_vs_marine_state()
+	var plain := GameplayAI.choose_actions(state, "zerg", "terran", GameplayAI.handwritten_settings(8, 2, 8, 2))
+	if not bool(plain.get("valid", false)) or (plain.get("diagnostics", {}) as Dictionary).has("selective_continuation"):
+		tests._fail("ordinary gameplay search must not enable continuation")
+		return false
+	var fake := {"ranked_results": [
+		{"actions": [], "worst_case_score": 200.0},
+		{"actions": [], "worst_case_score": 0.0},
+	]}
+	var settings := GameplayAI.handwritten_settings(8, 2, 8, 2)
+	settings["evaluator_settings"] = {"decision_time_budget_ms": 25000.0, "continuation_score_margin": 10.0}
+	var skipped := PureStateSelectiveContinuation.refine(state, "zerg", "terran", fake, settings, Time.get_ticks_usec())
+	var diagnostic: Dictionary = skipped.get("selective_continuation", {})
+	if bool(diagnostic.get("applied", true)) or str(diagnostic.get("reason", "")) != "top_plans_not_close":
+		tests._fail("non-close candidates must not spend compute on a second turn")
+		return false
+	if skipped.get("ranked_results", []) != fake.get("ranked_results", []):
+		tests._fail("skipped continuation must preserve one-turn ordering")
+		return false
+	tests._pass("continuation is opt-in and distant candidates stay one-turn")
+	return true
+
+
+static func _test_selective_continuation_compares_two_nonterminal_plans(tests: Node) -> bool:
+	var state := _one_hp_zergling_vs_marine_state()
+	var groups: Array = state.get("groups", [])
+	var zerg: Dictionary = groups[0]
+	var zerg_units: Array = zerg.get("units", [])
+	(zerg_units[0] as Dictionary)["health"] = int((zerg_units[0] as Dictionary).get("max_health", 2))
+	var terran: Dictionary = groups[1]
+	var terran_units: Array = terran.get("units", [])
+	(terran_units[0] as Dictionary)["cell"] = [3, 0]
+	var before := state.duplicate(true)
+	var settings := GameplayAI.handwritten_settings(4, 2, 4, 2)
+	settings["evaluator_settings"] = {
+		"decision_time_budget_ms": 25000.0,
+		"selective_continuation": true,
+		"continuation_score_margin": 1000000.0,
+	}
+	var decision := GameplayAI.choose_actions(state, "zerg", "terran", settings)
+	if not bool(decision.get("valid", false)) or state != before:
+		tests._fail("opt-in continuation must return valid legal search without mutating the state")
+		return false
+	var diagnostics: Dictionary = decision.get("diagnostics", {})
+	var continuation: Dictionary = diagnostics.get("selective_continuation", {})
+	if not bool(continuation.get("applied", false)) or (continuation.get("second_turn_scores", []) as Array).size() != 2:
+		tests._fail("two close, nonterminal root plans should receive second-turn scores: %s" % continuation)
+		return false
+	if decision.get("actions", []) != diagnostics.get("best_actions", []):
+		tests._fail("greedy opt-in decision must match its refined top plan")
+		return false
+	tests._pass("selective continuation compares two plans without changing the default")
 	return true
 
 

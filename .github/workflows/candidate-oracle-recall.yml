@@ -2,6 +2,15 @@ name: Candidate Oracle Recall
 
 on:
   workflow_dispatch:
+    inputs:
+      source:
+        description: "Diagnostic source (training-only Phase 1 self-play; never evaluation)"
+        type: choice
+        options: [smoke, phase-one-training]
+        default: smoke
+  push:
+    branches: [ai/phase-one-goal]
+    paths: [.github/phase-one-oracle-trigger]
   pull_request:
     paths:
       - ".github/workflows/candidate-oracle-recall.yml"
@@ -14,13 +23,15 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: candidate-oracle-recall-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   smoke:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.source != 'phase-one-training')
     name: Oracle recall smoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -98,3 +109,78 @@ jobs:
           path: artifacts/candidate-oracle-smoke/
           if-no-files-found: warn
           retention-days: 14
+
+  phase-one-training:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.source == 'phase-one-training')
+    name: Training-only oracle recall (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: phase-one-training-${{ matrix.shard }}
+          path: artifacts/training-source
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: '34720260594'
+      - name: Verify this is training-only self-play
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path('artifacts/training-source')
+          manifest = json.loads((root / 'manifest.json').read_text())
+          assert manifest['data_policy'] == 'current_self_play', manifest
+          assert manifest['generator'] == 'current_policy_full_game_self_play', manifest
+          assert manifest['seed_base'] == 6100001, manifest
+          assert manifest['shard_index'] == int(os.environ['SHARD']), manifest
+          assert manifest['shard_count'] == 8, manifest
+          assert (root / 'search_decisions.jsonl').stat().st_size > 0
+          print(json.dumps(manifest, sort_keys=True))
+          PY
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Probe one training decision per shard
+        working-directory: hex-strategy-game
+        run: |
+          timeout 20m bash tools/run_candidate_oracle_recall.sh \
+            --input-jsonl="${GITHUB_WORKSPACE}/artifacts/training-source/search_decisions.jsonl" \
+            --max-decisions=1 \
+            --oracle-own-max-actions-per-unit=10 \
+            --oracle-own-max-plans=12 \
+            --oracle-opponent-max-actions-per-unit=10 \
+            --oracle-opponent-max-plans=6 \
+            --oracle-value-response-max-plans=4 \
+            --out="${GITHUB_WORKSPACE}/artifacts/training-oracle"
+      - name: Check diagnostic output
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('artifacts/training-oracle')
+          manifest = json.loads((root / 'manifest.json').read_text())
+          assert manifest['source_kind'] == 'search_decision_jsonl', manifest
+          assert manifest['decisions_requested'] == 1, manifest
+          assert manifest['decisions_failed'] == 0, manifest
+          assert manifest['summary']['decision_count'] == 1, manifest
+          print(json.dumps(manifest['summary'], indent=2, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase-one-training-oracle-${{ github.run_number }}-${{ matrix.shard }}
+          path: artifacts/training-oracle/
+          if-no-files-found: warn
+          retention-days: 30

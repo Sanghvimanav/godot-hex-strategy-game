@@ -7,6 +7,7 @@ from ml.value_model.data import (
     OWN_COMMAND_HEX_CHANNEL,
     HexStateEncoder,
 )
+from ml.value_model.strategic_state import make_encoder
 
 
 def _unit(unit_id: int, kind: str, cell: list[int]) -> dict:
@@ -74,6 +75,20 @@ class ObjectiveEncoderTests(unittest.TestCase):
         encoded = HexStateEncoder().encode(example)
         self.assertEqual(float(encoded.board[OWN_COMMAND_HEX_CHANNEL].sum()), 0.0)
         self.assertEqual(float(encoded.board[ENEMY_COMMAND_HEX_CHANNEL].sum()), 0.0)
+
+    def test_curriculum_horizon_is_opt_in_and_relative_to_perspective(self) -> None:
+        zerg = _example("zerg")
+        zerg["state"]["curriculum"] = {"max_turns": 3, "turn_limit_winner": "terran"}
+        zerg["turn_index"] = 1
+        terran = _example("terran")
+        terran["state"]["curriculum"] = zerg["state"]["curriculum"]
+        terran["turn_index"] = 1
+        encoder = make_encoder(3)
+        self.assertEqual(encoder.encode(zerg).global_features.shape[0],
+                         make_encoder(2).global_features + 3)
+        self.assertAlmostEqual(float(encoder.encode(zerg).global_features[-2]), 2 / 16)
+        self.assertEqual(float(encoder.encode(zerg).global_features[-1]), 0.0)
+        self.assertEqual(float(encoder.encode(terran).global_features[-1]), 1.0)
 
 
 if __name__ == "__main__":
