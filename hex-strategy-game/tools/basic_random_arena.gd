@@ -25,6 +25,7 @@ func _run() -> void:
 	var shard_count := int(args.get("shard-count", "1"))
 	var decision_time_budget_ms := float(args.get("decision-time-budget-ms", "5000"))
 	var runner_type := str(args.get("runner-type", OS.get_name()))
+	var learned_proposals := _parse_bool(args.get("learned-proposals", "false"))
 	if checkpoint.is_empty():
 		push_error("Arena requires --checkpoint")
 		get_tree().quit(1)
@@ -51,7 +52,8 @@ func _run() -> void:
 		PureStateBasicRandomSuite.OWN_MAX_PLANS,
 		PureStateBasicRandomSuite.MAX_ACTIONS_PER_UNIT,
 		PureStateBasicRandomSuite.OPPONENT_MAX_PLANS,
-		checkpoint
+		checkpoint,
+		{"learned_proposals": learned_proposals}
 	)
 	for settings in [champion_settings, challenger_settings]:
 		var evaluator_settings: Dictionary = settings.get("evaluator_settings", {}).duplicate(true)
@@ -153,6 +155,7 @@ func _run() -> void:
 		"challenger_profile": "balanced",
 		"champion_evaluator": "handwritten",
 		"challenger_evaluator": "neural",
+		"learned_proposals": learned_proposals,
 		"champion_settings": champion_settings,
 		"challenger_settings": challenger_settings,
 		"preset_games": all_jobs.size(),
@@ -168,7 +171,7 @@ func _run() -> void:
 	}
 	var ok := _write_json(out_dir.path_join("manifest.json"), manifest)
 	ok = _write_jsonl(out_dir.path_join("traces.jsonl"), traces) and ok
-	print("[basic-random-arena] summary mode=%s games=%d pairs=%d counts=%s" % [mode, game_summaries.size(), game_summaries.size() / 2, str(counts)])
+	print("[basic-random-arena] summary mode=%s games=%d pairs=%d learned_proposals=%s counts=%s" % [mode, game_summaries.size(), game_summaries.size() / 2, str(learned_proposals), str(counts)])
 	PureStateNeuralEvaluator.shutdown()
 	get_tree().quit(0 if ok and int(counts.get("failed", 0)) == 0 else 1)
 
@@ -185,6 +188,10 @@ func _winner_agent(valid: bool, status: String, winner_group: String, challenger
 	if winner_group == champion_group:
 		return "champion"
 	return "failed"
+
+
+func _parse_bool(value: Variant) -> bool:
+	return str(value).strip_edges().to_lower() in ["1", "true", "yes", "on"]
 
 
 func _write_json(path: String, value: Variant) -> bool:
