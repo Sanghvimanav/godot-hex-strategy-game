@@ -209,3 +209,21 @@ retains the original parent training time, workers, runner, checkpoint hash and
 source rules SHA, adds this run's setup elapsed time, and identifies the new
 evaluation code SHA. No data from either holdout enters training. If any gate
 fails, keep the checkpoint and default one-turn policy unpromoted.
+
+### Experiment 6 result
+
+Run `34736255750` completed its eight evaluation shards on September 12, 2026.
+The familiar group resolved 18/20 with 2 neural wins (11.1% of resolved);
+the unfamiliar group resolved 19/20 with 4 neural wins (21.1% of resolved).
+There were no failed games. Maximum measured decisions were 27.81 and
+27.66 seconds, and the inherited training plus current setup totaled
+9,331.62 seconds. The fail-closed gate reproduced from the completed shard
+artifacts passes every check except the neural win-rate check in both groups.
+Selective continuation was applied in 39 familiar and 43 unfamiliar decisions,
+changing the top plan 11 times in each group. It did not improve both groups
+against the same checkpoint without selective depth: familiar regressed, while
+unfamiliar gained only one neural win. These aggregate diagnostics must not be
+used as training or mistake-mining examples. Do not promote selective depth.
+The next diagnostic should use training-only search decisions to distinguish
+candidate coverage from evaluator/selection mistakes before another promotion
+attempt, rather than widening or deepening search indiscriminately.
