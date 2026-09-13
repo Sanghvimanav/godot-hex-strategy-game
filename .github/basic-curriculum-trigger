@@ -1,1 +1,1 @@
-basic-tactical-v3: radius-one elimination curriculum with training-only policy exploration
+basic-tactical-v4: train on all training-only rotations after exploration found rare Terran wins
