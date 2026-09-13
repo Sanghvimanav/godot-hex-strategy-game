@@ -14,7 +14,7 @@ from .joint_plan_policy import (
     ActionFeaturizer,
     JointPlanPolicyHead,
     PolicyExample,
-    build_search_distillation_examples,
+    build_policy_examples,
     build_vocab,
 )
 from .model import HexValueNet
@@ -154,6 +154,13 @@ def _accuracy(
     return correct / len(examples)
 
 
+def _policy_loss(logits: torch.Tensor, example: PolicyExample) -> torch.Tensor:
+    target = torch.tensor(example.target_distribution, dtype=logits.dtype, device=logits.device)
+    if target.numel() != logits.numel():
+        raise ValueError("policy target distribution does not match candidate count")
+    return -(target * F.log_softmax(logits, dim=0)).sum()
+
+
 def train(args: argparse.Namespace) -> dict[str, Any]:
     random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -173,11 +180,11 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
             raise ValueError("base model contains overlapping game splits")
     else:
         train_rows, eval_rows = split_decisions(decisions, args.validation_fraction, args.seed)
-    train_examples = [e for r in train_rows for e in build_search_distillation_examples(r)]
-    eval_examples = [e for r in eval_rows for e in build_search_distillation_examples(r)]
+    train_examples = [e for r in train_rows for e in build_policy_examples(r)]
+    eval_examples = [e for r in eval_rows for e in build_policy_examples(r)]
     examples = train_examples + eval_examples
     if len(examples) < 2:
-        raise ValueError("need at least two autoregressive search-distillation examples")
+        raise ValueError("need at least two autoregressive policy examples")
     action_vocab, unit_vocab = build_vocab(train_rows)
     if not train_examples or not eval_examples:
         raise ValueError("both game-disjoint splits require preference examples")
@@ -206,8 +213,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         for index in order:
             example = train_examples[index]
             logits = _score_example(head, value_model, encoder, featurizer, example, device)
-            target = torch.tensor([example.target_index], dtype=torch.long, device=device)
-            loss = F.cross_entropy(logits.unsqueeze(0), target) / float(args.accumulate_groups)
+            loss = _policy_loss(logits, example) / float(args.accumulate_groups)
             loss.backward()
             pending += 1
             if pending == args.accumulate_groups:
@@ -218,11 +224,17 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
 
+    mcts_rows = sum(1 for r in decisions if r.get("mcts_visit_distribution"))
+    robust_rows = len(decisions) - mcts_rows
+    soft_examples = sum(1 for e in examples if e.target_probabilities is not None)
     metrics = {
         "search_decisions": len(decisions),
+        "mcts_visit_decisions": mcts_rows,
+        "robust_distillation_decisions": robust_rows,
         "train_game_ids": sorted({r["game_id"] for r in train_rows}),
         "eval_game_ids": sorted({r["game_id"] for r in eval_rows}),
         "prefix_training_examples": len(examples),
+        "soft_visit_prefix_examples": soft_examples,
         "train_examples": len(train_examples),
         "eval_examples": len(eval_examples),
         "train_top1_accuracy": _accuracy(head, value_model, encoder, featurizer, train_examples, device),
@@ -231,9 +243,12 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         "unit_vocab_size": len(unit_vocab),
     }
 
+    target_kind = "mcts_visit_distribution" if mcts_rows and not robust_rows else (
+        "mixed_mcts_visits_and_robust_search" if mcts_rows else "best_robust_searched_continuation"
+    )
     output = dict(checkpoint)
     output["joint_plan_policy_config"] = {
-        "version": 1,
+        "version": 2,
         "state_feature_size": state_feature_size,
         "action_vocab": action_vocab,
         "unit_vocab": unit_vocab,
@@ -241,7 +256,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         "token_dim": args.token_dim,
         "action_hidden": args.action_hidden,
         "prefix_hidden": args.prefix_hidden,
-        "target": "best_robust_searched_continuation",
+        "target": target_kind,
     }
     output["joint_plan_policy_state_dict"] = head.state_dict()
     output["joint_plan_policy_metrics"] = metrics
@@ -252,6 +267,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         "base_checkpoint": str(args.base_checkpoint),
         "search_decisions": [str(path) for path in args.search_decisions],
         "split_aligned_with_value_model": heldout_ids is not None,
+        "supports_soft_mcts_visit_targets": True,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     torch.save(output, args.output)
@@ -260,7 +276,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Train autoregressive joint-plan policy from robust search decisions")
+    parser = argparse.ArgumentParser(description="Train autoregressive joint-plan policy from robust search or MCTS visits")
     parser.add_argument("--base-checkpoint", type=Path, required=True)
     parser.add_argument("--search-decisions", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
