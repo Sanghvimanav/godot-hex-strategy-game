@@ -1,0 +1,536 @@
+name: Neural Self-Play Parallel Experiment
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/phase-one-goal]
+    paths: [.github/neural-self-play-parallel-trigger]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neural-self-play-parallel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  seed_generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Generate handwritten seed shard
+        working-directory: hex-strategy-game
+        env:
+          BASIC_RANDOM_SHARD_INDEX: ${{ matrix.shard }}
+          BASIC_RANDOM_SHARD_COUNT: 3
+        run: |
+          godot --headless --path . res://tools/basic_random_self_play.tscn -- \
+            --evaluator=handwritten --game-count=18 --capture-decisions-per-game=2 \
+            --rules-version="$GITHUB_SHA" \
+            --out="$GITHUB_WORKSPACE/artifacts/seed-data"
+      - name: Audit seed shard
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+          m = json.loads(Path('artifacts/seed-data/manifest.json').read_text())
+          assert m['evaluator'] == 'handwritten', m
+          assert m['command_hexes_enabled'] is False, m
+          assert m['learned_proposals'] is False, m
+          assert m['base_games'] == 6, m
+          assert len(m['games']) == 18, m
+          assert Counter(g['policy_profile'] for g in m['games']) == {'greedy': 6, 'light': 6, 'explore': 6}, m
+          assert {g['rotation_steps'] for g in m['games']} <= {0, 2, 4}, m
+          assert m['example_count'] > 0, m
+          assert m['search_decision_count'] > 0, m
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: neural-self-play-seed-data-${{ matrix.shard }}
+          path: artifacts/seed-data/
+          retention-days: 30
+
+  seed_train:
+    needs: seed_generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: neural-self-play-seed-data-*
+          path: seed-shards
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Merge seed shards
+        run: |
+          python hex-strategy-game/tools/merge_basic_random_self_play.py \
+            --input-root seed-shards --out artifacts/seed-data
+      - name: Audit merged seed data
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+          m = json.loads(Path('artifacts/seed-data/manifest.json').read_text())
+          assert m['merged_shards'] == 3, m
+          assert m['base_games'] == 18 and len(m['games']) == 54, m
+          assert Counter(g['policy_profile'] for g in m['games']) == {'greedy': 18, 'light': 18, 'explore': 18}, m
+          assert sum(g['counterfactual_path'] for g in m['games']) == 36, m
+          assert m['example_count'] > 0 and m['search_decision_count'] > 0, m
+          assert {g['rotation_steps'] for g in m['games']} <= {0, 2, 4}, m
+          assert not ({1, 3, 5} & {g['rotation_steps'] for g in m['games']}), m
+          PY
+      - name: Train seed neural value model
+        run: |
+          mkdir -p artifacts/seed
+          python -m ml.value_model.train \
+            --data=artifacts/seed-data/examples.jsonl \
+            --output=artifacts/seed/basic_seed_model.pt \
+            --encoder-version=3 --epochs=20 --batch-size=32 \
+            --hidden-channels=16 --residual-blocks=1 \
+            --split-key=source.rotation_steps --validation-fraction=0
+      - name: Train seed autoregressive joint-plan policy
+        run: |
+          python -m ml.value_model.train_joint_plan_policy \
+            --base-checkpoint=artifacts/seed/basic_seed_model.pt \
+            --search-decisions=artifacts/seed-data/search_decisions.jsonl \
+            --output=artifacts/seed/basic_seed_policy_model.pt \
+            --epochs=20 --validation-fraction=0.2 --seed=0 --device=cpu
+      - name: Audit and runtime-preflight seed checkpoint
+        run: |
+          python - <<'PY'
+          import json, subprocess, torch
+          p = torch.load('artifacts/seed/basic_seed_policy_model.pt', map_location='cpu', weights_only=False)
+          assert p.get('joint_plan_policy_config', {}).get('version') in (1, 2), p.keys()
+          assert p.get('joint_plan_policy_config', {}).get('target') == 'best_robust_searched_continuation', p.keys()
+          assert p.get('joint_plan_policy_state_dict'), p.keys()
+          proc = subprocess.run(
+              ['python', 'hex-strategy-game/tools/neural_value_runtime.py', '--checkpoint', 'artifacts/seed/basic_seed_policy_model.pt'],
+              input='', text=True, capture_output=True, timeout=20,
+          )
+          first = proc.stdout.splitlines()[0] if proc.stdout.splitlines() else ''
+          ready = json.loads(first) if first else {}
+          assert ready.get('ready') is True and ready.get('joint_plan_policy') is True, (ready, proc.stderr)
+          print(json.dumps({'runtime': ready, 'policy_metrics': p.get('joint_plan_policy_metrics', {})}, sort_keys=True))
+          PY
+      - name: Write seed provenance
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, torch
+          from pathlib import Path
+          p = Path('artifacts/seed/basic_seed_policy_model.pt')
+          m = json.loads(Path('artifacts/seed-data/manifest.json').read_text())
+          checkpoint = torch.load(p, map_location='cpu', weights_only=False)
+          out = {
+            'rules_version': os.environ['GITHUB_SHA'],
+            'stage': 'handwritten_seed_value_and_policy_parallel',
+            'training_rotations': [0, 2, 4],
+            'heldout_rotations': [1, 3, 5],
+            'generation_shards': 3,
+            'draw_zero_training_enabled': True,
+            'command_hexes_enabled': False,
+            'base_random_starts': m['base_games'],
+            'reward_discount': 0.95,
+            'examples': m['example_count'],
+            'policy_search_decisions': m['search_decision_count'],
+            'joint_plan_policy_metrics': checkpoint['joint_plan_policy_metrics'],
+            'checkpoint_sha256': hashlib.sha256(p.read_bytes()).hexdigest(),
+          }
+          Path('artifacts/seed/provenance.json').write_text(json.dumps(out, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neural-self-play-seed
+          path: artifacts/
+          retention-days: 30
+
+  evaluate_seed_random:
+    needs: seed_train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: neural-self-play-seed
+          path: model-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Equal-compute random heldout arena with seed policy
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/basic_random_arena.tscn -- \
+            --mode=random --pair-count=36 --decision-time-budget-ms=5000 \
+            --learned-proposals=true \
+            --checkpoint="$GITHUB_WORKSPACE/model-artifact/seed/basic_seed_policy_model.pt" \
+            --rules-version="$GITHUB_SHA" --runner-type=ubuntu-latest \
+            --shard-index=${{ matrix.shard }} --shard-count=3 \
+            --out="$GITHUB_WORKSPACE/artifacts/evaluation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: neural-self-play-seed-random-${{ matrix.shard }}
+          path: artifacts/evaluation/
+          retention-days: 30
+
+  neural_generate:
+    needs: seed_train
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: neural-self-play-seed
+          path: seed-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Generate neural self-play shard
+        working-directory: hex-strategy-game
+        env:
+          BASIC_RANDOM_SHARD_INDEX: ${{ matrix.shard }}
+          BASIC_RANDOM_SHARD_COUNT: 3
+        run: |
+          godot --headless --path . res://tools/basic_random_self_play.tscn -- \
+            --evaluator=neural --game-count=18 --capture-decisions-per-game=2 \
+            --learned-proposals=true --rules-version="$GITHUB_SHA" \
+            --checkpoint="$GITHUB_WORKSPACE/seed-artifact/seed/basic_seed_policy_model.pt" \
+            --out="$GITHUB_WORKSPACE/artifacts/neural-data"
+      - name: Audit neural shard
+        run: |
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+          m = json.loads(Path('artifacts/neural-data/manifest.json').read_text())
+          assert m['evaluator'] == 'neural' and m['learned_proposals'] is True, m
+          assert m['base_games'] == 6 and len(m['games']) == 18, m
+          assert Counter(g['policy_profile'] for g in m['games']) == {'greedy': 6, 'light': 6, 'explore': 6}, m
+          assert m['outcomes'].get('failed', 0) == 0, m
+          assert m['example_count'] > 0 and m['search_decision_count'] > 0, m
+          assert {g['rotation_steps'] for g in m['games']} <= {0, 2, 4}, m
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: neural-self-play-neural-data-${{ matrix.shard }}
+          path: artifacts/neural-data/
+          retention-days: 30
+
+  selfplay_train:
+    needs: [seed_train, neural_generate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: neural-self-play-seed
+          path: seed-artifact
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: neural-self-play-neural-data-*
+          path: neural-shards
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Merge neural shards and combine generations
+        run: |
+          python hex-strategy-game/tools/merge_basic_random_self_play.py \
+            --input-root neural-shards --out artifacts/neural-data
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          seed_manifest = json.loads(Path('seed-artifact/seed-data/manifest.json').read_text())
+          neural_manifest = json.loads(Path('artifacts/neural-data/manifest.json').read_text())
+          assert neural_manifest['merged_shards'] == 3, neural_manifest
+          assert neural_manifest['base_games'] == 18 and len(neural_manifest['games']) == 54, neural_manifest
+          assert neural_manifest['outcomes'].get('failed', 0) == 0, neural_manifest
+          assert neural_manifest['example_count'] > 0 and neural_manifest['search_decision_count'] > 0, neural_manifest
+          Path('artifacts/combined').mkdir(parents=True, exist_ok=True)
+          for name in ('examples.jsonl', 'search_decisions.jsonl'):
+              seed = Path('seed-artifact/seed-data', name).read_text()
+              neural = Path('artifacts/neural-data', name).read_text()
+              Path('artifacts/combined', name).write_text(seed + neural)
+          Path('artifacts/combined/manifest.json').write_text(json.dumps({
+              'seed_examples': seed_manifest['example_count'],
+              'neural_examples': neural_manifest['example_count'],
+              'seed_search_decisions': seed_manifest['search_decision_count'],
+              'neural_search_decisions': neural_manifest['search_decision_count'],
+              'draw_zero_training_enabled': True,
+          }, indent=2) + '\n')
+          PY
+      - name: Train combined self-play value model
+        run: |
+          mkdir -p artifacts/final
+          python -m ml.value_model.train \
+            --data=artifacts/combined/examples.jsonl \
+            --output=artifacts/final/basic_self_play_model.pt \
+            --encoder-version=3 --epochs=25 --batch-size=32 \
+            --hidden-channels=16 --residual-blocks=1 \
+            --split-key=source.rotation_steps --validation-fraction=0
+      - name: Train combined autoregressive joint-plan policy
+        run: |
+          python -m ml.value_model.train_joint_plan_policy \
+            --base-checkpoint=artifacts/final/basic_self_play_model.pt \
+            --search-decisions=artifacts/combined/search_decisions.jsonl \
+            --output=artifacts/final/basic_self_play_policy_model.pt \
+            --epochs=25 --validation-fraction=0.2 --seed=0 --device=cpu
+      - name: Audit and runtime-preflight final checkpoint
+        run: |
+          python - <<'PY'
+          import json, subprocess, torch
+          p = torch.load('artifacts/final/basic_self_play_policy_model.pt', map_location='cpu', weights_only=False)
+          assert p.get('joint_plan_policy_state_dict'), p.keys()
+          proc = subprocess.run(
+              ['python', 'hex-strategy-game/tools/neural_value_runtime.py', '--checkpoint', 'artifacts/final/basic_self_play_policy_model.pt'],
+              input='', text=True, capture_output=True, timeout=20,
+          )
+          first = proc.stdout.splitlines()[0] if proc.stdout.splitlines() else ''
+          ready = json.loads(first) if first else {}
+          assert ready.get('ready') is True and ready.get('joint_plan_policy') is True, (ready, proc.stderr)
+          print(json.dumps({'runtime': ready, 'policy_metrics': p.get('joint_plan_policy_metrics', {})}, sort_keys=True))
+          PY
+      - name: Write self-play provenance
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, torch
+          from pathlib import Path
+          p = Path('artifacts/final/basic_self_play_policy_model.pt')
+          seed = json.loads(Path('seed-artifact/seed-data/manifest.json').read_text())
+          neural = json.loads(Path('artifacts/neural-data/manifest.json').read_text())
+          checkpoint = torch.load(p, map_location='cpu', weights_only=False)
+          out = {
+            'rules_version': os.environ['GITHUB_SHA'],
+            'stage': 'combined_neural_self_play_value_and_policy_parallel',
+            'training_rotations': [0, 2, 4],
+            'heldout_rotations': [1, 3, 5],
+            'generation_shards': 3,
+            'draw_zero_training_enabled': True,
+            'command_hexes_enabled': False,
+            'random_starts_per_generation': 18,
+            'reward_discount': 0.95,
+            'learned_proposals_during_neural_self_play': True,
+            'seed_examples': seed['example_count'],
+            'neural_self_play_examples': neural['example_count'],
+            'policy_search_decisions': seed['search_decision_count'] + neural['search_decision_count'],
+            'joint_plan_policy_metrics': checkpoint['joint_plan_policy_metrics'],
+            'checkpoint_sha256': hashlib.sha256(p.read_bytes()).hexdigest(),
+          }
+          Path('artifacts/final/provenance.json').write_text(json.dumps(out, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neural-self-play-final
+          path: artifacts/
+          retention-days: 30
+
+  evaluate_final_random:
+    needs: selfplay_train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: neural-self-play-final
+          path: model-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Equal-compute random heldout arena with learned proposals
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/basic_random_arena.tscn -- \
+            --mode=random --pair-count=36 --decision-time-budget-ms=5000 \
+            --learned-proposals=true \
+            --checkpoint="$GITHUB_WORKSPACE/model-artifact/final/basic_self_play_policy_model.pt" \
+            --rules-version="$GITHUB_SHA" --runner-type=ubuntu-latest \
+            --shard-index=${{ matrix.shard }} --shard-count=3 \
+            --out="$GITHUB_WORKSPACE/artifacts/evaluation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: neural-self-play-final-random-${{ matrix.shard }}
+          path: artifacts/evaluation/
+          retention-days: 30
+
+  evaluate_final_counterfactual:
+    needs: selfplay_train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: neural-self-play-final
+          path: model-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Counterfactual fixed-scenario arena with learned proposals
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/basic_random_arena.tscn -- \
+            --mode=counterfactual --decision-time-budget-ms=5000 \
+            --learned-proposals=true \
+            --checkpoint="$GITHUB_WORKSPACE/model-artifact/final/basic_self_play_policy_model.pt" \
+            --rules-version="$GITHUB_SHA" --runner-type=ubuntu-latest \
+            --shard-index=${{ matrix.shard }} --shard-count=3 \
+            --out="$GITHUB_WORKSPACE/artifacts/evaluation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: neural-self-play-final-counterfactual-${{ matrix.shard }}
+          path: artifacts/evaluation/
+          retention-days: 30
+
+  report:
+    needs: [evaluate_seed_random, evaluate_final_random, evaluate_final_counterfactual]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: neural-self-play-seed-random-*
+          path: artifacts/seed-random
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: neural-self-play-final-random-*
+          path: artifacts/final-random
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: neural-self-play-final-counterfactual-*
+          path: artifacts/final-counterfactual
+      - name: Merge mirrored arenas
+        run: |
+          python hex-strategy-game/tools/merge_ai_arena.py --input-root artifacts/seed-random --out artifacts/merged/seed-random
+          python hex-strategy-game/tools/merge_ai_arena.py --input-root artifacts/final-random --out artifacts/merged/final-random
+          python hex-strategy-game/tools/merge_ai_arena.py --input-root artifacts/final-counterfactual --out artifacts/merged/final-counterfactual
+      - name: Compare seed with neural-self-play policy model
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          seed = json.loads(Path('artifacts/merged/seed-random/manifest.json').read_text())
+          final = json.loads(Path('artifacts/merged/final-random/manifest.json').read_text())
+          cf = json.loads(Path('artifacts/merged/final-counterfactual/manifest.json').read_text())
+          for m in (seed, final, cf):
+              assert m['decision_time_budget_ms'] == 5000, m
+              assert m['champion_evaluator'] == 'handwritten' and m['challenger_evaluator'] == 'neural', m
+              assert m['challenger_settings']['evaluator_settings'].get('learned_proposals') is True, m['challenger_settings']
+          for m in (seed, final):
+              rotations = {g['rotation_steps'] for g in m['games']}
+              assert rotations <= {1, 3, 5} and not ({0, 2, 4} & rotations), rotations
+          unique_pairs = {}
+          for g in final['games']:
+              unique_pairs.setdefault(g['pair_id'], (g['marines'], g['zerglings']))
+          near = sum(abs(a-b) <= 1 for a,b in unique_pairs.values())
+          near_rate = near / len(unique_pairs)
+          assert near_rate >= 0.60, near_rate
+          summary = {
+              'seed_random': {
+                  'counts': seed['counts'],
+                  'pair_counts': seed['pair_counts'],
+                  'neural_passive_rate': seed['passivity']['challenger']['passive_rate'],
+                  'handwritten_passive_rate': seed['passivity']['champion']['passive_rate'],
+              },
+              'final_random': {
+                  'counts': final['counts'],
+                  'pair_counts': final['pair_counts'],
+                  'neural_passive_rate': final['passivity']['challenger']['passive_rate'],
+                  'handwritten_passive_rate': final['passivity']['champion']['passive_rate'],
+                  'near_balanced_pair_rate': near_rate,
+              },
+              'counterfactual': {
+                  'counts': cf['counts'],
+                  'pair_counts': cf['pair_counts'],
+                  'family_counts': cf['family_counts'],
+                  'neural_passive_rate': cf['passivity']['challenger']['passive_rate'],
+              },
+          }
+          Path('artifacts/merged/self_play_experiment_summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+          print(json.dumps(summary, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: neural-self-play-parallel-experiment-report
+          path: artifacts/merged/
+          retention-days: 30
