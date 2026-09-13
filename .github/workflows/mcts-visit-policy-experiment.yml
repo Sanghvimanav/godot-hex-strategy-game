@@ -1,0 +1,601 @@
+name: MCTS Visit Policy Experiment
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/phase-one-goal]
+    paths: [.github/mcts-visit-policy-trigger]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcts-visit-policy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  seed_generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Generate corrected draw-zero handwritten seed shard
+        working-directory: hex-strategy-game
+        env:
+          BASIC_RANDOM_SHARD_INDEX: ${{ matrix.shard }}
+          BASIC_RANDOM_SHARD_COUNT: 3
+        run: |
+          godot --headless --path . res://tools/basic_random_self_play.tscn -- \
+            --evaluator=handwritten --game-count=18 --capture-decisions-per-game=2 \
+            --rules-version="$GITHUB_SHA" \
+            --out="$GITHUB_WORKSPACE/artifacts/seed-data"
+      - name: Audit training-only seed shard
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m = json.loads(Path('artifacts/seed-data/manifest.json').read_text())
+          assert m['base_games'] == 6 and len(m['games']) == 18, m
+          assert m['outcomes'].get('failed', 0) == 0, m
+          assert {g['rotation_steps'] for g in m['games']} <= {0, 2, 4}, m
+          assert not ({1, 3, 5} & {g['rotation_steps'] for g in m['games']}), m
+          assert m['example_count'] > 0 and m['search_decision_count'] > 0, m
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-policy-seed-data-${{ matrix.shard }}
+          path: artifacts/seed-data/
+          retention-days: 30
+
+  seed_train:
+    needs: seed_generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mcts-policy-seed-data-*
+          path: seed-shards
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Merge seed shards
+        run: |
+          python hex-strategy-game/tools/merge_basic_random_self_play.py \
+            --input-root seed-shards --out artifacts/seed-data
+      - name: Train seed value model
+        run: |
+          mkdir -p artifacts/seed
+          python -m ml.value_model.train \
+            --data=artifacts/seed-data/examples.jsonl \
+            --output=artifacts/seed/basic_seed_model.pt \
+            --encoder-version=3 --epochs=20 --batch-size=32 \
+            --hidden-channels=16 --residual-blocks=1 \
+            --split-key=source.rotation_steps --validation-fraction=0
+      - name: Train seed robust-distillation policy
+        run: |
+          python -m ml.value_model.train_joint_plan_policy \
+            --base-checkpoint=artifacts/seed/basic_seed_model.pt \
+            --search-decisions=artifacts/seed-data/search_decisions.jsonl \
+            --output=artifacts/seed/basic_seed_policy_model.pt \
+            --epochs=20 --validation-fraction=0.2 --seed=0 --device=cpu
+      - name: Runtime preflight seed checkpoint
+        run: |
+          python - <<'PY'
+          import json, subprocess
+          proc = subprocess.run(
+              ['python', 'hex-strategy-game/tools/neural_value_runtime.py', '--checkpoint', 'artifacts/seed/basic_seed_policy_model.pt'],
+              input='', text=True, capture_output=True, timeout=20,
+          )
+          ready = json.loads(proc.stdout.splitlines()[0])
+          assert ready.get('ready') is True and ready.get('joint_plan_policy') is True, (ready, proc.stderr)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcts-policy-seed
+          path: artifacts/
+          retention-days: 30
+
+  neural_generate:
+    needs: seed_train
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-policy-seed
+          path: seed-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Generate neural self-play shard
+        working-directory: hex-strategy-game
+        env:
+          BASIC_RANDOM_SHARD_INDEX: ${{ matrix.shard }}
+          BASIC_RANDOM_SHARD_COUNT: 3
+        run: |
+          godot --headless --path . res://tools/basic_random_self_play.tscn -- \
+            --evaluator=neural --game-count=18 --capture-decisions-per-game=2 \
+            --learned-proposals=true --rules-version="$GITHUB_SHA" \
+            --checkpoint="$GITHUB_WORKSPACE/seed-artifact/seed/basic_seed_policy_model.pt" \
+            --out="$GITHUB_WORKSPACE/artifacts/neural-data"
+      - name: Audit neural shard
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m = json.loads(Path('artifacts/neural-data/manifest.json').read_text())
+          assert m['base_games'] == 6 and len(m['games']) == 18, m
+          assert m['outcomes'].get('failed', 0) == 0, m
+          assert {g['rotation_steps'] for g in m['games']} <= {0, 2, 4}, m
+          assert m['example_count'] > 0 and m['search_decision_count'] > 0, m
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-policy-neural-data-${{ matrix.shard }}
+          path: artifacts/neural-data/
+          retention-days: 30
+
+  baseline_train:
+    needs: [seed_train, neural_generate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-policy-seed
+          path: seed-artifact
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mcts-policy-neural-data-*
+          path: neural-shards
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Merge generations
+        run: |
+          python hex-strategy-game/tools/merge_basic_random_self_play.py \
+            --input-root neural-shards --out artifacts/neural-data
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          seed = Path('seed-artifact/seed-data')
+          neural = Path('artifacts/neural-data')
+          sm = json.loads((seed/'manifest.json').read_text())
+          nm = json.loads((neural/'manifest.json').read_text())
+          assert nm['outcomes'].get('failed', 0) == 0, nm
+          Path('artifacts/combined').mkdir(parents=True, exist_ok=True)
+          for name in ('examples.jsonl', 'search_decisions.jsonl'):
+              Path('artifacts/combined', name).write_text((seed/name).read_text() + (neural/name).read_text())
+          Path('artifacts/combined/manifest.json').write_text(json.dumps({
+              'seed_examples': sm['example_count'],
+              'neural_examples': nm['example_count'],
+              'seed_search_decisions': sm['search_decision_count'],
+              'neural_search_decisions': nm['search_decision_count'],
+              'draw_zero_training_enabled': True,
+          }, indent=2) + '\n')
+          PY
+      - name: Train corrected final value model
+        run: |
+          mkdir -p artifacts/final
+          python -m ml.value_model.train \
+            --data=artifacts/combined/examples.jsonl \
+            --output=artifacts/final/basic_self_play_model.pt \
+            --encoder-version=3 --epochs=25 --batch-size=32 \
+            --hidden-channels=16 --residual-blocks=1 \
+            --split-key=source.rotation_steps --validation-fraction=0
+      - name: Train baseline robust-distillation policy
+        run: |
+          python -m ml.value_model.train_joint_plan_policy \
+            --base-checkpoint=artifacts/final/basic_self_play_model.pt \
+            --search-decisions=artifacts/combined/search_decisions.jsonl \
+            --output=artifacts/final/basic_self_play_policy_model.pt \
+            --epochs=25 --validation-fraction=0.2 --seed=0 --device=cpu
+      - name: Runtime preflight final baseline
+        run: |
+          python - <<'PY'
+          import json, subprocess, torch
+          p = torch.load('artifacts/final/basic_self_play_policy_model.pt', map_location='cpu', weights_only=False)
+          metrics = p['joint_plan_policy_metrics']
+          assert metrics['mcts_visit_decisions'] == 0, metrics
+          proc = subprocess.run(
+              ['python', 'hex-strategy-game/tools/neural_value_runtime.py', '--checkpoint', 'artifacts/final/basic_self_play_policy_model.pt'],
+              input='', text=True, capture_output=True, timeout=20,
+          )
+          ready = json.loads(proc.stdout.splitlines()[0])
+          assert ready.get('ready') is True and ready.get('joint_plan_policy') is True, (ready, proc.stderr)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcts-policy-baseline
+          path: artifacts/
+          retention-days: 30
+
+  mcts_targets:
+    needs: baseline_train
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        rotation: [0, 2, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-policy-baseline
+          path: baseline-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Generate MCTS-2 soft visit targets
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/mcts_visit_training_targets.tscn -- \
+            --rotation=${{ matrix.rotation }} --max-turns=6 \
+            --puct-simulations=24 --puct-max-depth=3 --puct-c=1.5 \
+            --checkpoint="$GITHUB_WORKSPACE/baseline-artifact/final/basic_self_play_policy_model.pt" \
+            --out="$GITHUB_WORKSPACE/artifacts/mcts-targets"
+      - name: Audit no held-out leakage and visit mass
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          rows = [json.loads(x) for x in Path('artifacts/mcts-targets/search_decisions.jsonl').read_text().splitlines() if x.strip()]
+          assert rows, 'no MCTS decisions'
+          assert all(r['source']['rotation_steps'] in {0,2,4} for r in rows), rows
+          assert not any(r['source']['rotation_steps'] in {1,3,5} for r in rows), rows
+          assert all(r['mcts_stage'] == 'MCTS-2' and r['mcts_max_depth'] == 3 for r in rows), rows
+          assert all(sum(int(v.get('visits',0)) for v in r['mcts_visit_distribution']) == r['mcts_simulations'] for r in rows), rows
+          print(json.dumps({'rotation': rows[0]['source']['rotation_steps'], 'decisions': len(rows)}))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-visit-targets-${{ matrix.rotation }}
+          path: artifacts/mcts-targets/
+          retention-days: 30
+
+  baseline_m2z1:
+    needs: baseline_train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-policy-baseline
+          path: baseline-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Baseline held-out 2M1Z robust vs MCTS-2
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/m2z1_puct_diagnostic.tscn -- \
+            --puct-simulations=16 --puct-max-depth=3 \
+            --checkpoint="$GITHUB_WORKSPACE/baseline-artifact/final/basic_self_play_policy_model.pt" \
+            --out="$GITHUB_WORKSPACE/artifacts/baseline_m2z1.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-policy-baseline-m2z1
+          path: artifacts/baseline_m2z1.json
+          retention-days: 30
+
+  candidate_train:
+    needs: [baseline_train, mcts_targets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-policy-baseline
+          path: baseline-artifact
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mcts-visit-targets-*
+          path: mcts-shards
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Build mixed robust plus MCTS visit supervision
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          robust = Path('baseline-artifact/combined/search_decisions.jsonl')
+          mcts_files = sorted(Path('mcts-shards').glob('*/search_decisions.jsonl'))
+          assert len(mcts_files) == 3, mcts_files
+          robust_rows = [json.loads(x) for x in robust.read_text().splitlines() if x.strip()]
+          mcts_rows = [json.loads(x) for p in mcts_files for x in p.read_text().splitlines() if x.strip()]
+          assert robust_rows and mcts_rows
+          assert all(r.get('source',{}).get('rotation_steps') in {0,2,4} for r in mcts_rows), mcts_rows
+          assert not any(r.get('source',{}).get('rotation_steps') in {1,3,5} for r in mcts_rows), mcts_rows
+          Path('artifacts/mixed').mkdir(parents=True, exist_ok=True)
+          with Path('artifacts/mixed/search_decisions.jsonl').open('w') as f:
+              for row in robust_rows + mcts_rows:
+                  f.write(json.dumps(row, separators=(',',':')) + '\n')
+          Path('artifacts/mixed/manifest.json').write_text(json.dumps({
+              'robust_decisions': len(robust_rows),
+              'mcts_visit_decisions': len(mcts_rows),
+              'training_rotations': [0,2,4],
+              'heldout_rotations_excluded': [1,3,5],
+              'mcts_stage': 'MCTS-2',
+              'puct_simulations': 24,
+              'puct_max_depth': 3,
+          }, indent=2) + '\n')
+          print(Path('artifacts/mixed/manifest.json').read_text())
+          PY
+      - name: Train MCTS-visit candidate policy on same corrected value model
+        run: |
+          mkdir -p artifacts/candidate
+          python -m ml.value_model.train_joint_plan_policy \
+            --base-checkpoint=baseline-artifact/final/basic_self_play_model.pt \
+            --search-decisions=artifacts/mixed/search_decisions.jsonl \
+            --output=artifacts/candidate/mcts_visit_policy_model.pt \
+            --epochs=25 --validation-fraction=0.2 --seed=0 --device=cpu
+      - name: Audit soft MCTS supervision and runtime
+        run: |
+          python - <<'PY'
+          import json, subprocess, torch
+          p = torch.load('artifacts/candidate/mcts_visit_policy_model.pt', map_location='cpu', weights_only=False)
+          metrics = p['joint_plan_policy_metrics']
+          assert metrics['mcts_visit_decisions'] > 0, metrics
+          assert metrics['robust_distillation_decisions'] > 0, metrics
+          assert metrics['soft_visit_prefix_examples'] > 0, metrics
+          assert p['joint_plan_policy_config']['target'] == 'mixed_mcts_visits_and_robust_search', p['joint_plan_policy_config']
+          proc = subprocess.run(
+              ['python', 'hex-strategy-game/tools/neural_value_runtime.py', '--checkpoint', 'artifacts/candidate/mcts_visit_policy_model.pt'],
+              input='', text=True, capture_output=True, timeout=20,
+          )
+          ready = json.loads(proc.stdout.splitlines()[0])
+          assert ready.get('ready') is True and ready.get('joint_plan_policy') is True, (ready, proc.stderr)
+          Path('artifacts/candidate/policy_metrics.json').write_text(json.dumps(metrics, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcts-visit-policy-candidate
+          path: artifacts/
+          retention-days: 30
+
+  candidate_m2z1:
+    needs: candidate_train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-visit-policy-candidate
+          path: candidate-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Candidate held-out 2M1Z robust vs MCTS-2
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/m2z1_puct_diagnostic.tscn -- \
+            --puct-simulations=16 --puct-max-depth=3 \
+            --checkpoint="$GITHUB_WORKSPACE/candidate-artifact/candidate/mcts_visit_policy_model.pt" \
+            --out="$GITHUB_WORKSPACE/artifacts/candidate_m2z1.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-visit-policy-candidate-m2z1
+          path: artifacts/candidate_m2z1.json
+          retention-days: 30
+
+  evaluate_candidate_random:
+    needs: candidate_train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-visit-policy-candidate
+          path: candidate-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Held-out random arena
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/basic_random_arena.tscn -- \
+            --mode=random --pair-count=36 --decision-time-budget-ms=5000 \
+            --learned-proposals=true \
+            --checkpoint="$GITHUB_WORKSPACE/candidate-artifact/candidate/mcts_visit_policy_model.pt" \
+            --rules-version="$GITHUB_SHA" --runner-type=ubuntu-latest \
+            --shard-index=${{ matrix.shard }} --shard-count=3 \
+            --out="$GITHUB_WORKSPACE/artifacts/evaluation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-visit-policy-random-${{ matrix.shard }}
+          path: artifacts/evaluation/
+          retention-days: 30
+
+  evaluate_candidate_counterfactual:
+    needs: candidate_train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-visit-policy-candidate
+          path: candidate-artifact
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Held-out fixed counterfactual arena
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/basic_random_arena.tscn -- \
+            --mode=counterfactual --decision-time-budget-ms=5000 \
+            --learned-proposals=true \
+            --checkpoint="$GITHUB_WORKSPACE/candidate-artifact/candidate/mcts_visit_policy_model.pt" \
+            --rules-version="$GITHUB_SHA" --runner-type=ubuntu-latest \
+            --shard-index=${{ matrix.shard }} --shard-count=3 \
+            --out="$GITHUB_WORKSPACE/artifacts/evaluation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-visit-policy-counterfactual-${{ matrix.shard }}
+          path: artifacts/evaluation/
+          retention-days: 30
+
+  report:
+    needs: [baseline_m2z1, candidate_m2z1, evaluate_candidate_random, evaluate_candidate_counterfactual]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mcts-visit-policy-random-*
+          path: random-shards
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mcts-visit-policy-counterfactual-*
+          path: counterfactual-shards
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-policy-baseline-m2z1
+          path: diagnostics/baseline
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-visit-policy-candidate-m2z1
+          path: diagnostics/candidate
+      - name: Merge arenas and summarize policy experiment
+        run: |
+          python hex-strategy-game/tools/merge_ai_arena.py --input-root random-shards --out artifacts/random
+          python hex-strategy-game/tools/merge_ai_arena.py --input-root counterfactual-shards --out artifacts/counterfactual
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          random = json.loads(Path('artifacts/random/manifest.json').read_text())
+          cf = json.loads(Path('artifacts/counterfactual/manifest.json').read_text())
+          baseline = json.loads(Path('diagnostics/baseline/baseline_m2z1.json').read_text())
+          candidate = json.loads(Path('diagnostics/candidate/candidate_m2z1.json').read_text())
+          assert {g['rotation_steps'] for g in random['games']} <= {1,3,5}, random
+          assert {g['rotation_steps'] for g in cf['games']} <= {1,3,5}, cf
+          summary = {
+              'baseline_reference': {
+                  'previous_random_counts': {'challenger': 30, 'champion': 27, 'unresolved': 15},
+                  'previous_counterfactual_counts': {'challenger': 12, 'champion': 6, 'unresolved': 0},
+                  'previous_s3_counts': {'challenger': 4, 'champion': 2},
+              },
+              'candidate_random': {
+                  'counts': random['counts'],
+                  'family_counts': random['family_counts'],
+              },
+              'candidate_counterfactual': {
+                  'counts': cf['counts'],
+                  'family_counts': cf['family_counts'],
+              },
+              'm2z1': {
+                  'baseline_robust_terran_wins': baseline['robust_terran_wins'],
+                  'baseline_mcts_terran_wins': baseline['puct_terran_wins'],
+                  'candidate_robust_terran_wins': candidate['robust_terran_wins'],
+                  'candidate_mcts_terran_wins': candidate['puct_terran_wins'],
+                  'baseline_rows': baseline['rows'],
+                  'candidate_rows': candidate['rows'],
+              },
+          }
+          Path('artifacts/mcts_visit_policy_summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+          print(json.dumps(summary, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcts-visit-policy-experiment-report
+          path: artifacts/
+          retention-days: 30
