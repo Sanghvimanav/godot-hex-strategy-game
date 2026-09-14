@@ -1,0 +1,1 @@
+spatial-policy-v1 cold-start experiment: retrain value backbone and spatial policy from random initialization using frozen run 34784986112 data

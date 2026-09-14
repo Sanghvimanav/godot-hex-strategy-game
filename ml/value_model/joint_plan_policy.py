@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -140,13 +141,7 @@ class PolicyExample:
 
 
 def build_search_distillation_examples(decision: dict[str, Any]) -> list[PolicyExample]:
-    """Convert complete robust-search candidates into autoregressive prefix targets.
-
-    For a given prefix, each next action receives the best worst-case score of any
-    searched complete plan that starts with prefix + action. The policy therefore
-    learns which action opens the strongest searched continuation rather than
-    imitating the old proposal heuristic or merely copying the played action.
-    """
+    """Convert complete robust-search candidates into autoregressive prefix targets."""
     state = decision.get("starting_state", {})
     perspective = str(decision.get("perspective_group", ""))
     opponent = str(decision.get("opponent_group", ""))
@@ -200,13 +195,7 @@ def build_search_distillation_examples(decision: dict[str, Any]) -> list[PolicyE
 
 
 def build_mcts_visit_examples(decision: dict[str, Any]) -> list[PolicyExample]:
-    """Decompose an MCTS root plan-visit distribution into prefix-level soft targets.
-
-    A complete plan's visit mass contributes to every prefix on that plan. For each
-    prefix, the next-action target is the normalized visit mass of all root plans
-    that share that prefix and choose that next action. This preserves the search
-    distribution instead of collapsing MCTS to a single winning plan.
-    """
+    """Decompose an MCTS root plan-visit distribution into prefix-level soft targets."""
     state = decision.get("starting_state", {})
     perspective = str(decision.get("perspective_group", ""))
     opponent = str(decision.get("opponent_group", ""))
@@ -310,8 +299,50 @@ class ActionFeaturizer:
         )
 
 
+class UnitEntityFeaturizer:
+    """Keep living units as distinct entities before scattering them onto hexes."""
+
+    NUMERIC_FEATURES = 4
+    RELATION_COUNT = 2
+
+    def __init__(self, unit_vocab: list[str], max_radius: int = 5):
+        self.unit_vocab = list(unit_vocab)
+        self.unit_to_id = {token: i for i, token in enumerate(self.unit_vocab)}
+        self.max_radius = max(1, int(max_radius))
+
+    def encode(
+        self, state: dict[str, Any], perspective_group: str
+    ) -> list[tuple[int, int, int, list[float], tuple[int, int]]]:
+        rows: list[tuple[int, int, int, list[float], tuple[int, int]]] = []
+        scale = float(self.max_radius)
+        for group in _groups(state):
+            relation_id = 0 if str(group.get("name", "")) == perspective_group else 1
+            for unit in group.get("units", []):
+                if not isinstance(unit, dict):
+                    continue
+                health = float(unit.get("health", 0.0))
+                if health <= 0:
+                    continue
+                unit_id = int(unit.get("unit_id", -1))
+                q, r = _cell(unit.get("cell", [0, 0]))
+                max_health = max(1.0, float(unit.get("max_health", health)))
+                energy = max(0.0, float(unit.get("energy", 0.0)))
+                max_energy = max(0.0, float(unit.get("max_energy", 0.0)))
+                energy_fraction = 0.0 if max_energy <= 0 else min(1.0, energy / max_energy)
+                kind = unit_type(unit)
+                rows.append((
+                    unit_id,
+                    self.unit_to_id.get(kind, self.unit_to_id.get(UNKNOWN_TOKEN, 0)),
+                    relation_id,
+                    [min(1.0, health / max_health), energy_fraction, q / scale, r / scale],
+                    (q, r),
+                ))
+        rows.sort(key=lambda row: row[0])
+        return rows
+
+
 class JointPlanPolicyHead(nn.Module):
-    """Autoregressive action scorer conditioned on board state and chosen prefix."""
+    """Legacy V1/V2 autoregressive scorer using only globally pooled state."""
 
     def __init__(
         self,
@@ -377,4 +408,199 @@ class JointPlanPolicyHead(nn.Module):
         context = torch.cat(
             [state_features.expand(count, -1), prefix_state.expand(count, -1), candidates], dim=1
         )
+        return self.scorer(context).squeeze(1)
+
+
+class SpatialEntityJointPlanPolicyHead(nn.Module):
+    """V3 policy: distinct unit entities plus candidate-conditioned attention over all hexes.
+
+    No action-mechanics features (AOE, damage, legal escapes, etc.) are supplied. The
+    policy must learn relevant spatial relationships from state/action supervision.
+    """
+
+    def __init__(
+        self,
+        state_feature_size: int,
+        spatial_feature_size: int,
+        action_vocab_size: int,
+        unit_vocab_size: int,
+        max_radius: int = 5,
+        token_dim: int = 16,
+        action_hidden: int = 32,
+        prefix_hidden: int = 32,
+        entity_dim: int = 32,
+        relation_dim: int = 8,
+        spatial_hidden: int = 32,
+        attention_dim: int = 32,
+        spatial_context_dim: int = 32,
+    ) -> None:
+        super().__init__()
+        self.max_radius = max(1, int(max_radius))
+        self.action_embedding = nn.Embedding(action_vocab_size, token_dim)
+        self.action_unit_embedding = nn.Embedding(unit_vocab_size, token_dim)
+        self.action_numeric = nn.Sequential(
+            nn.Linear(ActionFeaturizer.NUMERIC_FEATURES, token_dim),
+            nn.ReLU(inplace=True),
+        )
+        self.action_encoder = nn.Sequential(
+            nn.Linear(token_dim * 3, action_hidden),
+            nn.ReLU(inplace=True),
+        )
+        self.prefix_gru = nn.GRU(action_hidden, prefix_hidden, batch_first=True)
+
+        self.entity_unit_embedding = nn.Embedding(unit_vocab_size, token_dim)
+        self.entity_relation_embedding = nn.Embedding(UnitEntityFeaturizer.RELATION_COUNT, relation_dim)
+        self.entity_numeric = nn.Sequential(
+            nn.Linear(UnitEntityFeaturizer.NUMERIC_FEATURES, token_dim),
+            nn.ReLU(inplace=True),
+        )
+        self.entity_encoder = nn.Sequential(
+            nn.Linear(token_dim * 2 + relation_dim, entity_dim),
+            nn.ReLU(inplace=True),
+        )
+
+        self.spatial_projector = nn.Sequential(
+            nn.Linear(spatial_feature_size + entity_dim + 2, spatial_hidden),
+            nn.ReLU(inplace=True),
+        )
+        query_input = action_hidden + prefix_hidden + entity_dim
+        self.query = nn.Linear(query_input, attention_dim)
+        self.keys = nn.Linear(spatial_hidden, attention_dim)
+        self.values = nn.Linear(spatial_hidden, spatial_context_dim)
+        self.scorer = nn.Sequential(
+            nn.Linear(
+                state_feature_size + prefix_hidden + action_hidden + entity_dim + spatial_context_dim,
+                64,
+            ),
+            nn.ReLU(inplace=True),
+            nn.Linear(64, 1),
+        )
+        self.prefix_hidden = prefix_hidden
+        self.entity_dim = entity_dim
+        self.attention_dim = attention_dim
+
+    def encode_actions(
+        self,
+        action_ids: torch.Tensor,
+        unit_ids: torch.Tensor,
+        numeric: torch.Tensor,
+    ) -> torch.Tensor:
+        return self.action_encoder(torch.cat([
+            self.action_embedding(action_ids),
+            self.action_unit_embedding(unit_ids),
+            self.action_numeric(numeric),
+        ], dim=-1))
+
+    def encode_entities(
+        self,
+        entity_type_ids: torch.Tensor,
+        entity_relation_ids: torch.Tensor,
+        entity_numeric: torch.Tensor,
+    ) -> torch.Tensor:
+        if entity_type_ids.numel() == 0:
+            return entity_numeric.new_zeros((0, self.entity_dim))
+        return self.entity_encoder(torch.cat([
+            self.entity_unit_embedding(entity_type_ids),
+            self.entity_relation_embedding(entity_relation_ids),
+            self.entity_numeric(entity_numeric),
+        ], dim=-1))
+
+    def _prefix_state(
+        self,
+        state_features: torch.Tensor,
+        prefix_action_ids: torch.Tensor,
+        prefix_unit_ids: torch.Tensor,
+        prefix_numeric: torch.Tensor,
+    ) -> torch.Tensor:
+        if prefix_action_ids.numel() == 0:
+            return state_features.new_zeros((1, self.prefix_hidden))
+        encoded = self.encode_actions(prefix_action_ids, prefix_unit_ids, prefix_numeric).unsqueeze(0)
+        _, hidden = self.prefix_gru(encoded)
+        return hidden[-1]
+
+    def _spatial_tokens(
+        self,
+        spatial_features: torch.Tensor,
+        entity_vectors: torch.Tensor,
+        entity_rows: torch.Tensor,
+        entity_cols: torch.Tensor,
+    ) -> torch.Tensor:
+        if spatial_features.ndim != 4 or spatial_features.size(0) != 1:
+            raise ValueError("spatial_features must have shape [1, channels, height, width]")
+        _, _, height, width = spatial_features.shape
+        backbone = spatial_features[0].permute(1, 2, 0).reshape(height * width, -1)
+        scattered = spatial_features.new_zeros((height * width, self.entity_dim))
+        if entity_vectors.numel():
+            flat_indices = entity_rows * width + entity_cols
+            scattered.index_add_(0, flat_indices, entity_vectors)
+
+        row_grid, col_grid = torch.meshgrid(
+            torch.arange(height, device=spatial_features.device, dtype=spatial_features.dtype),
+            torch.arange(width, device=spatial_features.device, dtype=spatial_features.dtype),
+            indexing="ij",
+        )
+        scale = float(self.max_radius)
+        coordinates = torch.stack([
+            (col_grid.reshape(-1) - self.max_radius) / scale,
+            (row_grid.reshape(-1) - self.max_radius) / scale,
+        ], dim=1)
+        return self.spatial_projector(torch.cat([backbone, scattered, coordinates], dim=1))
+
+    def forward(
+        self,
+        state_features: torch.Tensor,
+        spatial_features: torch.Tensor,
+        valid_mask: torch.Tensor,
+        entity_type_ids: torch.Tensor,
+        entity_relation_ids: torch.Tensor,
+        entity_numeric: torch.Tensor,
+        entity_rows: torch.Tensor,
+        entity_cols: torch.Tensor,
+        prefix_action_ids: torch.Tensor,
+        prefix_unit_ids: torch.Tensor,
+        prefix_numeric: torch.Tensor,
+        candidate_action_ids: torch.Tensor,
+        candidate_unit_ids: torch.Tensor,
+        candidate_numeric: torch.Tensor,
+        candidate_entity_indices: torch.Tensor,
+    ) -> torch.Tensor:
+        if state_features.ndim != 2 or state_features.size(0) != 1:
+            raise ValueError("state_features must have shape [1, features]")
+        if valid_mask.ndim != 4 or valid_mask.size(0) != 1 or valid_mask.size(1) != 1:
+            raise ValueError("valid_mask must have shape [1, 1, height, width]")
+
+        prefix_state = self._prefix_state(state_features, prefix_action_ids, prefix_unit_ids, prefix_numeric)
+        candidates = self.encode_actions(candidate_action_ids, candidate_unit_ids, candidate_numeric)
+        entity_vectors = self.encode_entities(entity_type_ids, entity_relation_ids, entity_numeric)
+        count = candidates.size(0)
+
+        actor_vectors = state_features.new_zeros((count, self.entity_dim))
+        if entity_vectors.size(0):
+            valid_actor = (candidate_entity_indices >= 0) & (candidate_entity_indices < entity_vectors.size(0))
+            safe_indices = candidate_entity_indices.clamp(0, entity_vectors.size(0) - 1)
+            actor_vectors = entity_vectors[safe_indices] * valid_actor.to(entity_vectors.dtype).unsqueeze(1)
+
+        spatial_tokens = self._spatial_tokens(
+            spatial_features, entity_vectors, entity_rows, entity_cols
+        )
+        prefix_expanded = prefix_state.expand(count, -1)
+        query_input = torch.cat([candidates, prefix_expanded, actor_vectors], dim=1)
+        queries = self.query(query_input)
+        keys = self.keys(spatial_tokens)
+        values = self.values(spatial_tokens)
+        attention_logits = queries @ keys.transpose(0, 1) / math.sqrt(float(self.attention_dim))
+        valid_cells = valid_mask[0, 0].reshape(-1).bool()
+        if not bool(valid_cells.any()):
+            raise ValueError("spatial policy requires at least one valid hex")
+        attention_logits = attention_logits.masked_fill(~valid_cells.unsqueeze(0), torch.finfo(attention_logits.dtype).min)
+        attention = torch.softmax(attention_logits, dim=1)
+        spatial_context = attention @ values
+
+        context = torch.cat([
+            state_features.expand(count, -1),
+            prefix_expanded,
+            candidates,
+            actor_vectors,
+            spatial_context,
+        ], dim=1)
         return self.scorer(context).squeeze(1)
