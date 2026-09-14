@@ -1,0 +1,27 @@
+name: MCTS Self-Play V1 Smoke
+
+on:
+  push:
+    branches: [ai/mcts-self-play-v1]
+    paths: [.github/mcts-self-play-v1-smoke-trigger]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Compile new trainer
+        run: python -m py_compile ml/value_model/train_mcts_self_play_v1.py ml/value_model/robust_policy_targets.py ml/tests/test_robust_policy_ties.py
+      - name: Run focused policy tests
+        run: |
+          python -m unittest ml.tests.test_robust_policy_ties -v
+          python -m unittest ml.tests.test_mcts_visit_policy_targets -v
+          python -m unittest ml.tests.test_spatial_entity_policy -v
