@@ -12,8 +12,9 @@ import torch.nn.functional as F
 from .data import HexStateEncoder, SCHEMA_VERSION
 from .joint_plan_policy import (
     ActionFeaturizer,
-    JointPlanPolicyHead,
     PolicyExample,
+    SpatialEntityJointPlanPolicyHead,
+    UnitEntityFeaturizer,
     build_policy_examples,
     build_vocab,
 )
@@ -89,17 +90,18 @@ def _request_example(example: PolicyExample) -> dict[str, Any]:
     }
 
 
-def _state_features(
+def _state_inputs(
     value_model: HexValueNet,
     encoder: HexStateEncoder,
     example: PolicyExample,
     device: torch.device,
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     encoded = encoder.encode(_request_example(example))
     board = encoded.board.unsqueeze(0).to(device)
     globals_ = encoded.global_features.unsqueeze(0).to(device)
     with torch.no_grad():
-        return value_model._features(board, globals_).detach()
+        spatial, valid_mask, state_features = value_model.encode_spatial(board, globals_)
+    return state_features.detach(), spatial.detach(), valid_mask.detach()
 
 
 def _action_tensors(
@@ -122,24 +124,88 @@ def _action_tensors(
     )
 
 
+def _entity_tensors(
+    featurizer: UnitEntityFeaturizer,
+    state: dict[str, Any],
+    perspective_group: str,
+    device: torch.device,
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    dict[int, int],
+]:
+    rows = featurizer.encode(state, perspective_group)
+    if not rows:
+        return (
+            torch.empty((0,), dtype=torch.long, device=device),
+            torch.empty((0,), dtype=torch.long, device=device),
+            torch.empty((0, UnitEntityFeaturizer.NUMERIC_FEATURES), dtype=torch.float32, device=device),
+            torch.empty((0,), dtype=torch.long, device=device),
+            torch.empty((0,), dtype=torch.long, device=device),
+            {},
+        )
+    unit_to_index = {row[0]: index for index, row in enumerate(rows)}
+    return (
+        torch.tensor([row[1] for row in rows], dtype=torch.long, device=device),
+        torch.tensor([row[2] for row in rows], dtype=torch.long, device=device),
+        torch.tensor([row[3] for row in rows], dtype=torch.float32, device=device),
+        torch.tensor([row[4][1] + featurizer.max_radius for row in rows], dtype=torch.long, device=device),
+        torch.tensor([row[4][0] + featurizer.max_radius for row in rows], dtype=torch.long, device=device),
+        unit_to_index,
+    )
+
+
+def _candidate_entity_indices(
+    actions: tuple[dict[str, Any], ...], unit_to_index: dict[int, int], device: torch.device
+) -> torch.Tensor:
+    return torch.tensor(
+        [unit_to_index.get(int(action.get("unit_id", -1)), -1) for action in actions],
+        dtype=torch.long,
+        device=device,
+    )
+
+
 def _score_example(
-    head: JointPlanPolicyHead,
+    head: SpatialEntityJointPlanPolicyHead,
     value_model: HexValueNet,
     encoder: HexStateEncoder,
-    featurizer: ActionFeaturizer,
+    action_featurizer: ActionFeaturizer,
+    entity_featurizer: UnitEntityFeaturizer,
     example: PolicyExample,
     device: torch.device,
 ) -> torch.Tensor:
-    prefix = _action_tensors(featurizer, example.state, example.prefix_actions, device)
-    candidates = _action_tensors(featurizer, example.state, example.candidate_actions, device)
-    return head(_state_features(value_model, encoder, example, device), *prefix, *candidates)
+    state_features, spatial_features, valid_mask = _state_inputs(value_model, encoder, example, device)
+    prefix = _action_tensors(action_featurizer, example.state, example.prefix_actions, device)
+    candidates = _action_tensors(action_featurizer, example.state, example.candidate_actions, device)
+    entity_tensors = _entity_tensors(
+        entity_featurizer, example.state, example.perspective_group, device
+    )
+    entity_type_ids, entity_relation_ids, entity_numeric, entity_rows, entity_cols, unit_to_index = entity_tensors
+    candidate_entities = _candidate_entity_indices(example.candidate_actions, unit_to_index, device)
+    return head(
+        state_features,
+        spatial_features,
+        valid_mask,
+        entity_type_ids,
+        entity_relation_ids,
+        entity_numeric,
+        entity_rows,
+        entity_cols,
+        *prefix,
+        *candidates,
+        candidate_entities,
+    )
 
 
 def _accuracy(
-    head: JointPlanPolicyHead,
+    head: SpatialEntityJointPlanPolicyHead,
     value_model: HexValueNet,
     encoder: HexStateEncoder,
-    featurizer: ActionFeaturizer,
+    action_featurizer: ActionFeaturizer,
+    entity_featurizer: UnitEntityFeaturizer,
     examples: list[PolicyExample],
     device: torch.device,
 ) -> float:
@@ -149,7 +215,9 @@ def _accuracy(
     head.eval()
     with torch.no_grad():
         for example in examples:
-            logits = _score_example(head, value_model, encoder, featurizer, example, device)
+            logits = _score_example(
+                head, value_model, encoder, action_featurizer, entity_featurizer, example, device
+            )
             correct += int(int(logits.argmax().item()) == example.target_index)
     return correct / len(examples)
 
@@ -192,15 +260,24 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     encoder = make_encoder(checkpoint["model_config"].get("encoder_version", 1))
     value_model = _load_value_model(checkpoint, device)
     config = checkpoint["model_config"]
-    state_feature_size = int(config["hidden_channels"]) + encoder.global_features
-    featurizer = ActionFeaturizer(action_vocab, unit_vocab, max_radius=encoder.max_radius)
-    head = JointPlanPolicyHead(
+    spatial_feature_size = int(config["hidden_channels"])
+    state_feature_size = spatial_feature_size + encoder.global_features
+    action_featurizer = ActionFeaturizer(action_vocab, unit_vocab, max_radius=encoder.max_radius)
+    entity_featurizer = UnitEntityFeaturizer(unit_vocab, max_radius=encoder.max_radius)
+    head = SpatialEntityJointPlanPolicyHead(
         state_feature_size=state_feature_size,
+        spatial_feature_size=spatial_feature_size,
         action_vocab_size=len(action_vocab),
         unit_vocab_size=len(unit_vocab),
+        max_radius=encoder.max_radius,
         token_dim=args.token_dim,
         action_hidden=args.action_hidden,
         prefix_hidden=args.prefix_hidden,
+        entity_dim=args.entity_dim,
+        relation_dim=args.relation_dim,
+        spatial_hidden=args.spatial_hidden,
+        attention_dim=args.attention_dim,
+        spatial_context_dim=args.spatial_context_dim,
     ).to(device)
     optimizer = torch.optim.AdamW(head.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 
@@ -212,7 +289,9 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         pending = 0
         for index in order:
             example = train_examples[index]
-            logits = _score_example(head, value_model, encoder, featurizer, example, device)
+            logits = _score_example(
+                head, value_model, encoder, action_featurizer, entity_featurizer, example, device
+            )
             loss = _policy_loss(logits, example) / float(args.accumulate_groups)
             loss.backward()
             pending += 1
@@ -237,10 +316,16 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         "soft_visit_prefix_examples": soft_examples,
         "train_examples": len(train_examples),
         "eval_examples": len(eval_examples),
-        "train_top1_accuracy": _accuracy(head, value_model, encoder, featurizer, train_examples, device),
-        "eval_top1_accuracy": _accuracy(head, value_model, encoder, featurizer, eval_examples, device),
+        "train_top1_accuracy": _accuracy(
+            head, value_model, encoder, action_featurizer, entity_featurizer, train_examples, device
+        ),
+        "eval_top1_accuracy": _accuracy(
+            head, value_model, encoder, action_featurizer, entity_featurizer, eval_examples, device
+        ),
         "action_vocab_size": len(action_vocab),
         "unit_vocab_size": len(unit_vocab),
+        "policy_parameters": sum(parameter.numel() for parameter in head.parameters()),
+        "architecture": "spatial_entity_attention_v1",
     }
 
     target_kind = "mcts_visit_distribution" if mcts_rows and not robust_rows else (
@@ -248,15 +333,23 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     )
     output = dict(checkpoint)
     output["joint_plan_policy_config"] = {
-        "version": 2,
+        "version": 3,
+        "architecture": "spatial_entity_attention_v1",
         "state_feature_size": state_feature_size,
+        "spatial_feature_size": spatial_feature_size,
         "action_vocab": action_vocab,
         "unit_vocab": unit_vocab,
         "max_radius": encoder.max_radius,
         "token_dim": args.token_dim,
         "action_hidden": args.action_hidden,
         "prefix_hidden": args.prefix_hidden,
+        "entity_dim": args.entity_dim,
+        "relation_dim": args.relation_dim,
+        "spatial_hidden": args.spatial_hidden,
+        "attention_dim": args.attention_dim,
+        "spatial_context_dim": args.spatial_context_dim,
         "target": target_kind,
+        "explicit_action_mechanics": False,
     }
     output["joint_plan_policy_state_dict"] = head.state_dict()
     output["joint_plan_policy_metrics"] = metrics
@@ -268,6 +361,8 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         "search_decisions": [str(path) for path in args.search_decisions],
         "split_aligned_with_value_model": heldout_ids is not None,
         "supports_soft_mcts_visit_targets": True,
+        "spatial_entity_policy": True,
+        "explicit_action_mechanics": False,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     torch.save(output, args.output)
@@ -276,7 +371,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Train autoregressive joint-plan policy from robust search or MCTS visits")
+    parser = argparse.ArgumentParser(description="Train spatial/entity autoregressive policy from robust search or MCTS visits")
     parser.add_argument("--base-checkpoint", type=Path, required=True)
     parser.add_argument("--search-decisions", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -288,6 +383,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--token-dim", type=int, default=16)
     parser.add_argument("--action-hidden", type=int, default=32)
     parser.add_argument("--prefix-hidden", type=int, default=32)
+    parser.add_argument("--entity-dim", type=int, default=32)
+    parser.add_argument("--relation-dim", type=int, default=8)
+    parser.add_argument("--spatial-hidden", type=int, default=32)
+    parser.add_argument("--attention-dim", type=int, default=32)
+    parser.add_argument("--spatial-context-dim", type=int, default=32)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cpu")
     return parser
