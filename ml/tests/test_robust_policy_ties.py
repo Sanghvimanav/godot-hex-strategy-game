@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import unittest
 
-from ml.value_model.action_utils import action_signature if False else None
 from ml.value_model.robust_policy_targets import build_tie_aware_search_distillation_examples
 
 
