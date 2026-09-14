@@ -20,7 +20,7 @@ env:
 jobs:
   candidate_train:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -39,22 +39,41 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          rows = [json.loads(x) for x in Path('baseline-artifact/combined/search_decisions.jsonl').read_text().splitlines() if x.strip()]
+          decisions_path = Path('baseline-artifact/combined/search_decisions.jsonl')
+          examples_path = Path('baseline-artifact/combined/examples.jsonl')
+          assert decisions_path.exists(), decisions_path
+          assert examples_path.exists(), examples_path
+          rows = [json.loads(x) for x in decisions_path.read_text().splitlines() if x.strip()]
+          examples = [json.loads(x) for x in examples_path.read_text().splitlines() if x.strip()]
           assert len(rows) == 144, len(rows)
+          assert examples, 'cold-start backbone requires frozen value examples'
           assert all(not r.get('mcts_visit_distribution') for r in rows), 'V1 architecture isolation must use robust supervision only'
           rotations = {r.get('source', {}).get('rotation_steps') for r in rows}
           assert rotations <= {0, 2, 4}, rotations
-          print(json.dumps({'robust_decisions': len(rows), 'training_rotations': sorted(x for x in rotations if x is not None)}))
+          print(json.dumps({
+              'robust_decisions': len(rows),
+              'value_examples': len(examples),
+              'training_rotations': sorted(x for x in rotations if x is not None),
+              'initialization': 'cold_start',
+          }))
           PY
-      - name: Train spatial entity policy V1
+      - name: Train fresh value backbone from frozen data
         run: |
           mkdir -p artifacts/candidate
+          python -m ml.value_model.train \
+            --data=baseline-artifact/combined/examples.jsonl \
+            --output=artifacts/candidate/fresh_value_model.pt \
+            --encoder-version=3 --epochs=25 --batch-size=32 \
+            --hidden-channels=16 --residual-blocks=1 \
+            --split-key=source.rotation_steps --validation-fraction=0
+      - name: Train spatial entity policy V1 from fresh backbone
+        run: |
           python -m ml.value_model.train_joint_plan_policy \
-            --base-checkpoint=baseline-artifact/final/basic_self_play_model.pt \
+            --base-checkpoint=artifacts/candidate/fresh_value_model.pt \
             --search-decisions=baseline-artifact/combined/search_decisions.jsonl \
             --output=artifacts/candidate/spatial_policy_v1_model.pt \
             --epochs=25 --validation-fraction=0.2 --seed=0 --device=cpu
-      - name: Audit architecture and runtime
+      - name: Audit cold-start architecture and runtime
         run: |
           python - <<'PY'
           import json, subprocess, torch
@@ -62,11 +81,14 @@ jobs:
           checkpoint = torch.load('artifacts/candidate/spatial_policy_v1_model.pt', map_location='cpu', weights_only=False)
           config = checkpoint['joint_plan_policy_config']
           metrics = checkpoint['joint_plan_policy_metrics']
+          training = checkpoint['joint_plan_training_config']
           assert config['version'] == 3, config
           assert config['architecture'] == 'spatial_entity_attention_v1', config
           assert config['explicit_action_mechanics'] is False, config
           assert metrics['robust_distillation_decisions'] == 144, metrics
           assert metrics['mcts_visit_decisions'] == 0, metrics
+          assert training['backbone_frozen'] is True, training
+          assert training['base_checkpoint'] == 'artifacts/candidate/fresh_value_model.pt', training
           proc = subprocess.run(
               ['python', 'hex-strategy-game/tools/neural_value_runtime.py', '--checkpoint', 'artifacts/candidate/spatial_policy_v1_model.pt'],
               input='', text=True, capture_output=True, timeout=20,
@@ -75,9 +97,21 @@ jobs:
           assert ready.get('ready') is True, (ready, proc.stderr)
           assert ready.get('joint_plan_policy') is True, ready
           assert ready.get('joint_plan_policy_spatial_entities') is True, ready
+          initialization = {
+              'mode': 'cold_start',
+              'source_run_id': 34784986112,
+              'source_data_reused': True,
+              'source_checkpoint_weights_reused': False,
+              'value_backbone': 'random_init_then_trained_in_this_run',
+              'spatial_policy_head': 'random_init_then_trained_in_this_run',
+              'value_training_epochs': 25,
+              'policy_training_epochs': 25,
+              'seed': 0,
+          }
           Path('artifacts/candidate/policy_metrics.json').write_text(json.dumps(metrics, indent=2) + '\n')
           Path('artifacts/candidate/runtime_ready.json').write_text(json.dumps(ready, indent=2) + '\n')
-          print(json.dumps({'runtime': ready, 'metrics': metrics}, sort_keys=True))
+          Path('artifacts/candidate/initialization.json').write_text(json.dumps(initialization, indent=2) + '\n')
+          print(json.dumps({'initialization': initialization, 'runtime': ready, 'metrics': metrics}, sort_keys=True))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
@@ -248,10 +282,12 @@ jobs:
           baseline = json.loads(Path('diagnostics/baseline/baseline_m2z1.json').read_text())
           candidate = json.loads(Path('diagnostics/candidate/candidate_m2z1.json').read_text())
           metrics = json.loads(Path('candidate/policy_metrics.json').read_text())
+          initialization = json.loads(Path('candidate/initialization.json').read_text())
           summary = {
               'source_run_id': 34784986112,
               'architecture': 'spatial_entity_attention_v1',
               'explicit_action_mechanics': False,
+              'initialization': initialization,
               'training': metrics,
               'reference_random': {'neural': 30, 'handwritten': 27, 'unresolved': 15},
               'reference_counterfactual': {'neural': 12, 'handwritten': 6, 'unresolved': 0},
