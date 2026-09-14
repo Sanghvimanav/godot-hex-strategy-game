@@ -20,6 +20,7 @@ const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural
 const DEFAULT_SIMULATIONS := 24
 const DEFAULT_C_PUCT := 1.5
 const DEFAULT_ROLLOUT_DEPTH := 3
+const MIN_POST_COVERAGE_SIMULATIONS := 8
 
 
 static func choose_plan(
@@ -94,7 +95,13 @@ static func choose_plan(
 			_update_edge(edges, edge_index, float(rollout.get("value", 0.0)))
 
 		var simulations_run := edges.size()
-		var simulations_target := maxi(requested_simulations, edges.size())
+		# Coverage visits are deliberately not allowed to consume the entire search.
+		# Every prefix receives a real prior-guided PUCT phase after all legal actions
+		# have been seen once, so the visit distribution can express a preference.
+		var simulations_target := maxi(
+			requested_simulations,
+			edges.size() + MIN_POST_COVERAGE_SIMULATIONS
+		)
 		while simulations_run < simulations_target:
 			var selected_index := _select_puct(edges, simulations_run, c_puct)
 			if selected_index < 0:
@@ -129,6 +136,7 @@ static func choose_plan(
 		var legal_count := candidates.size()
 		var exposure_coverage := float(exposed_count) / float(maxi(1, legal_count))
 		var visit_coverage := float(visited_count) / float(maxi(1, legal_count))
+		var post_coverage_puct_visits := simulations_run - legal_count
 		min_exposure_coverage = minf(min_exposure_coverage, exposure_coverage)
 		min_visit_coverage = minf(min_visit_coverage, visit_coverage)
 		zero_visit_count += zero_visit_actions.size()
@@ -141,6 +149,15 @@ static func choose_plan(
 				"exposed": exposed_count,
 				"visited": visited_count,
 				"zero_visit_actions": zero_visit_actions,
+			}
+		if post_coverage_puct_visits < MIN_POST_COVERAGE_SIMULATIONS:
+			return {
+				"valid": false,
+				"error": "insufficient_post_coverage_puct",
+				"unit_id": unit_id,
+				"legal": legal_count,
+				"simulations_run": simulations_run,
+				"post_coverage_puct_visits": post_coverage_puct_visits,
 			}
 
 		var selected_action := _best_edge_action(edges)
@@ -188,6 +205,8 @@ static func choose_plan(
 			"puct_simulations_requested": requested_simulations,
 			"puct_simulations_run": simulations_run,
 			"forced_coverage_visits": legal_count,
+			"post_coverage_puct_visits": post_coverage_puct_visits,
+			"minimum_post_coverage_puct_visits": MIN_POST_COVERAGE_SIMULATIONS,
 			"puct_c": c_puct,
 			"rollout_depth": rollout_depth,
 			"prior_entropy": _entropy(prior_probabilities),
