@@ -17,9 +17,17 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from ml.value_model.data import SCHEMA_VERSION, HexStateEncoder
-from ml.value_model.joint_plan_policy import ActionFeaturizer, JointPlanPolicyHead
+from ml.value_model.joint_plan_policy import (
+    ActionFeaturizer,
+    JointPlanPolicyHead,
+    SpatialEntityJointPlanPolicyHead,
+    UnitEntityFeaturizer,
+)
 from ml.value_model.model import HexValueNet
 from ml.value_model.strategic_state import make_encoder
+
+
+JointPolicy = JointPlanPolicyHead | SpatialEntityJointPlanPolicyHead
 
 
 def load_model(
@@ -76,32 +84,55 @@ def load_joint_policy(
     checkpoint_path: str | Path,
     encoder: HexStateEncoder,
     device: torch.device,
-) -> tuple[JointPlanPolicyHead | None, ActionFeaturizer | None]:
+) -> tuple[JointPolicy | None, ActionFeaturizer | None, UnitEntityFeaturizer | None]:
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
     config = checkpoint.get("joint_plan_policy_config")
     state = checkpoint.get("joint_plan_policy_state_dict")
     if not isinstance(config, dict) or not isinstance(state, dict):
-        return None, None
-    # V2 changed only the supervision metadata to support soft MCTS visit targets;
-    # the inference architecture and serialized head tensors are unchanged from V1.
-    if int(config.get("version", 0)) not in {1, 2}:
+        return None, None, None
+    version = int(config.get("version", 0))
+    if version not in {1, 2, 3}:
         raise ValueError("unsupported joint-plan policy version")
     action_vocab = [str(item) for item in config.get("action_vocab", [])]
     unit_vocab = [str(item) for item in config.get("unit_vocab", [])]
     if not action_vocab or not unit_vocab:
         raise ValueError("joint-plan policy vocab is empty")
-    head = JointPlanPolicyHead(
-        state_feature_size=int(config["state_feature_size"]),
-        action_vocab_size=len(action_vocab),
-        unit_vocab_size=len(unit_vocab),
-        token_dim=int(config.get("token_dim", 16)),
-        action_hidden=int(config.get("action_hidden", 32)),
-        prefix_hidden=int(config.get("prefix_hidden", 32)),
-    ).to(device)
+
+    max_radius = int(config.get("max_radius", encoder.max_radius))
+    if version in {1, 2}:
+        # V2 changed supervision metadata only; architecture is identical to V1.
+        head: JointPolicy = JointPlanPolicyHead(
+            state_feature_size=int(config["state_feature_size"]),
+            action_vocab_size=len(action_vocab),
+            unit_vocab_size=len(unit_vocab),
+            token_dim=int(config.get("token_dim", 16)),
+            action_hidden=int(config.get("action_hidden", 32)),
+            prefix_hidden=int(config.get("prefix_hidden", 32)),
+        ).to(device)
+        entity_featurizer = None
+    else:
+        if str(config.get("architecture", "")) != "spatial_entity_attention_v1":
+            raise ValueError("unsupported V3 joint-plan policy architecture")
+        head = SpatialEntityJointPlanPolicyHead(
+            state_feature_size=int(config["state_feature_size"]),
+            spatial_feature_size=int(config["spatial_feature_size"]),
+            action_vocab_size=len(action_vocab),
+            unit_vocab_size=len(unit_vocab),
+            max_radius=max_radius,
+            token_dim=int(config.get("token_dim", 16)),
+            action_hidden=int(config.get("action_hidden", 32)),
+            prefix_hidden=int(config.get("prefix_hidden", 32)),
+            entity_dim=int(config.get("entity_dim", 32)),
+            relation_dim=int(config.get("relation_dim", 8)),
+            spatial_hidden=int(config.get("spatial_hidden", 32)),
+            attention_dim=int(config.get("attention_dim", 32)),
+            spatial_context_dim=int(config.get("spatial_context_dim", 32)),
+        ).to(device)
+        entity_featurizer = UnitEntityFeaturizer(unit_vocab, max_radius=max_radius)
     head.load_state_dict(state)
     head.eval()
-    featurizer = ActionFeaturizer(action_vocab, unit_vocab, int(config.get("max_radius", encoder.max_radius)))
-    return head, featurizer
+    action_featurizer = ActionFeaturizer(action_vocab, unit_vocab, max_radius)
+    return head, action_featurizer, entity_featurizer
 
 
 def request_example(request: dict[str, Any]) -> dict[str, Any]:
@@ -171,10 +202,55 @@ def _action_tensors(
     )
 
 
+def _entity_tensors(
+    featurizer: UnitEntityFeaturizer,
+    state: dict[str, Any],
+    perspective_group: str,
+    device: torch.device,
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    dict[int, int],
+]:
+    rows = featurizer.encode(state, perspective_group)
+    if not rows:
+        return (
+            torch.empty((0,), dtype=torch.long, device=device),
+            torch.empty((0,), dtype=torch.long, device=device),
+            torch.empty((0, UnitEntityFeaturizer.NUMERIC_FEATURES), dtype=torch.float32, device=device),
+            torch.empty((0,), dtype=torch.long, device=device),
+            torch.empty((0,), dtype=torch.long, device=device),
+            {},
+        )
+    unit_to_index = {row[0]: index for index, row in enumerate(rows)}
+    return (
+        torch.tensor([row[1] for row in rows], dtype=torch.long, device=device),
+        torch.tensor([row[2] for row in rows], dtype=torch.long, device=device),
+        torch.tensor([row[3] for row in rows], dtype=torch.float32, device=device),
+        torch.tensor([row[4][1] + featurizer.max_radius for row in rows], dtype=torch.long, device=device),
+        torch.tensor([row[4][0] + featurizer.max_radius for row in rows], dtype=torch.long, device=device),
+        unit_to_index,
+    )
+
+
+def _candidate_entity_indices(
+    actions: list[dict[str, Any]], unit_to_index: dict[int, int], device: torch.device
+) -> torch.Tensor:
+    return torch.tensor(
+        [unit_to_index.get(int(action.get("unit_id", -1)), -1) for action in actions],
+        dtype=torch.long,
+        device=device,
+    )
+
+
 def score_joint_actions(
     value_model: HexValueNet,
-    joint_policy: JointPlanPolicyHead,
-    featurizer: ActionFeaturizer,
+    joint_policy: JointPolicy,
+    action_featurizer: ActionFeaturizer,
+    entity_featurizer: UnitEntityFeaturizer | None,
     encoder: HexStateEncoder,
     request: dict[str, Any],
     device: torch.device,
@@ -188,14 +264,38 @@ def score_joint_actions(
         raise ValueError("candidate_actions must be a non-empty array of objects")
     if not all(isinstance(action, dict) for action in prefix):
         raise ValueError("prefix_actions must contain objects")
-    encoded = encoder.encode(request_example(request))
+
+    request_row = request_example(request)
+    encoded = encoder.encode(request_row)
     board = encoded.board.unsqueeze(0).to(device)
     globals_ = encoded.global_features.unsqueeze(0).to(device)
     with torch.no_grad():
-        state_features = value_model._features(board, globals_)
-        prefix_tensors = _action_tensors(featurizer, state, prefix, device)
-        candidate_tensors = _action_tensors(featurizer, state, candidates, device)
-        logits = joint_policy(state_features, *prefix_tensors, *candidate_tensors)
+        prefix_tensors = _action_tensors(action_featurizer, state, prefix, device)
+        candidate_tensors = _action_tensors(action_featurizer, state, candidates, device)
+        if isinstance(joint_policy, SpatialEntityJointPlanPolicyHead):
+            if entity_featurizer is None:
+                raise ValueError("spatial/entity policy is missing entity featurizer")
+            spatial, valid_mask, state_features = value_model.encode_spatial(board, globals_)
+            entity_type_ids, entity_relation_ids, entity_numeric, entity_rows, entity_cols, unit_to_index = _entity_tensors(
+                entity_featurizer, state, str(request_row["perspective_group"]), device
+            )
+            candidate_entities = _candidate_entity_indices(candidates, unit_to_index, device)
+            logits = joint_policy(
+                state_features,
+                spatial,
+                valid_mask,
+                entity_type_ids,
+                entity_relation_ids,
+                entity_numeric,
+                entity_rows,
+                entity_cols,
+                *prefix_tensors,
+                *candidate_tensors,
+                candidate_entities,
+            )
+        else:
+            state_features = value_model._features(board, globals_)
+            logits = joint_policy(state_features, *prefix_tensors, *candidate_tensors)
     return [float(value.item()) for value in logits]
 
 
@@ -207,7 +307,9 @@ def main() -> int:
     device = torch.device("cpu")
     try:
         model, encoder, search_head = load_model(args.checkpoint, device)
-        joint_policy, joint_featurizer = load_joint_policy(args.checkpoint, encoder, device)
+        joint_policy, joint_action_featurizer, joint_entity_featurizer = load_joint_policy(
+            args.checkpoint, encoder, device
+        )
     except Exception as exc:
         print(json.dumps({"ready": False, "error": f"{type(exc).__name__}: {exc}"}), flush=True)
         return 2
@@ -220,6 +322,7 @@ def main() -> int:
         "search_head": search_head,
         "policy_head": model.policy_head is not None,
         "joint_plan_policy": joint_policy is not None,
+        "joint_plan_policy_spatial_entities": isinstance(joint_policy, SpatialEntityJointPlanPolicyHead),
     }), flush=True)
 
     for raw_line in sys.stdin:
@@ -231,11 +334,19 @@ def main() -> int:
             if not isinstance(request, dict):
                 raise ValueError("request must be an object")
             if str(request.get("op", "")) == "score_joint_actions":
-                if joint_policy is None or joint_featurizer is None:
+                if joint_policy is None or joint_action_featurizer is None:
                     response = {"ok": False, "unsupported": True, "error": "joint_plan_policy_unavailable"}
                 else:
                     started = time.perf_counter()
-                    scores = score_joint_actions(model, joint_policy, joint_featurizer, encoder, request, device)
+                    scores = score_joint_actions(
+                        model,
+                        joint_policy,
+                        joint_action_featurizer,
+                        joint_entity_featurizer,
+                        encoder,
+                        request,
+                        device,
+                    )
                     response = {
                         "ok": True,
                         "scores": scores,
