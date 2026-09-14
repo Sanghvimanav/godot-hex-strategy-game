@@ -1,0 +1,407 @@
+name: MCTS Self-Play V1 Experiment
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/mcts-self-play-v1]
+    paths: [.github/mcts-self-play-v1-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: mcts-self-play-v1-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CHAMPION_RUN_ID: '34799925923'
+
+jobs:
+  generate_g0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        rotation: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: champion
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.CHAMPION_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Generate full-coverage tiny MCTS self-play
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/tiny_mcts_self_play.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/champion/spatial_policy_v1_model.pt" \
+            --rotation=${{ matrix.rotation }} --repetitions=1 \
+            --puct-simulations=12 --rollout-depth=2 --puct-c=1.5 \
+            --generation=g0 --seed-base=420000 \
+            --out="$GITHUB_WORKSPACE/artifacts/g0"
+      - name: Assert shard coverage
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m = json.loads(Path('artifacts/g0/manifest.json').read_text())
+          assert m['coverage_ok'] is True, m
+          assert m['minimum_exposure_coverage'] == 1.0, m
+          assert m['minimum_visit_coverage'] == 1.0, m
+          assert m['zero_visit_action_count'] == 0, m
+          assert m['train_on_all_six_rotations'] is True, m
+          assert m['policy_prefix_count'] > 0, m
+          assert m['value_example_count'] > 0, m
+          print(json.dumps(m, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-self-play-v1-g0-r${{ matrix.rotation }}
+          path: artifacts/g0/
+          retention-days: 30
+
+  train:
+    needs: generate_g0
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: champion
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.CHAMPION_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mcts-self-play-v1-g0-r*
+          path: g0-shards
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Merge and audit all-six-rotation training data
+        run: |
+          mkdir -p artifacts/combined artifacts/candidate
+          find g0-shards -name policy_targets.jsonl -print | sort | xargs cat > artifacts/combined/policy_targets.jsonl
+          find g0-shards -name value_examples.jsonl -print | sort | xargs cat > artifacts/combined/value_examples.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          policy = [json.loads(x) for x in Path('artifacts/combined/policy_targets.jsonl').read_text().splitlines() if x.strip()]
+          values = [json.loads(x) for x in Path('artifacts/combined/value_examples.jsonl').read_text().splitlines() if x.strip()]
+          assert policy and values
+          pro = {int(r['rotation_steps']) for r in policy}
+          vro = {int(r['source']['rotation_steps']) for r in values}
+          assert pro == set(range(6)), pro
+          assert vro == set(range(6)), vro
+          assert min(float(r['exposure_coverage']) for r in policy) == 1.0
+          assert min(float(r['visit_coverage']) for r in policy) == 1.0
+          assert all(not r['zero_visit_actions'] for r in policy)
+          assert all(r['target_type'] == 'autoregressive_mcts_visit_distribution_v1' for r in policy)
+          assert all(r['explicit_action_mechanics'] is False for r in policy)
+          print(json.dumps({'policy_prefixes': len(policy), 'value_examples': len(values), 'rotations': sorted(pro)}))
+          PY
+      - name: Test robust tie fix and spatial policy
+        run: |
+          python -m unittest ml.tests.test_robust_policy_ties -v
+          python -m unittest ml.tests.test_mcts_visit_policy_targets -v
+          python -m unittest ml.tests.test_spatial_entity_policy -v
+      - name: Warm-start value from outcomes and policy from MCTS visits
+        run: |
+          python -m ml.value_model.train_mcts_self_play_v1 \
+            --base-checkpoint=champion/spatial_policy_v1_model.pt \
+            --value-examples=artifacts/combined/value_examples.jsonl \
+            --policy-targets=artifacts/combined/policy_targets.jsonl \
+            --output=artifacts/candidate/mcts_self_play_v1_model.pt \
+            --value-epochs=15 --policy-epochs=15 \
+            --value-learning-rate=1e-4 --policy-learning-rate=1e-4 \
+            --seed=0 --device=cpu | tee artifacts/candidate/training_metrics.log
+      - name: Audit candidate checkpoint and runtime
+        run: |
+          python - <<'PY'
+          import json, subprocess, torch
+          from pathlib import Path
+          path = Path('artifacts/candidate/mcts_self_play_v1_model.pt')
+          checkpoint = torch.load(path, map_location='cpu', weights_only=False)
+          m = checkpoint['mcts_self_play_metrics']
+          c = checkpoint['mcts_self_play_training_config']
+          assert m['trained_rotations'] == [0,1,2,3,4,5], m
+          assert m['static_rotation_holdout'] is False, m
+          assert m['robust_distillation_rows_used'] == 0, m
+          assert m['policy_target_source'] == 'mcts_visit_distributions_only', m
+          assert m['value_target_source'] == 'final_self_play_result', m
+          assert m['minimum_legal_action_exposure_coverage'] == 1.0, m
+          assert m['minimum_legal_action_visit_coverage'] == 1.0, m
+          assert m['zero_visit_action_count'] == 0, m
+          assert m['explicit_action_mechanics'] is False, m
+          assert c['train_on_all_six_rotations'] is True, c
+          proc = subprocess.run(
+              ['python', 'hex-strategy-game/tools/neural_value_runtime.py', '--checkpoint', str(path)],
+              input='', text=True, capture_output=True, timeout=20,
+          )
+          ready = json.loads(proc.stdout.splitlines()[0])
+          assert ready.get('ready') is True, (ready, proc.stderr)
+          assert ready.get('joint_plan_policy_spatial_entities') is True, ready
+          Path('artifacts/candidate/mcts_self_play_metrics.json').write_text(json.dumps(m, indent=2) + '\n')
+          Path('artifacts/candidate/runtime_ready.json').write_text(json.dumps(ready, indent=2) + '\n')
+          print(json.dumps({'metrics': m, 'runtime': ready}, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-self-play-v1-candidate
+          path: artifacts/candidate/
+          retention-days: 30
+
+  targeting_diagnostic:
+    needs: train
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-self-play-v1-candidate
+          path: candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: champion
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.CHAMPION_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Permanent six-rotation targeting diagnostic
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/diagnostic"
+          godot --headless --path . res://tools/spatial_policy_rotation_diagnostic.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/champion/spatial_policy_v1_model.pt" \
+            --out="$GITHUB_WORKSPACE/artifacts/diagnostic/champion.json"
+          godot --headless --path . res://tools/spatial_policy_rotation_diagnostic.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/candidate/mcts_self_play_v1_model.pt" \
+            --out="$GITHUB_WORKSPACE/artifacts/diagnostic/candidate.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-self-play-v1-targeting-diagnostic
+          path: artifacts/diagnostic/
+          retention-days: 30
+
+  generate_g1:
+    needs: train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        rotation: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-self-play-v1-candidate
+          path: candidate
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Generate next self-play generation from updated network
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/tiny_mcts_self_play.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/candidate/mcts_self_play_v1_model.pt" \
+            --rotation=${{ matrix.rotation }} --repetitions=1 \
+            --puct-simulations=12 --rollout-depth=2 --puct-c=1.5 \
+            --generation=g1 --seed-base=520000 \
+            --out="$GITHUB_WORKSPACE/artifacts/g1"
+      - name: Assert next-generation coverage
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m = json.loads(Path('artifacts/g1/manifest.json').read_text())
+          assert m['coverage_ok'] is True, m
+          assert m['minimum_exposure_coverage'] == 1.0, m
+          assert m['minimum_visit_coverage'] == 1.0, m
+          assert m['zero_visit_action_count'] == 0, m
+          print(json.dumps(m, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-self-play-v1-g1-r${{ matrix.rotation }}
+          path: artifacts/g1/
+          retention-days: 30
+
+  champion_arena:
+    needs: train
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        rotation: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-self-play-v1-candidate
+          path: candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: champion
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.CHAMPION_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Fresh candidate vs previous champion, both sides
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/neural_champion_arena.tscn -- \
+            --candidate-checkpoint="$GITHUB_WORKSPACE/candidate/mcts_self_play_v1_model.pt" \
+            --champion-checkpoint="$GITHUB_WORKSPACE/champion/spatial_policy_v1_model.pt" \
+            --rotation=${{ matrix.rotation }} --pair-count=2 \
+            --decision-time-budget-ms=5000 \
+            --out="$GITHUB_WORKSPACE/artifacts/arena"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-self-play-v1-arena-r${{ matrix.rotation }}
+          path: artifacts/arena/
+          retention-days: 30
+
+  report:
+    needs: [train, targeting_diagnostic, generate_g1, champion_arena]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-self-play-v1-candidate
+          path: candidate
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-self-play-v1-targeting-diagnostic
+          path: diagnostic
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mcts-self-play-v1-g1-r*
+          path: g1-shards
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mcts-self-play-v1-arena-r*
+          path: arena-shards
+      - name: Summarize experiment
+        run: |
+          mkdir -p artifacts/report
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          training = json.loads(Path('candidate/mcts_self_play_metrics.json').read_text())
+          champion_diag = json.loads(Path('diagnostic/champion.json').read_text())
+          candidate_diag = json.loads(Path('diagnostic/candidate.json').read_text())
+
+          g1 = []
+          for path in sorted(Path('g1-shards').rglob('manifest.json')):
+              g1.append(json.loads(path.read_text()))
+          assert {int(m['rotation']) for m in g1} == set(range(6)), g1
+          assert all(m['coverage_ok'] for m in g1), g1
+
+          arena = []
+          for path in sorted(Path('arena-shards').rglob('manifest.json')):
+              arena.append(json.loads(path.read_text()))
+          assert {int(m['rotation']) for m in arena} == set(range(6)), arena
+          counts = {'candidate': 0, 'champion': 0, 'draw': 0, 'unresolved': 0, 'failed': 0}
+          by_rotation = {}
+          for m in arena:
+              by_rotation[str(m['rotation'])] = m['counts']
+              for key in counts:
+                  counts[key] += int(m['counts'].get(key, 0))
+          decisive = counts['candidate'] + counts['champion']
+          summary = {
+              'experiment': 'mcts_self_play_v1',
+              'champion': {'run_id': 34799925923, 'model': 'spatial_policy_v1'},
+              'training': training,
+              'generation_1': {
+                  'rotations': sorted(int(m['rotation']) for m in g1),
+                  'games': sum(int(m['game_count']) for m in g1),
+                  'policy_prefixes': sum(int(m['policy_prefix_count']) for m in g1),
+                  'minimum_exposure_coverage': min(float(m['minimum_exposure_coverage']) for m in g1),
+                  'minimum_visit_coverage': min(float(m['minimum_visit_coverage']) for m in g1),
+                  'zero_visit_action_count': sum(int(m['zero_visit_action_count']) for m in g1),
+              },
+              'six_rotation_targeting': {
+                  'champion_by_rotation': champion_diag['by_rotation'],
+                  'candidate_by_rotation': candidate_diag['by_rotation'],
+              },
+              'candidate_vs_champion': {
+                  'counts': counts,
+                  'by_rotation': by_rotation,
+                  'decisive_games': decisive,
+                  'candidate_decisive_win_rate': counts['candidate'] / decisive if decisive else 0.0,
+                  'all_six_rotations': True,
+                  'both_sides': True,
+                  'fresh_seed_base': 830101,
+              },
+          }
+          Path('artifacts/report/mcts_self_play_v1_summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+          print(json.dumps(summary, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-self-play-v1-report
+          path: artifacts/report/
+          retention-days: 30
