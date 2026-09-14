@@ -1,0 +1,118 @@
+name: Spatial Policy Rotation Diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/outcome-policy-v1]
+    paths: [.github/spatial-policy-rotation-diagnostic-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: spatial_v1
+            run_id: '34799925923'
+            artifact: spatial-policy-v1-candidate
+            checkpoint: spatial_policy_v1_model.pt
+          - label: outcome_v1
+            run_id: '34808340577'
+            artifact: outcome-policy-v1-candidate
+            checkpoint: outcome_policy_v1_model.pt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: candidate
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ matrix.run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Score all six rotations
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/spatial_policy_rotation_diagnostic.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/candidate/${{ matrix.checkpoint }}" \
+            --out="$GITHUB_WORKSPACE/artifacts/${{ matrix.label }}.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spatial-policy-rotation-${{ matrix.label }}
+          path: artifacts/${{ matrix.label }}.json
+          retention-days: 30
+
+  report:
+    needs: diagnose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: spatial-policy-rotation-*
+          path: inputs
+      - name: Compare seen and held-out rotations
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          reports = {}
+          for path in sorted(Path('inputs').glob('*/*.json')):
+              data = json.loads(path.read_text())
+              label = path.stem
+              reports[label] = data
+
+          print('## Spatial policy rotation diagnostic')
+          print()
+          print('| Checkpoint | Split | Top-1 attack direct hit | Direct-hit P(hit | attack) | Mean best-hit attack rank | Hit-vs-miss logit margin |')
+          print('| --- | --- | ---: | ---: | ---: | ---: |')
+          for label, data in reports.items():
+              for split in ('seen', 'held_out'):
+                  m = data['seen_vs_held_out'][split]
+                  print(
+                      f"| {label} | {split} | {100*m['top1_attack_direct_hit_rate']:.1f}% | "
+                      f"{100*m['mean_direct_hit_probability_given_attack']:.1f}% | "
+                      f"{m['mean_best_direct_hit_attack_rank']:.2f} | "
+                      f"{m['mean_direct_hit_vs_miss_attack_logit_margin']:+.3f} |"
+                  )
+          print()
+          for label, data in reports.items():
+              print(f'### {label} by rotation')
+              print('| Rotation | Split | Top-1 attack direct hit | P(hit | attack) | Best-hit rank | Margin |')
+              print('| ---: | --- | ---: | ---: | ---: | ---: |')
+              for rotation in range(6):
+                  m = data['by_rotation'][str(rotation)]
+                  split = 'seen' if rotation in (0, 2, 4) else 'held_out'
+                  print(
+                      f"| {rotation} | {split} | {100*m['top1_attack_direct_hit_rate']:.1f}% | "
+                      f"{100*m['mean_direct_hit_probability_given_attack']:.1f}% | "
+                      f"{m['mean_best_direct_hit_attack_rank']:.2f} | "
+                      f"{m['mean_direct_hit_vs_miss_attack_logit_margin']:+.3f} |"
+                  )
+              print()
+
+          Path('rotation_diagnostic_summary.json').write_text(json.dumps(reports, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spatial-policy-rotation-diagnostic-report
+          path: rotation_diagnostic_summary.json
+          retention-days: 30
