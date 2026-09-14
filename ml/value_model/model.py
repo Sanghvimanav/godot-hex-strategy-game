@@ -58,19 +58,31 @@ class HexValueNet(nn.Module):
             else None
         )
 
-    def _features(
+    def encode_spatial(
         self, board: torch.Tensor, global_features: torch.Tensor
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Return per-cell features, the valid-cell mask, and pooled global features.
+
+        The value head continues to consume the same pooled representation as before.
+        Spatial policy heads can additionally retain the convolutional feature map
+        instead of reconstructing location from a globally averaged vector.
+        """
         if board.ndim != 4:
             raise ValueError("board must have shape [batch, channels, height, width]")
         if global_features.ndim != 2:
             raise ValueError("global_features must have shape [batch, features]")
         valid_mask = board[:, VALID_MASK_CHANNEL : VALID_MASK_CHANNEL + 1]
-        x = self.body(self.stem(board))
-        masked_sum = (x * valid_mask).sum(dim=(2, 3))
+        spatial = self.body(self.stem(board))
+        masked_sum = (spatial * valid_mask).sum(dim=(2, 3))
         valid_cells = valid_mask.sum(dim=(2, 3)).clamp_min(1.0)
         pooled = masked_sum / valid_cells
-        return torch.cat([pooled, global_features], dim=1)
+        state_features = torch.cat([pooled, global_features], dim=1)
+        return spatial, valid_mask, state_features
+
+    def _features(
+        self, board: torch.Tensor, global_features: torch.Tensor
+    ) -> torch.Tensor:
+        return self.encode_spatial(board, global_features)[2]
 
     def forward(self, board: torch.Tensor, global_features: torch.Tensor) -> torch.Tensor:
         """Predict perspective-relative terminal value in [-1, 1]."""
