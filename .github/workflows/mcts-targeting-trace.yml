@@ -1,0 +1,78 @@
+name: MCTS Targeting Trace
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/mcts-self-play-v1]
+    paths: [.github/mcts-targeting-trace-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: champion
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: '34799925923'
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-self-play-v1-candidate
+          path: candidate
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: '34873351836'
+          github-token: ${{ github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Trace champion prior to PUCT visits to Q
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/trace"
+          godot --headless --path . res://tools/mcts_targeting_trace.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/champion/spatial_policy_v1_model.pt" \
+            --repeats=6 --simulations=40 --rollout-depth=2 --puct-c=1.5 \
+            --seed-base=730000 \
+            --out="$GITHUB_WORKSPACE/artifacts/trace/champion.json"
+      - name: Trace candidate prior to PUCT visits to Q
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/mcts_targeting_trace.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/candidate/mcts_self_play_v1_model.pt" \
+            --repeats=6 --simulations=40 --rollout-depth=2 --puct-c=1.5 \
+            --seed-base=830000 \
+            --out="$GITHUB_WORKSPACE/artifacts/trace/candidate.json"
+      - name: Summarize trace
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          c = json.loads(Path('artifacts/trace/champion.json').read_text())
+          n = json.loads(Path('artifacts/trace/candidate.json').read_text())
+          summary = {'champion': c['overall'], 'candidate': n['overall'], 'champion_by_rotation': c['by_rotation'], 'candidate_by_rotation': n['by_rotation']}
+          Path('artifacts/trace/summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+          print(json.dumps(summary, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-targeting-trace
+          path: artifacts/trace/
+          retention-days: 30
