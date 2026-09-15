@@ -10,10 +10,14 @@ permissions:
   contents: read
   actions: read
 
+concurrency:
+  group: mcts-targeting-trace-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   trace:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -48,7 +52,7 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/artifacts/trace"
           godot --headless --path . res://tools/mcts_targeting_trace.tscn -- \
             --checkpoint="$GITHUB_WORKSPACE/champion/spatial_policy_v1_model.pt" \
-            --repeats=6 --simulations=40 --rollout-depth=2 --puct-c=1.5 \
+            --repeats=2 --simulations=24 --rollout-depth=2 --puct-c=1.5 \
             --seed-base=730000 \
             --out="$GITHUB_WORKSPACE/artifacts/trace/champion.json"
       - name: Trace candidate prior to PUCT visits to Q
@@ -56,7 +60,7 @@ jobs:
         run: |
           godot --headless --path . res://tools/mcts_targeting_trace.tscn -- \
             --checkpoint="$GITHUB_WORKSPACE/candidate/mcts_self_play_v1_model.pt" \
-            --repeats=6 --simulations=40 --rollout-depth=2 --puct-c=1.5 \
+            --repeats=2 --simulations=24 --rollout-depth=2 --puct-c=1.5 \
             --seed-base=830000 \
             --out="$GITHUB_WORKSPACE/artifacts/trace/candidate.json"
       - name: Summarize trace
