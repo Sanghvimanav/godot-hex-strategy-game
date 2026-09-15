@@ -1,0 +1,198 @@
+name: MCTS Value Capacity Ablation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/mcts-self-play-v1]
+    paths: [.github/mcts-value-capacity-ablation-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: mcts-value-capacity-ablation-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CHAMPION_RUN_ID: '34799925923'
+  BASELINE_MCTS_RUN_ID: '34873351836'
+
+jobs:
+  train_larger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: champion
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.CHAMPION_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mcts-self-play-v1-g0-r*
+          path: g0-shards
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.BASELINE_MCTS_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Merge identical baseline training data
+        run: |
+          mkdir -p artifacts/combined artifacts/larger
+          find g0-shards -name policy_targets.jsonl -print | sort | xargs cat > artifacts/combined/policy_targets.jsonl
+          find g0-shards -name value_examples.jsonl -print | sort | xargs cat > artifacts/combined/value_examples.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=[json.loads(x) for x in Path('artifacts/combined/policy_targets.jsonl').read_text().splitlines() if x.strip()]
+          v=[json.loads(x) for x in Path('artifacts/combined/value_examples.jsonl').read_text().splitlines() if x.strip()]
+          assert len(p)==425, len(p)
+          assert len(v)==212, len(v)
+          assert {int(x['rotation_steps']) for x in p}==set(range(6))
+          assert {int(x['source']['rotation_steps']) for x in v}==set(range(6))
+          print(json.dumps({'policy_targets':len(p),'value_examples':len(v)}))
+          PY
+      - name: Identity-expand value network from one to two residual blocks
+        run: |
+          python -m ml.value_model.expand_value_checkpoint \
+            --input=champion/spatial_policy_v1_model.pt \
+            --output=artifacts/larger/expanded_base.pt \
+            --residual-blocks=2 | tee artifacts/larger/expansion.json
+      - name: Train larger model on identical data and hyperparameters
+        run: |
+          python -m ml.value_model.train_mcts_self_play_v1 \
+            --base-checkpoint=artifacts/larger/expanded_base.pt \
+            --value-examples=artifacts/combined/value_examples.jsonl \
+            --policy-targets=artifacts/combined/policy_targets.jsonl \
+            --output=artifacts/larger/mcts_self_play_v1_value2_model.pt \
+            --value-epochs=15 --policy-epochs=15 \
+            --value-learning-rate=1e-4 --policy-learning-rate=1e-4 \
+            --seed=0 --device=cpu | tee artifacts/larger/training_metrics.log
+      - name: Audit controlled ablation
+        run: |
+          python - <<'PY'
+          import json, torch
+          from pathlib import Path
+          ckpt=torch.load('artifacts/larger/mcts_self_play_v1_value2_model.pt',map_location='cpu',weights_only=False)
+          assert ckpt['model_config']['hidden_channels']==16, ckpt['model_config']
+          assert ckpt['model_config']['residual_blocks']==2, ckpt['model_config']
+          assert ckpt['capacity_ablation']['source_residual_blocks']==1
+          assert ckpt['capacity_ablation']['target_residual_blocks']==2
+          assert ckpt['capacity_ablation']['new_blocks_identity_initialized'] is True
+          m=ckpt['mcts_self_play_metrics']
+          assert m['policy_prefix_examples']==425, m
+          assert m['value_examples']==212, m
+          assert m['robust_distillation_rows_used']==0, m
+          Path('artifacts/larger/metrics.json').write_text(json.dumps(m,indent=2)+'\n')
+          print(json.dumps(m,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcts-value-capacity-larger
+          path: artifacts/larger/
+          retention-days: 30
+
+  targeting_trace:
+    needs: train_larger
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-value-capacity-larger
+          path: larger
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-self-play-v1-candidate
+          path: baseline
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.BASELINE_MCTS_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Trace baseline one-block model
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/trace"
+          godot --headless --path . res://tools/mcts_targeting_trace.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/baseline/mcts_self_play_v1_model.pt" \
+            --repeats=2 --simulations=24 --rollout-depth=2 --puct-c=1.5 \
+            --seed-base=930000 --out="$GITHUB_WORKSPACE/artifacts/trace/baseline.json"
+      - name: Trace larger two-block model
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/mcts_targeting_trace.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/larger/mcts_self_play_v1_value2_model.pt" \
+            --repeats=2 --simulations=24 --rollout-depth=2 --puct-c=1.5 \
+            --seed-base=930000 --out="$GITHUB_WORKSPACE/artifacts/trace/larger.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcts-value-capacity-trace
+          path: artifacts/trace/
+          retention-days: 30
+
+  champion_arena:
+    needs: train_larger
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        rotation: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-value-capacity-larger
+          path: larger
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: champion
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.CHAMPION_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Fresh larger candidate vs previous champion, both sides
+        working-directory: hex-strategy-game
+        run: |
+          godot --headless --path . res://tools/neural_champion_arena.tscn -- \
+            --candidate-checkpoint="$GITHUB_WORKSPACE/larger/mcts_self_play_v1_value2_model.pt" \
+            --champion-checkpoint="$GITHUB_WORKSPACE/champion/spatial_policy_v1_model.pt" \
+            --rotation=${{ matrix.rotation }} --pair-count=2 \
+            --decision-time-budget-ms=5000 \
+            --out="$GITHUB_WORKSPACE/artifacts/arena"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-value-capacity-arena-r${{ matrix.rotation }}
+          path: artifacts/arena/
+          retention-days: 30
