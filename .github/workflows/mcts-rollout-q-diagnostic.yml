@@ -39,7 +39,7 @@ jobs:
         working-directory: hex-strategy-game
         run: |
           mkdir -p "$GITHUB_WORKSPACE/artifacts/qdiag"
-          godot --headless --path . --script res://tools/mcts_rollout_q_diagnostic.gd -- \
+          godot --headless --path . res://tools/mcts_rollout_q_diagnostic.tscn -- \
             --checkpoint="$GITHUB_WORKSPACE/candidate/mcts_self_play_v1_model.pt" \
             --out="$GITHUB_WORKSPACE/artifacts/qdiag/report.json"
       - uses: actions/upload-artifact@v4
