@@ -1,0 +1,50 @@
+name: MCTS Rollout Q Decomposition
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/mcts-self-play-v1]
+    paths: [.github/mcts-rollout-q-diagnostic-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcts-self-play-v1-candidate
+          path: candidate
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: '34873351836'
+          github-token: ${{ github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Decompose rollout Q signal
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/qdiag"
+          godot --headless --path . res://tools/mcts_rollout_q_diagnostic.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/candidate/mcts_self_play_v1_model.pt" \
+            --out="$GITHUB_WORKSPACE/artifacts/qdiag/report.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mcts-rollout-q-diagnostic
+          path: artifacts/qdiag/
+          retention-days: 30
