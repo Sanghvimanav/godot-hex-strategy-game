@@ -1,4 +1,4 @@
-extends SceneTree
+extends Node
 
 const PureStateSelfPlaySuite = preload("res://src/simulation/pure_state_self_play_suite.gd")
 const PureStateLegalActions = preload("res://src/simulation/pure_state_legal_actions.gd")
@@ -8,7 +8,7 @@ const PureStateJointPolicy = preload("res://src/simulation/pure_state_joint_poli
 
 const ROTATIONS := [0, 1, 2, 3, 4, 5]
 
-func _initialize() -> void:
+func _ready() -> void:
     call_deferred("_run")
 
 func _run() -> void:
@@ -17,7 +17,7 @@ func _run() -> void:
     var out_path := str(args.get("out", "user://mcts_rollout_q_diagnostic.json"))
     if checkpoint.is_empty():
         push_error("--checkpoint is required")
-        quit(1)
+        get_tree().quit(1)
         return
 
     var rotations: Array = []
@@ -39,14 +39,14 @@ func _run() -> void:
     var file := FileAccess.open(out_path, FileAccess.WRITE)
     if file == null:
         push_error("Could not open " + out_path)
-        quit(1)
+        get_tree().quit(1)
         return
     file.store_string(JSON.stringify(report, "  ") + "\n")
     file.close()
     print(JSON.stringify(report))
     PureStateJointPolicy.shutdown()
     PureStateNeuralEvaluator.shutdown()
-    quit(0)
+    get_tree().quit(0)
 
 func _analyze_rotation(rotation: int, checkpoint: String) -> Dictionary:
     var state := _contact_state(rotation)
