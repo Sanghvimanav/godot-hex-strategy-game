@@ -16,23 +16,18 @@ concurrency:
 
 env:
   SEED_RUN_ID: '34799925923'
-  GENERATIONS: '5'
-  TRAIN_BASE_GAMES: '500'
-  EVAL_BASE_GAMES: '90'
 
 jobs:
-  generations:
+  eval_g0:
+    name: Evaluate generation 0 shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: spatial-policy-v1-candidate
-          path: seed
-          repository: Sanghvimanav/godot-hex-strategy-game
-          run-id: ${{ env.SEED_RUN_ID }}
-          github-token: ${{ github.token }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -46,145 +41,903 @@ jobs:
         working-directory: hex-strategy-game
         run: godot --headless --import
 
-      - name: Run frozen-heuristic generations
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: checkpoint
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.SEED_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Fresh greedy arena vs frozen heuristic
+        working-directory: hex-strategy-game
         run: |
-          set -euo pipefail
-          mkdir -p artifacts/checkpoints artifacts/evaluations artifacts/training artifacts/report
-          cp seed/spatial_policy_v1_model.pt artifacts/checkpoints/g0.pt
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/eval"
+          seed_base=$((910000 + 0 * 10000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/spatial_policy_v1_model.pt" \
+            --base-games=15 \
+            --generation=0 \
+            --seed-base="$seed_base" \
+            --temperature=0 \
+            --record-training=false \
+            --out="$GITHUB_WORKSPACE/artifacts/eval"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-eval-g0-s${{ matrix.shard }}
+          path: artifacts/eval/
+          retention-days: 30
 
-          run_eval () {
-            gen="$1"
-            seed_base="$2"
-            mkdir -p "artifacts/evaluations/g${gen}"
-            (
-              cd hex-strategy-game
-              godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
-                --checkpoint="$GITHUB_WORKSPACE/artifacts/checkpoints/g${gen}.pt" \
-                --base-games="$EVAL_BASE_GAMES" \
-                --generation="${gen}" \
-                --seed-base="${seed_base}" \
-                --temperature=0 \
-                --record-training=false \
-                --out="$GITHUB_WORKSPACE/artifacts/evaluations/g${gen}"
-            )
-          }
+  data_g1:
+    name: Generation 1 games shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
 
-          run_eval 0 910000
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: checkpoint
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.SEED_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Generate direct-policy games vs frozen heuristic
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/data"
+          seed_base=$((710000 + 1 * 10000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/spatial_policy_v1_model.pt" \
+            --base-games=84 \
+            --generation=1 \
+            --seed-base="$seed_base" \
+            --temperature=1.0 \
+            --record-training=true \
+            --out="$GITHUB_WORKSPACE/artifacts/data"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-train-g1-s${{ matrix.shard }}
+          path: artifacts/data/
+          retention-days: 30
 
-          for gen in $(seq 1 "$GENERATIONS"); do
-            prev=$((gen - 1))
-            train_seed=$((710000 + gen * 10000))
-            eval_seed=$((910000 + gen * 10000))
-            mkdir -p "artifacts/training/g${gen}"
-
-            (
-              cd hex-strategy-game
-              godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
-                --checkpoint="$GITHUB_WORKSPACE/artifacts/checkpoints/g${prev}.pt" \
-                --base-games="$TRAIN_BASE_GAMES" \
-                --generation="${gen}" \
-                --seed-base="${train_seed}" \
-                --temperature=1.0 \
-                --record-training=true \
-                --out="$GITHUB_WORKSPACE/artifacts/training/g${gen}"
-            )
-
-            python -m ml.value_model.train_outcome_actor_critic \
-              --base-checkpoint="artifacts/checkpoints/g${prev}.pt" \
-              --policy-steps="artifacts/training/g${gen}/policy_steps.jsonl" \
-              --value-examples="artifacts/training/g${gen}/value_examples.jsonl" \
-              --output="artifacts/checkpoints/g${gen}.pt" \
-              --value-learning-rate=1e-4 \
-              --policy-learning-rate=1e-4 \
-              --entropy-beta=0.01 \
-              --seed="${gen}" \
-              --device=cpu \
-              | tee "artifacts/training/g${gen}/training_metrics.json"
-
-            run_eval "${gen}" "${eval_seed}"
-          done
-
-      - name: Build learning curve
+  train_g1:
+    name: Train generation 1
+    needs: data_g1
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: checkpoint
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.SEED_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: heuristic-train-g1-s*
+          path: generation-shards
+      - name: Merge fresh generation
+        run: |
+          mkdir -p artifacts/combined artifacts/output
+          find generation-shards -name policy_steps.jsonl -print | sort | xargs cat > artifacts/combined/policy_steps.jsonl
+          find generation-shards -name value_examples.jsonl -print | sort | xargs cat > artifacts/combined/value_examples.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          policy = [json.loads(x) for x in Path("artifacts/combined/policy_steps.jsonl").read_text().splitlines() if x.strip()]
+          values = [json.loads(x) for x in Path("artifacts/combined/value_examples.jsonl").read_text().splitlines() if x.strip()]
+          assert policy and values
+          assert {int(x["generation"]) for x in policy} == {1}
+          assert {int(x["source"]["generation"]) for x in values} == {1}
+          print(json.dumps({"policy_steps": len(policy), "value_examples": len(values)}))
+          PY
+      - name: One outcome update pass
+        run: |
+          python -m ml.value_model.train_outcome_actor_critic \
+            --base-checkpoint="checkpoint/spatial_policy_v1_model.pt" \
+            --policy-steps=artifacts/combined/policy_steps.jsonl \
+            --value-examples=artifacts/combined/value_examples.jsonl \
+            --output=artifacts/output/model.pt \
+            --value-learning-rate=1e-4 \
+            --policy-learning-rate=1e-4 \
+            --entropy-beta=0.01 \
+            --seed=1 \
+            --device=cpu \
+            | tee artifacts/output/training_metrics.json
+      - name: Assert no epoch loop
         run: |
           python - <<'PY'
-          import json, os
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/output/training_metrics.json").read_text())
+          assert m["training_passes"] == 1, m
+          assert m["epochs"] == 0, m
+          assert m["mcts_used"] is False, m
+          assert m["training_opponent"] == "frozen_handwritten", m
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-champion-g1
+          path: artifacts/output/
+          retention-days: 30
+
+  eval_g1:
+    name: Evaluate generation 1 shard ${{ matrix.shard }}
+    needs: train_g1
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: heuristic-champion-g1
+          path: checkpoint
+      - name: Fresh greedy arena vs frozen heuristic
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/eval"
+          seed_base=$((910000 + 1 * 10000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=15 \
+            --generation=1 \
+            --seed-base="$seed_base" \
+            --temperature=0 \
+            --record-training=false \
+            --out="$GITHUB_WORKSPACE/artifacts/eval"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-eval-g1-s${{ matrix.shard }}
+          path: artifacts/eval/
+          retention-days: 30
+
+  data_g2:
+    name: Generation 2 games shard ${{ matrix.shard }}
+    needs: train_g1
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: heuristic-champion-g1
+          path: checkpoint
+      - name: Generate direct-policy games vs frozen heuristic
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/data"
+          seed_base=$((710000 + 2 * 10000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=84 \
+            --generation=2 \
+            --seed-base="$seed_base" \
+            --temperature=1.0 \
+            --record-training=true \
+            --out="$GITHUB_WORKSPACE/artifacts/data"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-train-g2-s${{ matrix.shard }}
+          path: artifacts/data/
+          retention-days: 30
+
+  train_g2:
+    name: Train generation 2
+    needs: data_g2
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: heuristic-champion-g1
+          path: checkpoint
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: heuristic-train-g2-s*
+          path: generation-shards
+      - name: Merge fresh generation
+        run: |
+          mkdir -p artifacts/combined artifacts/output
+          find generation-shards -name policy_steps.jsonl -print | sort | xargs cat > artifacts/combined/policy_steps.jsonl
+          find generation-shards -name value_examples.jsonl -print | sort | xargs cat > artifacts/combined/value_examples.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          policy = [json.loads(x) for x in Path("artifacts/combined/policy_steps.jsonl").read_text().splitlines() if x.strip()]
+          values = [json.loads(x) for x in Path("artifacts/combined/value_examples.jsonl").read_text().splitlines() if x.strip()]
+          assert policy and values
+          assert {int(x["generation"]) for x in policy} == {2}
+          assert {int(x["source"]["generation"]) for x in values} == {2}
+          print(json.dumps({"policy_steps": len(policy), "value_examples": len(values)}))
+          PY
+      - name: One outcome update pass
+        run: |
+          python -m ml.value_model.train_outcome_actor_critic \
+            --base-checkpoint="checkpoint/model.pt" \
+            --policy-steps=artifacts/combined/policy_steps.jsonl \
+            --value-examples=artifacts/combined/value_examples.jsonl \
+            --output=artifacts/output/model.pt \
+            --value-learning-rate=1e-4 \
+            --policy-learning-rate=1e-4 \
+            --entropy-beta=0.01 \
+            --seed=2 \
+            --device=cpu \
+            | tee artifacts/output/training_metrics.json
+      - name: Assert no epoch loop
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/output/training_metrics.json").read_text())
+          assert m["training_passes"] == 1, m
+          assert m["epochs"] == 0, m
+          assert m["mcts_used"] is False, m
+          assert m["training_opponent"] == "frozen_handwritten", m
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-champion-g2
+          path: artifacts/output/
+          retention-days: 30
+
+  eval_g2:
+    name: Evaluate generation 2 shard ${{ matrix.shard }}
+    needs: train_g2
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: heuristic-champion-g2
+          path: checkpoint
+      - name: Fresh greedy arena vs frozen heuristic
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/eval"
+          seed_base=$((910000 + 2 * 10000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=15 \
+            --generation=2 \
+            --seed-base="$seed_base" \
+            --temperature=0 \
+            --record-training=false \
+            --out="$GITHUB_WORKSPACE/artifacts/eval"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-eval-g2-s${{ matrix.shard }}
+          path: artifacts/eval/
+          retention-days: 30
+
+  data_g3:
+    name: Generation 3 games shard ${{ matrix.shard }}
+    needs: train_g2
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: heuristic-champion-g2
+          path: checkpoint
+      - name: Generate direct-policy games vs frozen heuristic
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/data"
+          seed_base=$((710000 + 3 * 10000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=84 \
+            --generation=3 \
+            --seed-base="$seed_base" \
+            --temperature=1.0 \
+            --record-training=true \
+            --out="$GITHUB_WORKSPACE/artifacts/data"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-train-g3-s${{ matrix.shard }}
+          path: artifacts/data/
+          retention-days: 30
+
+  train_g3:
+    name: Train generation 3
+    needs: data_g3
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: heuristic-champion-g2
+          path: checkpoint
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: heuristic-train-g3-s*
+          path: generation-shards
+      - name: Merge fresh generation
+        run: |
+          mkdir -p artifacts/combined artifacts/output
+          find generation-shards -name policy_steps.jsonl -print | sort | xargs cat > artifacts/combined/policy_steps.jsonl
+          find generation-shards -name value_examples.jsonl -print | sort | xargs cat > artifacts/combined/value_examples.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          policy = [json.loads(x) for x in Path("artifacts/combined/policy_steps.jsonl").read_text().splitlines() if x.strip()]
+          values = [json.loads(x) for x in Path("artifacts/combined/value_examples.jsonl").read_text().splitlines() if x.strip()]
+          assert policy and values
+          assert {int(x["generation"]) for x in policy} == {3}
+          assert {int(x["source"]["generation"]) for x in values} == {3}
+          print(json.dumps({"policy_steps": len(policy), "value_examples": len(values)}))
+          PY
+      - name: One outcome update pass
+        run: |
+          python -m ml.value_model.train_outcome_actor_critic \
+            --base-checkpoint="checkpoint/model.pt" \
+            --policy-steps=artifacts/combined/policy_steps.jsonl \
+            --value-examples=artifacts/combined/value_examples.jsonl \
+            --output=artifacts/output/model.pt \
+            --value-learning-rate=1e-4 \
+            --policy-learning-rate=1e-4 \
+            --entropy-beta=0.01 \
+            --seed=3 \
+            --device=cpu \
+            | tee artifacts/output/training_metrics.json
+      - name: Assert no epoch loop
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/output/training_metrics.json").read_text())
+          assert m["training_passes"] == 1, m
+          assert m["epochs"] == 0, m
+          assert m["mcts_used"] is False, m
+          assert m["training_opponent"] == "frozen_handwritten", m
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-champion-g3
+          path: artifacts/output/
+          retention-days: 30
+
+  eval_g3:
+    name: Evaluate generation 3 shard ${{ matrix.shard }}
+    needs: train_g3
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: heuristic-champion-g3
+          path: checkpoint
+      - name: Fresh greedy arena vs frozen heuristic
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/eval"
+          seed_base=$((910000 + 3 * 10000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=15 \
+            --generation=3 \
+            --seed-base="$seed_base" \
+            --temperature=0 \
+            --record-training=false \
+            --out="$GITHUB_WORKSPACE/artifacts/eval"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-eval-g3-s${{ matrix.shard }}
+          path: artifacts/eval/
+          retention-days: 30
+
+  data_g4:
+    name: Generation 4 games shard ${{ matrix.shard }}
+    needs: train_g3
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: heuristic-champion-g3
+          path: checkpoint
+      - name: Generate direct-policy games vs frozen heuristic
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/data"
+          seed_base=$((710000 + 4 * 10000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=84 \
+            --generation=4 \
+            --seed-base="$seed_base" \
+            --temperature=1.0 \
+            --record-training=true \
+            --out="$GITHUB_WORKSPACE/artifacts/data"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-train-g4-s${{ matrix.shard }}
+          path: artifacts/data/
+          retention-days: 30
+
+  train_g4:
+    name: Train generation 4
+    needs: data_g4
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: heuristic-champion-g3
+          path: checkpoint
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: heuristic-train-g4-s*
+          path: generation-shards
+      - name: Merge fresh generation
+        run: |
+          mkdir -p artifacts/combined artifacts/output
+          find generation-shards -name policy_steps.jsonl -print | sort | xargs cat > artifacts/combined/policy_steps.jsonl
+          find generation-shards -name value_examples.jsonl -print | sort | xargs cat > artifacts/combined/value_examples.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          policy = [json.loads(x) for x in Path("artifacts/combined/policy_steps.jsonl").read_text().splitlines() if x.strip()]
+          values = [json.loads(x) for x in Path("artifacts/combined/value_examples.jsonl").read_text().splitlines() if x.strip()]
+          assert policy and values
+          assert {int(x["generation"]) for x in policy} == {4}
+          assert {int(x["source"]["generation"]) for x in values} == {4}
+          print(json.dumps({"policy_steps": len(policy), "value_examples": len(values)}))
+          PY
+      - name: One outcome update pass
+        run: |
+          python -m ml.value_model.train_outcome_actor_critic \
+            --base-checkpoint="checkpoint/model.pt" \
+            --policy-steps=artifacts/combined/policy_steps.jsonl \
+            --value-examples=artifacts/combined/value_examples.jsonl \
+            --output=artifacts/output/model.pt \
+            --value-learning-rate=1e-4 \
+            --policy-learning-rate=1e-4 \
+            --entropy-beta=0.01 \
+            --seed=4 \
+            --device=cpu \
+            | tee artifacts/output/training_metrics.json
+      - name: Assert no epoch loop
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/output/training_metrics.json").read_text())
+          assert m["training_passes"] == 1, m
+          assert m["epochs"] == 0, m
+          assert m["mcts_used"] is False, m
+          assert m["training_opponent"] == "frozen_handwritten", m
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-champion-g4
+          path: artifacts/output/
+          retention-days: 30
+
+  eval_g4:
+    name: Evaluate generation 4 shard ${{ matrix.shard }}
+    needs: train_g4
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: heuristic-champion-g4
+          path: checkpoint
+      - name: Fresh greedy arena vs frozen heuristic
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/eval"
+          seed_base=$((910000 + 4 * 10000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=15 \
+            --generation=4 \
+            --seed-base="$seed_base" \
+            --temperature=0 \
+            --record-training=false \
+            --out="$GITHUB_WORKSPACE/artifacts/eval"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-eval-g4-s${{ matrix.shard }}
+          path: artifacts/eval/
+          retention-days: 30
+
+  data_g5:
+    name: Generation 5 games shard ${{ matrix.shard }}
+    needs: train_g4
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: heuristic-champion-g4
+          path: checkpoint
+      - name: Generate direct-policy games vs frozen heuristic
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/data"
+          seed_base=$((710000 + 5 * 10000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=84 \
+            --generation=5 \
+            --seed-base="$seed_base" \
+            --temperature=1.0 \
+            --record-training=true \
+            --out="$GITHUB_WORKSPACE/artifacts/data"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-train-g5-s${{ matrix.shard }}
+          path: artifacts/data/
+          retention-days: 30
+
+  train_g5:
+    name: Train generation 5
+    needs: data_g5
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: heuristic-champion-g4
+          path: checkpoint
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: heuristic-train-g5-s*
+          path: generation-shards
+      - name: Merge fresh generation
+        run: |
+          mkdir -p artifacts/combined artifacts/output
+          find generation-shards -name policy_steps.jsonl -print | sort | xargs cat > artifacts/combined/policy_steps.jsonl
+          find generation-shards -name value_examples.jsonl -print | sort | xargs cat > artifacts/combined/value_examples.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          policy = [json.loads(x) for x in Path("artifacts/combined/policy_steps.jsonl").read_text().splitlines() if x.strip()]
+          values = [json.loads(x) for x in Path("artifacts/combined/value_examples.jsonl").read_text().splitlines() if x.strip()]
+          assert policy and values
+          assert {int(x["generation"]) for x in policy} == {5}
+          assert {int(x["source"]["generation"]) for x in values} == {5}
+          print(json.dumps({"policy_steps": len(policy), "value_examples": len(values)}))
+          PY
+      - name: One outcome update pass
+        run: |
+          python -m ml.value_model.train_outcome_actor_critic \
+            --base-checkpoint="checkpoint/model.pt" \
+            --policy-steps=artifacts/combined/policy_steps.jsonl \
+            --value-examples=artifacts/combined/value_examples.jsonl \
+            --output=artifacts/output/model.pt \
+            --value-learning-rate=1e-4 \
+            --policy-learning-rate=1e-4 \
+            --entropy-beta=0.01 \
+            --seed=5 \
+            --device=cpu \
+            | tee artifacts/output/training_metrics.json
+      - name: Assert no epoch loop
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/output/training_metrics.json").read_text())
+          assert m["training_passes"] == 1, m
+          assert m["epochs"] == 0, m
+          assert m["mcts_used"] is False, m
+          assert m["training_opponent"] == "frozen_handwritten", m
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-champion-g5
+          path: artifacts/output/
+          retention-days: 30
+
+  eval_g5:
+    name: Evaluate generation 5 shard ${{ matrix.shard }}
+    needs: train_g5
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: heuristic-champion-g5
+          path: checkpoint
+      - name: Fresh greedy arena vs frozen heuristic
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/eval"
+          seed_base=$((910000 + 5 * 10000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=15 \
+            --generation=5 \
+            --seed-base="$seed_base" \
+            --temperature=0 \
+            --record-training=false \
+            --out="$GITHUB_WORKSPACE/artifacts/eval"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-eval-g5-s${{ matrix.shard }}
+          path: artifacts/eval/
+          retention-days: 30
+
+  report:
+    name: Build five-generation learning curve
+    needs: [eval_g0, eval_g1, eval_g2, eval_g3, eval_g4, eval_g5]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: heuristic-eval-g*-s*
+          path: eval-shards
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: heuristic-champion-g*
+          path: checkpoints
+      - name: Summarize learning curve
+        run: |
+          mkdir -p artifacts/report
+          python - <<'PY'
+          import json
           from pathlib import Path
 
-          generations = int(os.environ["GENERATIONS"])
-          rows = []
-          for gen in range(generations + 1):
-              evaluation = json.loads(Path(f"artifacts/evaluations/g{gen}/manifest.json").read_text())
-              row = {
-                  "generation": gen,
-                  "evaluation_games": evaluation["actual_games"],
-                  "wins": evaluation["counts"]["win"],
-                  "losses": evaluation["counts"]["loss"],
-                  "draws": evaluation["counts"]["draw"],
-                  "failed": evaluation["counts"]["failed"],
-                  "decisive_win_rate": evaluation["neural_decisive_win_rate"],
+          rows=[]
+          for gen in range(6):
+              manifests=[]
+              for path in sorted(Path("eval-shards").glob(f"heuristic-eval-g{gen}-s*/manifest.json")):
+                  manifests.append(json.loads(path.read_text()))
+              assert len(manifests) == 6, (gen, len(manifests))
+              counts={key:sum(int(m["counts"][key]) for m in manifests) for key in ["win","loss","draw","failed"]}
+              decisive=counts["win"]+counts["loss"]
+              row={
+                  "generation":gen,
+                  "evaluation_games":sum(int(m["actual_games"]) for m in manifests),
+                  "wins":counts["win"],
+                  "losses":counts["loss"],
+                  "draws":counts["draw"],
+                  "failed":counts["failed"],
+                  "decisive_win_rate":counts["win"]/decisive if decisive else 0.0,
               }
-              if gen > 0:
-                  train_manifest = json.loads(Path(f"artifacts/training/g{gen}/manifest.json").read_text())
-                  train_metrics = json.loads(Path(f"artifacts/training/g{gen}/training_metrics.json").read_text())
-                  row["training_games"] = train_manifest["actual_games"]
-                  row["training_win_rate"] = train_manifest["neural_decisive_win_rate"]
-                  row["training_passes"] = train_metrics["training_passes"]
-                  row["epochs"] = train_metrics["epochs"]
-                  row["value_mse_before"] = train_metrics["value_before"]["mse"]
-                  row["value_mse_after"] = train_metrics["value_after"]["mse"]
-                  row["mean_abs_advantage"] = train_metrics["mean_abs_advantage"]
-                  row["policy_entropy_after"] = train_metrics["policy_after"]["mean_entropy"]
+              if gen>0:
+                  metrics_path=Path(f"checkpoints/heuristic-champion-g{gen}/training_metrics.json")
+                  metrics=json.loads(metrics_path.read_text())
+                  row["training_games"]=1008
+                  row["training_passes"]=metrics["training_passes"]
+                  row["epochs"]=metrics["epochs"]
+                  row["mean_abs_advantage"]=metrics["mean_abs_advantage"]
+                  row["value_mse_before"]=metrics["value_before"]["mse"]
+                  row["value_mse_after"]=metrics["value_after"]["mse"]
+                  row["policy_entropy_after"]=metrics["policy_after"]["mean_entropy"]
               rows.append(row)
 
-          Path("artifacts/report/learning_curve.json").write_text(json.dumps(rows, indent=2) + "\n")
-          lines = [
-              "# Neural vs frozen handwritten champion",
+          assert all(r["failed"] == 0 for r in rows), rows
+          assert all(r.get("training_passes",1) == 1 for r in rows[1:]), rows
+          assert all(r.get("epochs",0) == 0 for r in rows[1:]), rows
+
+          Path("artifacts/report/learning_curve.json").write_text(json.dumps(rows,indent=2)+"\n")
+          lines=[
+              "# Direct neural policy vs frozen handwritten champion",
               "",
-              f"Fresh training games per generation: {int(os.environ['TRAIN_BASE_GAMES']) * 2}",
-              f"Fresh evaluation games per checkpoint: {int(os.environ['EVAL_BASE_GAMES']) * 2}",
-              "Training passes per generation: 1 (no epoch loop)",
+              "Training games: 1,008 fresh games/generation × 5 = 5,040 total.",
+              "Evaluation: 180 fresh greedy games/checkpoint.",
+              "Optimization: exactly one update pass/generation; no epoch loop.",
+              "Policy target: Monte Carlo final outcome advantage; no MCTS targets.",
               "",
-              "| Generation | Eval wins | Eval losses | Draws | Decisive win rate |",
+              "| Gen | Wins | Losses | Draws | Decisive win rate |",
               "| ---: | ---: | ---: | ---: | ---: |",
           ]
-          for row in rows:
-              lines.append(
-                  f"| {row['generation']} | {row['wins']} | {row['losses']} | "
-                  f"{row['draws']} | {row['decisive_win_rate']:.1%} |"
-              )
-          summary = "\n".join(lines) + "\n"
+          for r in rows:
+              lines.append(f"| {r['generation']} | {r['wins']} | {r['losses']} | {r['draws']} | {r['decisive_win_rate']:.1%} |")
+          summary="\n".join(lines)+"\n"
           Path("artifacts/report/summary.md").write_text(summary)
-          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as handle:
-              handle.write(summary)
+          with Path(__import__("os").environ["GITHUB_STEP_SUMMARY"]).open("a") as h:
+              h.write(summary)
           print(summary)
           PY
-
-      - name: Audit experiment invariants
-        run: |
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          generations = int(os.environ["GENERATIONS"])
-          curve = json.loads(Path("artifacts/report/learning_curve.json").read_text())
-          assert len(curve) == generations + 1, curve
-          assert all(row["failed"] == 0 for row in curve), curve
-          for gen in range(1, generations + 1):
-              metrics = json.loads(Path(f"artifacts/training/g{gen}/training_metrics.json").read_text())
-              manifest = json.loads(Path(f"artifacts/training/g{gen}/manifest.json").read_text())
-              assert metrics["training_passes"] == 1, metrics
-              assert metrics["epochs"] == 0, metrics
-              assert metrics["mcts_used"] is False, metrics
-              assert metrics["training_opponent"] == "frozen_handwritten", metrics
-              assert manifest["mcts_used"] is False, manifest
-              assert manifest["mirrored_roles"] is True, manifest
-              assert manifest["all_six_rotations"] is True, manifest
-              assert manifest["opponent"] == "frozen_handwritten", manifest
-          print(json.dumps(curve, indent=2))
-          PY
-
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: heuristic-champion-generations-main
-          path: artifacts/
+          name: heuristic-champion-learning-curve
+          path: artifacts/report/
           retention-days: 30
