@@ -1,0 +1,190 @@
+name: Heuristic Champion Generations
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/heuristic-champion-generations]
+    paths: [.github/heuristic-champion-generations-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: heuristic-champion-main-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SEED_RUN_ID: '34799925923'
+  GENERATIONS: '5'
+  TRAIN_BASE_GAMES: '500'
+  EVAL_BASE_GAMES: '90'
+
+jobs:
+  generations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: seed
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.SEED_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Run frozen-heuristic generations
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/checkpoints artifacts/evaluations artifacts/training artifacts/report
+          cp seed/spatial_policy_v1_model.pt artifacts/checkpoints/g0.pt
+
+          run_eval () {
+            gen="$1"
+            seed_base="$2"
+            mkdir -p "artifacts/evaluations/g${gen}"
+            (
+              cd hex-strategy-game
+              godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
+                --checkpoint="$GITHUB_WORKSPACE/artifacts/checkpoints/g${gen}.pt" \
+                --base-games="$EVAL_BASE_GAMES" \
+                --generation="${gen}" \
+                --seed-base="${seed_base}" \
+                --temperature=0 \
+                --record-training=false \
+                --out="$GITHUB_WORKSPACE/artifacts/evaluations/g${gen}"
+            )
+          }
+
+          run_eval 0 910000
+
+          for gen in $(seq 1 "$GENERATIONS"); do
+            prev=$((gen - 1))
+            train_seed=$((710000 + gen * 10000))
+            eval_seed=$((910000 + gen * 10000))
+            mkdir -p "artifacts/training/g${gen}"
+
+            (
+              cd hex-strategy-game
+              godot --headless --path . res://tools/heuristic_champion_generation.tscn -- \
+                --checkpoint="$GITHUB_WORKSPACE/artifacts/checkpoints/g${prev}.pt" \
+                --base-games="$TRAIN_BASE_GAMES" \
+                --generation="${gen}" \
+                --seed-base="${train_seed}" \
+                --temperature=1.0 \
+                --record-training=true \
+                --out="$GITHUB_WORKSPACE/artifacts/training/g${gen}"
+            )
+
+            python -m ml.value_model.train_outcome_actor_critic \
+              --base-checkpoint="artifacts/checkpoints/g${prev}.pt" \
+              --policy-steps="artifacts/training/g${gen}/policy_steps.jsonl" \
+              --value-examples="artifacts/training/g${gen}/value_examples.jsonl" \
+              --output="artifacts/checkpoints/g${gen}.pt" \
+              --value-learning-rate=1e-4 \
+              --policy-learning-rate=1e-4 \
+              --entropy-beta=0.01 \
+              --seed="${gen}" \
+              --device=cpu \
+              | tee "artifacts/training/g${gen}/training_metrics.json"
+
+            run_eval "${gen}" "${eval_seed}"
+          done
+
+      - name: Build learning curve
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          generations = int(os.environ["GENERATIONS"])
+          rows = []
+          for gen in range(generations + 1):
+              evaluation = json.loads(Path(f"artifacts/evaluations/g{gen}/manifest.json").read_text())
+              row = {
+                  "generation": gen,
+                  "evaluation_games": evaluation["actual_games"],
+                  "wins": evaluation["counts"]["win"],
+                  "losses": evaluation["counts"]["loss"],
+                  "draws": evaluation["counts"]["draw"],
+                  "failed": evaluation["counts"]["failed"],
+                  "decisive_win_rate": evaluation["neural_decisive_win_rate"],
+              }
+              if gen > 0:
+                  train_manifest = json.loads(Path(f"artifacts/training/g{gen}/manifest.json").read_text())
+                  train_metrics = json.loads(Path(f"artifacts/training/g{gen}/training_metrics.json").read_text())
+                  row["training_games"] = train_manifest["actual_games"]
+                  row["training_win_rate"] = train_manifest["neural_decisive_win_rate"]
+                  row["training_passes"] = train_metrics["training_passes"]
+                  row["epochs"] = train_metrics["epochs"]
+                  row["value_mse_before"] = train_metrics["value_before"]["mse"]
+                  row["value_mse_after"] = train_metrics["value_after"]["mse"]
+                  row["mean_abs_advantage"] = train_metrics["mean_abs_advantage"]
+                  row["policy_entropy_after"] = train_metrics["policy_after"]["mean_entropy"]
+              rows.append(row)
+
+          Path("artifacts/report/learning_curve.json").write_text(json.dumps(rows, indent=2) + "\n")
+          lines = [
+              "# Neural vs frozen handwritten champion",
+              "",
+              f"Fresh training games per generation: {int(os.environ['TRAIN_BASE_GAMES']) * 2}",
+              f"Fresh evaluation games per checkpoint: {int(os.environ['EVAL_BASE_GAMES']) * 2}",
+              "Training passes per generation: 1 (no epoch loop)",
+              "",
+              "| Generation | Eval wins | Eval losses | Draws | Decisive win rate |",
+              "| ---: | ---: | ---: | ---: | ---: |",
+          ]
+          for row in rows:
+              lines.append(
+                  f"| {row['generation']} | {row['wins']} | {row['losses']} | "
+                  f"{row['draws']} | {row['decisive_win_rate']:.1%} |"
+              )
+          summary = "\n".join(lines) + "\n"
+          Path("artifacts/report/summary.md").write_text(summary)
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as handle:
+              handle.write(summary)
+          print(summary)
+          PY
+
+      - name: Audit experiment invariants
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          generations = int(os.environ["GENERATIONS"])
+          curve = json.loads(Path("artifacts/report/learning_curve.json").read_text())
+          assert len(curve) == generations + 1, curve
+          assert all(row["failed"] == 0 for row in curve), curve
+          for gen in range(1, generations + 1):
+              metrics = json.loads(Path(f"artifacts/training/g{gen}/training_metrics.json").read_text())
+              manifest = json.loads(Path(f"artifacts/training/g{gen}/manifest.json").read_text())
+              assert metrics["training_passes"] == 1, metrics
+              assert metrics["epochs"] == 0, metrics
+              assert metrics["mcts_used"] is False, metrics
+              assert metrics["training_opponent"] == "frozen_handwritten", metrics
+              assert manifest["mcts_used"] is False, manifest
+              assert manifest["mirrored_roles"] is True, manifest
+              assert manifest["all_six_rotations"] is True, manifest
+              assert manifest["opponent"] == "frozen_handwritten", manifest
+          print(json.dumps(curve, indent=2))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: heuristic-champion-generations-main
+          path: artifacts/
+          retention-days: 30
