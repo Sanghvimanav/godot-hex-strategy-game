@@ -79,6 +79,10 @@ jobs:
           assert m["epochs"]==0 and m["training_passes"]==1
           assert m["shared_spatial_encoder_frozen"] is True
           assert abs(m["ppo_clip"]-.2)<1e-9
+          expansion=m["vocab_expansion"]
+          assert expansion["new_unit_vocab_size"] >= expansion["old_unit_vocab_size"]
+          assert expansion["new_action_vocab_size"] >= expansion["old_action_vocab_size"]
+          assert expansion["new_unit_tokens"] or expansion["new_action_tokens"], expansion
           assert a["challenger_policy"]=="direct_neural"
           assert a["champion_evaluator"]=="handwritten"
           assert a["counts"]["failed"]==0
