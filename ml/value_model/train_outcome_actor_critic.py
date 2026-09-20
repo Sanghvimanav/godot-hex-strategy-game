@@ -395,7 +395,8 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         weight_decay=args.weight_decay,
     )
     value_loader = DataLoader(value_dataset, batch_size=args.batch_size, shuffle=True)
-    value_model.train()
+    value_model.eval()
+    value_model.head.train()
     for board, globals_, target in value_loader:
         value_optimizer.zero_grad(set_to_none=True)
         prediction = value_model(board.to(device), globals_.to(device))
