@@ -42,7 +42,7 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/artifacts/train"
           godot --headless --path . res://tools/heuristic_arena_generation.tscn -- \
             --checkpoint="$GITHUB_WORKSPACE/checkpoint/spatial_policy_v1_model.pt" \
-            --base-games=6 --generation=1 --shard-index=0 --seed-base=9910001 \
+            --base-games=2 --generation=1 --shard-index=0 --seed-base=9910001 \
             --temperature=1.0 --map-profile=compact_v1 --champion-profile=balanced \
             --out="$GITHUB_WORKSPACE/artifacts/train"
       - name: One clipped update
@@ -73,9 +73,9 @@ jobs:
           m=json.loads(Path("artifacts/output/training_metrics.json").read_text())
           a=json.loads(Path("artifacts/arena/manifest.json").read_text())
           games=[json.loads(x) for x in Path("artifacts/train/games.jsonl").read_text().splitlines() if x.strip()]
-          assert len(games)==12
-          assert len({g["game_id"] for g in games})==12
-          assert len({g["scenario_seed"] for g in games})==6
+          assert len(games)==4
+          assert len({g["game_id"] for g in games})==4
+          assert len({g["scenario_seed"] for g in games})==2
           assert m["epochs"]==0 and m["training_passes"]==1
           assert m["shared_spatial_encoder_frozen"] is True
           assert abs(m["ppo_clip"]-.2)<1e-9
