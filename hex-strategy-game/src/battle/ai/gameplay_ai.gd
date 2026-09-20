@@ -12,9 +12,11 @@ const PureStateSimultaneousPUCT = preload("res://src/simulation/pure_state_simul
 const PureStateSelectiveContinuation = preload("res://src/simulation/pure_state_selective_continuation.gd")
 const PureStatePolicyExploration = preload("res://src/simulation/pure_state_policy_exploration.gd")
 const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural_evaluator.gd")
+const PureStateDirectPolicy = preload("res://src/simulation/pure_state_direct_policy.gd")
 
 const POLICY_OPPONENT_RESPONSE := "opponent_response"
 const POLICY_SIMULTANEOUS_PUCT := "simultaneous_puct"
+const POLICY_DIRECT_NEURAL := "direct_neural"
 const EVALUATOR_HANDWRITTEN := "handwritten"
 const EVALUATOR_NEURAL := "neural"
 
@@ -44,7 +46,7 @@ static func choose_actions(
 	var exploration_profile := str(resolved.get("exploration_profile", PureStatePolicyExploration.PROFILE_GREEDY))
 	var exploration_seed := int(resolved.get("exploration_seed", 0))
 
-	if policy not in [POLICY_OPPONENT_RESPONSE, POLICY_SIMULTANEOUS_PUCT]:
+	if policy not in [POLICY_OPPONENT_RESPONSE, POLICY_SIMULTANEOUS_PUCT, POLICY_DIRECT_NEURAL]:
 		return _invalid_result("unsupported_policy", resolved)
 	if evaluator not in [EVALUATOR_HANDWRITTEN, EVALUATOR_NEURAL]:
 		return _invalid_result("unsupported_evaluator", resolved)
@@ -57,6 +59,39 @@ static func choose_actions(
 	var evaluator_settings: Dictionary = evaluator_settings_variant
 	if evaluator == EVALUATOR_NEURAL and str(evaluator_settings.get("checkpoint_path", "")).is_empty():
 		return _invalid_result("neural_checkpoint_required", resolved)
+
+	if policy == POLICY_DIRECT_NEURAL:
+		if evaluator != EVALUATOR_NEURAL:
+			return _invalid_result("direct_neural_requires_neural_evaluator", resolved)
+		var direct_started_usec := Time.get_ticks_usec()
+		var direct_seed := exploration_seed + int(game_state.get("turn_index", 0)) * 1000003
+		var direct := PureStateDirectPolicy.choose_plan(
+			game_state,
+			group_name,
+			opponent_group_name,
+			str(evaluator_settings.get("checkpoint_path", "")),
+			direct_seed,
+			float(evaluator_settings.get("temperature", 0.0))
+		)
+		if not bool(direct.get("valid", false)):
+			return _invalid_result(str(direct.get("error", "direct_policy_failed")), resolved, direct)
+		var direct_actions: Array = (direct.get("actions", []) as Array).duplicate(true)
+		var direct_diagnostics := {
+			"elapsed_ms": float(Time.get_ticks_usec() - direct_started_usec) / 1000.0,
+			"simulations_run": 0,
+			"prefix_rows": (direct.get("prefix_rows", []) as Array).duplicate(true),
+			"selected_actions": direct_actions.duplicate(true),
+			"temperature": float(evaluator_settings.get("temperature", 0.0)),
+		}
+		return {
+			"valid": true,
+			"error": "",
+			"actions": direct_actions,
+			"policy": policy,
+			"evaluator": evaluator,
+			"settings": resolved.duplicate(true),
+			"diagnostics": direct_diagnostics,
+		}
 
 	var fixed_actions_variant = resolved.get("fixed_other_group_actions", {})
 	if not (fixed_actions_variant is Dictionary):
@@ -181,6 +216,22 @@ static func neural_settings(
 		"own_max_plans": own_max_plans,
 		"opponent_max_actions_per_unit": opponent_max_actions_per_unit,
 		"opponent_max_plans": opponent_max_plans,
+	})
+
+
+static func direct_neural_settings(
+	checkpoint_path: String = PureStateNeuralEvaluator.DEFAULT_CHECKPOINT_PATH,
+	temperature: float = 0.0,
+	seed: int = 0
+) -> Dictionary:
+	return resolve_settings({
+		"policy": POLICY_DIRECT_NEURAL,
+		"evaluator": EVALUATOR_NEURAL,
+		"evaluator_settings": {
+			"checkpoint_path": checkpoint_path,
+			"temperature": temperature,
+		},
+		"exploration_seed": seed,
 	})
 
 
