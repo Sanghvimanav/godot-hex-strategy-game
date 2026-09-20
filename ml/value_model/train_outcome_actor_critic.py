@@ -136,11 +136,17 @@ def _value_request_from_policy_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _baseline_key(row: dict[str, Any]) -> tuple[str, int, str]:
+def _baseline_key(row: dict[str, Any]) -> tuple[str, int, str, str]:
+    # Include the actual state so an accidental duplicate game_id can never make
+    # one sampled trajectory borrow another trajectory's baseline.
+    state_fingerprint = json.dumps(
+        row.get("state", {}), sort_keys=True, separators=(",", ":")
+    )
     return (
         str(row.get("game_id", "")),
         int(row.get("turn_index", 0)),
         str(row.get("perspective_group", "")),
+        state_fingerprint,
     )
 
 
@@ -149,8 +155,8 @@ def _compute_baselines(
     value_model: HexValueNet,
     encoder,
     device: torch.device,
-) -> dict[tuple[str, int, str], float]:
-    result: dict[tuple[str, int, str], float] = {}
+) -> dict[tuple[str, int, str, str], float]:
+    result: dict[tuple[str, int, str, str], float] = {}
     value_model.eval()
     with torch.no_grad():
         for row in rows:
@@ -292,25 +298,8 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     value_dataset = ValueExampleDataset(value_examples, encoder)
     value_before = _value_metrics(value_model, value_dataset, args.batch_size, device)
 
-    # Exactly one shuffled pass over this generation. There is intentionally no
-    # epoch loop: fresh gameplay, one update pass, evaluate, then generate again.
-    value_optimizer = torch.optim.AdamW(
-        value_model.parameters(),
-        lr=args.value_learning_rate,
-        weight_decay=args.weight_decay,
-    )
-    value_loader = DataLoader(value_dataset, batch_size=args.batch_size, shuffle=True)
-    value_model.train()
-    for board, globals_, target in value_loader:
-        value_optimizer.zero_grad(set_to_none=True)
-        prediction = value_model(board.to(device), globals_.to(device))
-        loss = F.mse_loss(prediction, target.to(device))
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(value_model.parameters(), args.max_grad_norm)
-        value_optimizer.step()
-
-    value_after = _value_metrics(value_model, value_dataset, args.batch_size, device)
-
+    # The spatial encoder is shared by the direct policy. Keep it frozen so value
+    # learning cannot move the policy representation outside PPO's trust region.
     for parameter in value_model.parameters():
         parameter.requires_grad_(False)
     value_model.eval()
@@ -325,6 +314,9 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         device,
     )
 
+    # Exactly one shuffled PPO-style pass over fresh gameplay. The behavior
+    # probability was recorded at game generation time, so the clipped ratio
+    # constrains how far this one pass can move each selected action.
     order = list(range(len(rows)))
     random.shuffle(order)
     policy_optimizer = torch.optim.AdamW(
@@ -338,6 +330,8 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     actor_losses: list[float] = []
     entropies: list[float] = []
     advantage_values: list[float] = []
+    probability_ratios: list[float] = []
+    clipped_rows = 0
     for index in order:
         row = rows[index]
         example = _row_example(row)
@@ -354,13 +348,22 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         probs = log_probs.exp()
         selected = int(row["selected_index"])
         advantage = float(advantages[_baseline_key(row)])
+        behavior_probability = max(1e-8, float(row.get("behavior_probability", 0.0)))
+        selected_probability = probs[selected].clamp_min(1e-8)
+        ratio = selected_probability / behavior_probability
+        clipped_ratio = ratio.clamp(1.0 - args.ppo_clip, 1.0 + args.ppo_clip)
+        unclipped_objective = ratio * advantage
+        clipped_objective = clipped_ratio * advantage
+        actor_loss = -torch.minimum(unclipped_objective, clipped_objective)
         entropy = -(probs * log_probs).sum()
-        actor_loss = -advantage * log_probs[selected]
         loss = (actor_loss - args.entropy_beta * entropy) / float(args.accumulate_groups)
         loss.backward()
         actor_losses.append(float(actor_loss.detach().item()))
         entropies.append(float(entropy.detach().item()))
         advantage_values.append(advantage)
+        ratio_value = float(ratio.detach().item())
+        probability_ratios.append(ratio_value)
+        clipped_rows += int(ratio_value < 1.0 - args.ppo_clip or ratio_value > 1.0 + args.ppo_clip)
         pending += 1
         if pending == args.accumulate_groups:
             torch.nn.utils.clip_grad_norm_(policy_head.parameters(), args.max_grad_norm)
@@ -382,6 +385,26 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         device,
     )
 
+    # Update only the value head after the policy step. The shared spatial encoder
+    # stays fixed across generations so this cannot implicitly change policy logits.
+    for parameter in value_model.head.parameters():
+        parameter.requires_grad_(True)
+    value_optimizer = torch.optim.AdamW(
+        value_model.head.parameters(),
+        lr=args.value_learning_rate,
+        weight_decay=args.weight_decay,
+    )
+    value_loader = DataLoader(value_dataset, batch_size=args.batch_size, shuffle=True)
+    value_model.train()
+    for board, globals_, target in value_loader:
+        value_optimizer.zero_grad(set_to_none=True)
+        prediction = value_model(board.to(device), globals_.to(device))
+        loss = F.mse_loss(prediction, target.to(device))
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(value_model.head.parameters(), args.max_grad_norm)
+        value_optimizer.step()
+    value_after = _value_metrics(value_model, value_dataset, args.batch_size, device)
+
     def mean(values: list[float]) -> float:
         return sum(values) / len(values) if values else 0.0
 
@@ -400,13 +423,17 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         "mean_abs_advantage": mean([abs(value) for value in advantage_values]),
         "mean_actor_loss": mean(actor_losses),
         "mean_training_entropy": mean(entropies),
+        "mean_probability_ratio": mean(probability_ratios),
+        "ppo_clipped_fraction": clipped_rows / len(rows),
+        "ppo_clip": args.ppo_clip,
         "entropy_beta": args.entropy_beta,
         "value_before": value_before,
         "value_after": value_after,
         "policy_before": policy_before,
         "policy_after": policy_after,
-        "policy_supervision": "final_game_outcome_actor_critic",
-        "value_supervision": "final_game_outcome",
+        "policy_supervision": "final_game_outcome_ppo_clipped",
+        "value_supervision": "final_game_outcome_value_head_only",
+        "shared_spatial_encoder_frozen": True,
         "training_opponent": "frozen_handwritten",
         "mcts_used": False,
         "explicit_action_mechanics": False,
@@ -435,6 +462,8 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         "value_learning_rate": args.value_learning_rate,
         "policy_learning_rate": args.policy_learning_rate,
         "entropy_beta": args.entropy_beta,
+        "ppo_clip": args.ppo_clip,
+        "shared_spatial_encoder_frozen": True,
         "weight_decay": args.weight_decay,
         "training_opponent": "frozen_handwritten",
         "direct_policy": True,
@@ -459,6 +488,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--policy-learning-rate", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--entropy-beta", type=float, default=0.01)
+    parser.add_argument("--ppo-clip", type=float, default=0.2)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--accumulate-groups", type=int, default=16)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
