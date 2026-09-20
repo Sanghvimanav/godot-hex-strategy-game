@@ -521,7 +521,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         output["policy_head_state_dict"] = value_model.policy_head.state_dict()
     output["joint_plan_policy_state_dict"] = policy_head.state_dict()
     updated_policy_config = dict(policy_config)
-    updated_policy_config["target"] = "outcome_actor_critic_v1"
+    updated_policy_config["target"] = "outcome_ppo_v2"
     updated_policy_config["explicit_action_mechanics"] = False
     output["joint_plan_policy_config"] = updated_policy_config
 
