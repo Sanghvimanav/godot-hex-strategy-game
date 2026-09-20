@@ -92,9 +92,6 @@ jobs:
       - name: Merge arenas
         run: |
           mkdir -p artifacts/gen0 artifacts/gen5 artifacts/report
-          python hex-strategy-game/tools/merge_ai_arena.py \
-            --input-root arena-shards \
-            --out artifacts/all
           python - <<'PY'
           import json
           from pathlib import Path
