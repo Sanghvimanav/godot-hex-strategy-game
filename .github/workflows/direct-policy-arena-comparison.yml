@@ -1,0 +1,181 @@
+name: Direct Policy Arena Comparison
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/heuristic-champion-generations]
+    paths: [.github/direct-policy-arena-comparison-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: direct-policy-arena-comparison-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  arena:
+    name: ${{ matrix.checkpoint.label }} full arena shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        checkpoint:
+          - label: gen0
+            run_id: '34799925923'
+            artifact: spatial-policy-v1-candidate
+            filename: spatial_policy_v1_model.pt
+          - label: gen5
+            run_id: '35462021961'
+            artifact: heuristic-champion-g5
+            filename: model.pt
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Download checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.checkpoint.artifact }}
+          path: checkpoint
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ matrix.checkpoint.run_id }}
+          github-token: ${{ github.token }}
+      - name: Run direct policy vs frozen heuristic
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/arena"
+          godot --headless --path . res://tools/ai_arena.tscn -- \
+            --preset=full \
+            --map-profile=compact_v1 \
+            --champion-profile=balanced \
+            --challenger-profile=fast \
+            --champion-evaluator=handwritten \
+            --challenger-evaluator=neural \
+            --champion-policy=opponent_response \
+            --challenger-policy=direct_neural \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/${{ matrix.checkpoint.filename }}" \
+            --direct-temperature=0 \
+            --rules-version="${GITHUB_SHA}" \
+            --out="$GITHUB_WORKSPACE/artifacts/arena" \
+            --shard-index="${{ matrix.shard }}" \
+            --shard-count=8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: direct-arena-${{ matrix.checkpoint.label }}-s${{ matrix.shard }}
+          path: artifacts/arena/
+          retention-days: 30
+
+  report:
+    name: Compare Gen 0 and Gen 5 in full arena
+    needs: arena
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: direct-arena-*
+          path: arena-shards
+      - name: Merge arenas
+        run: |
+          mkdir -p artifacts/gen0 artifacts/gen5 artifacts/report
+          python hex-strategy-game/tools/merge_ai_arena.py \
+            --input-root arena-shards \
+            --out artifacts/all
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          roots = {
+              "gen0": sorted(Path("arena-shards").glob("direct-arena-gen0-s*")),
+              "gen5": sorted(Path("arena-shards").glob("direct-arena-gen5-s*")),
+          }
+          for label, dirs in roots.items():
+              out = Path("artifacts") / label
+              out.mkdir(parents=True, exist_ok=True)
+              games=[]
+              manifests=[]
+              for d in dirs:
+                  m=json.loads((d/"manifest.json").read_text())
+                  manifests.append(m)
+                  games.extend(m["games"])
+              counts={k:sum(int(m["counts"].get(k,0)) for m in manifests) for k in ["challenger","champion","draw","unresolved","failed"]}
+              decisive=counts["challenger"]+counts["champion"]
+              pairs={}
+              for g in games:
+                  pairs.setdefault(g["pair_id"],[]).append(g)
+              pair_counts={"challenger":0,"champion":0,"tie":0,"unresolved":0}
+              family={}
+              faction={}
+              for g in games:
+                  result=g["winner_agent"]
+                  fam=g["base_scenario_id"]
+                  fac=g["challenger_group"]
+                  family.setdefault(fam,{"challenger":0,"champion":0,"draw":0,"unresolved":0})
+                  faction.setdefault(fac,{"challenger":0,"champion":0,"draw":0,"unresolved":0})
+                  family[fam][result]=family[fam].get(result,0)+1
+                  faction[fac][result]=faction[fac].get(result,0)+1
+              for rows in pairs.values():
+                  if len(rows)!=2 or any(r["winner_agent"]=="unresolved" for r in rows):
+                      pair_counts["unresolved"]+=1
+                      continue
+                  points=sum(1 if r["winner_agent"]=="challenger" else 0.5 if r["winner_agent"]=="draw" else 0 for r in rows)
+                  pair_counts["challenger" if points>1 else "champion" if points<1 else "tie"]+=1
+              result={
+                  "checkpoint":label,
+                  "games":len(games),
+                  "counts":counts,
+                  "decisive_win_rate":counts["challenger"]/decisive if decisive else 0,
+                  "pair_counts":pair_counts,
+                  "family_counts":family,
+                  "faction_counts":faction,
+              }
+              (out/"manifest.json").write_text(json.dumps(result,indent=2)+"\n")
+
+          g0=json.loads(Path("artifacts/gen0/manifest.json").read_text())
+          g5=json.loads(Path("artifacts/gen5/manifest.json").read_text())
+          lines=[
+              "# Direct policy full-arena comparison",
+              "",
+              "Neural challenger uses the direct autoregressive policy with no search.",
+              "Champion is the frozen balanced handwritten opponent-response heuristic.",
+              "",
+              "| Checkpoint | Neural wins | Heuristic wins | Draws | Unresolved | Decisive win rate | Pair wins |",
+              "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+          ]
+          for x in [g0,g5]:
+              lines.append(
+                  f"| {x['checkpoint']} | {x['counts']['challenger']} | {x['counts']['champion']} | "
+                  f"{x['counts']['draw']} | {x['counts']['unresolved']} | {x['decisive_win_rate']:.1%} | "
+                  f"{x['pair_counts']['challenger']} |"
+              )
+          lines += ["", "## Gen 5 by family", "",
+                    "| Family | Neural | Heuristic | Draw | Unresolved |",
+                    "| --- | ---: | ---: | ---: | ---: |"]
+          for fam,row in sorted(g5["family_counts"].items()):
+              lines.append(f"| {fam} | {row.get('challenger',0)} | {row.get('champion',0)} | {row.get('draw',0)} | {row.get('unresolved',0)} |")
+          summary="\n".join(lines)+"\n"
+          Path("artifacts/report/summary.md").write_text(summary)
+          Path("artifacts/report/comparison.json").write_text(json.dumps({"gen0":g0,"gen5":g5},indent=2)+"\n")
+          with Path(__import__("os").environ["GITHUB_STEP_SUMMARY"]).open("a") as h:
+              h.write(summary)
+          print(summary)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: direct-policy-arena-comparison
+          path: artifacts/report/
+          retention-days: 30
