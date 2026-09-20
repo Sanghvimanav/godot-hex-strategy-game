@@ -69,6 +69,8 @@ def main() -> int:
         "challenger_profile",
         "champion_evaluator",
         "challenger_evaluator",
+        "champion_policy",
+        "challenger_policy",
         "preset_games",
         "preset_pairs",
         "shard_count",
@@ -280,6 +282,8 @@ def main() -> int:
         "challenger_profile": first["challenger_profile"],
         "champion_evaluator": first["champion_evaluator"],
         "challenger_evaluator": first["challenger_evaluator"],
+        "champion_policy": first.get("champion_policy", "opponent_response"),
+        "challenger_policy": first.get("challenger_policy", "opponent_response"),
         "champion_settings": first["champion_settings"],
         "challenger_settings": first["challenger_settings"],
         "generation_shards": expected_shards,
@@ -389,8 +393,8 @@ def main() -> int:
 | Challenger sims / decision | {challenger_search['simulations_per_decision']:.1f} |
 | Champion sims / decision | {champion_search['simulations_per_decision']:.1f} |
 
-**Champion:** `{first['champion_profile']}` / `{first['champion_evaluator']}`  
-**Challenger:** `{first['challenger_profile']}` / `{first['challenger_evaluator']}`  
+**Champion:** `{first['champion_profile']}` / `{first['champion_evaluator']}` / `{first.get('champion_policy', 'opponent_response')}`  
+**Challenger:** `{first['challenger_profile']}` / `{first['challenger_evaluator']}` / `{first.get('challenger_policy', 'opponent_response')}`  
 **Checkpoint source:** `{checkpoint_line}`  
 **Winning factions:** `{dict(winner_faction_counts)}`  
 **Termination reasons:** `{dict(termination_counts)}`  
