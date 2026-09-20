@@ -18,6 +18,7 @@ from .joint_plan_policy import (
     PolicyExample,
     SpatialEntityJointPlanPolicyHead,
     UnitEntityFeaturizer,
+    unit_type,
 )
 from .model import HexValueNet
 from .strategic_state import make_encoder
@@ -57,7 +58,9 @@ def _load_value_model(checkpoint: dict[str, Any], device: torch.device) -> HexVa
 
 
 def _load_policy_head(
-    checkpoint: dict[str, Any], device: torch.device
+    checkpoint: dict[str, Any],
+    device: torch.device,
+    rows: list[dict[str, Any]],
 ) -> tuple[
     SpatialEntityJointPlanPolicyHead,
     dict[str, Any],
@@ -69,8 +72,37 @@ def _load_policy_head(
         raise ValueError("direct outcome training requires Spatial Policy V1")
     if bool(config.get("explicit_action_mechanics", False)):
         raise ValueError("explicit action mechanics are not permitted")
-    action_vocab = list(config["action_vocab"])
-    unit_vocab = list(config["unit_vocab"])
+
+    old_action_vocab = list(config["action_vocab"])
+    old_unit_vocab = list(config["unit_vocab"])
+    action_vocab = list(old_action_vocab)
+    unit_vocab = list(old_unit_vocab)
+    seen_actions = set(action_vocab)
+    seen_units = set(unit_vocab)
+    discovered_actions: set[str] = set()
+    discovered_units: set[str] = set()
+    for row in rows:
+        for key in ("prefix_actions", "candidate_actions"):
+            for action in row.get(key, []):
+                if isinstance(action, dict):
+                    token = str(action.get("action_key", "<unk>"))
+                    if token not in seen_actions:
+                        discovered_actions.add(token)
+        state = row.get("state", {})
+        if isinstance(state, dict):
+            for group in state.get("groups", []):
+                if not isinstance(group, dict):
+                    continue
+                for unit in group.get("units", []):
+                    if isinstance(unit, dict):
+                        token = unit_type(unit)
+                        if token not in seen_units:
+                            discovered_units.add(token)
+    action_vocab.extend(sorted(discovered_actions))
+    unit_vocab.extend(sorted(discovered_units))
+    config["action_vocab"] = action_vocab
+    config["unit_vocab"] = unit_vocab
+
     head = SpatialEntityJointPlanPolicyHead(
         state_feature_size=int(config["state_feature_size"]),
         spatial_feature_size=int(config["spatial_feature_size"]),
@@ -86,10 +118,47 @@ def _load_policy_head(
         attention_dim=int(config["attention_dim"]),
         spatial_context_dim=int(config["spatial_context_dim"]),
     ).to(device)
-    state = checkpoint.get("joint_plan_policy_state_dict")
-    if not isinstance(state, dict):
+    old_state = checkpoint.get("joint_plan_policy_state_dict")
+    if not isinstance(old_state, dict):
         raise ValueError("checkpoint is missing direct policy weights")
-    head.load_state_dict(state)
+
+    new_state = head.state_dict()
+    embedding_old_sizes = {
+        "action_embedding.weight": len(old_action_vocab),
+        "action_unit_embedding.weight": len(old_unit_vocab),
+        "entity_unit_embedding.weight": len(old_unit_vocab),
+    }
+    for key, old_value in old_state.items():
+        if key not in new_state:
+            raise ValueError(f"unexpected policy parameter {key}")
+        if new_state[key].shape == old_value.shape:
+            new_state[key] = old_value
+            continue
+        if key not in embedding_old_sizes or new_state[key].ndim != 2:
+            raise ValueError(
+                f"cannot expand policy parameter {key}: {tuple(old_value.shape)} -> "
+                f"{tuple(new_state[key].shape)}"
+            )
+        old_size = embedding_old_sizes[key]
+        if old_value.shape[0] != old_size or new_state[key].shape[0] < old_size:
+            raise ValueError(f"invalid embedding expansion for {key}")
+        expanded = new_state[key].clone()
+        expanded[:old_size] = old_value
+        vocab = old_action_vocab if key == "action_embedding.weight" else old_unit_vocab
+        unknown_index = vocab.index("<unk>") if "<unk>" in vocab else 0
+        if expanded.shape[0] > old_size:
+            expanded[old_size:] = old_value[unknown_index].unsqueeze(0)
+        new_state[key] = expanded
+    head.load_state_dict(new_state)
+    config["vocab_expansion"] = {
+        "new_action_tokens": sorted(discovered_actions),
+        "new_unit_tokens": sorted(discovered_units),
+        "old_action_vocab_size": len(old_action_vocab),
+        "new_action_vocab_size": len(action_vocab),
+        "old_unit_vocab_size": len(old_unit_vocab),
+        "new_unit_vocab_size": len(unit_vocab),
+        "new_tokens_initialized_from_unknown": True,
+    }
     return (
         head,
         config,
@@ -263,9 +332,6 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     checkpoint = torch.load(args.base_checkpoint, map_location=device, weights_only=False)
     encoder = make_encoder(int(checkpoint["model_config"].get("encoder_version", 1)))
     value_model = _load_value_model(checkpoint, device)
-    policy_head, policy_config, action_featurizer, entity_featurizer = _load_policy_head(
-        checkpoint, device
-    )
 
     raw_rows = _load_jsonl(args.policy_steps)
     rows = [
@@ -277,6 +343,10 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
     ]
     if not rows:
         raise ValueError("no usable direct-policy training rows")
+
+    policy_head, policy_config, action_featurizer, entity_featurizer = _load_policy_head(
+        checkpoint, device, rows
+    )
 
     value_examples = load_jsonl_examples(args.value_examples)
     if not value_examples:
@@ -438,6 +508,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         "training_opponent": "frozen_handwritten",
         "mcts_used": False,
         "explicit_action_mechanics": False,
+        "vocab_expansion": policy_config.get("vocab_expansion", {}),
     }
 
     output = copy.deepcopy(checkpoint)
