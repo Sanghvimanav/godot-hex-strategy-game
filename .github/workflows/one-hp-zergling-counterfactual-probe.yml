@@ -1,0 +1,205 @@
+name: One HP Zergling Counterfactual Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/heuristic-champion-generations]
+    paths: [.github/one-hp-zergling-probe-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  BASE_RUN_ID: '35557083128'
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - name: Generate simulator-labeled counterfactual rows
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/data"
+          godot --headless --path . res://tools/one_hp_zergling_counterfactual_probe.tscn -- \
+            --train-examples=4800 \
+            --eval-examples=1200 \
+            --out="$GITHUB_WORKSPACE/artifacts/data"
+      - name: Audit one-HP adjacent-kill contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/data/manifest.json").read_text())
+          assert m["hex_radius"]==1,m
+          assert m["marine_health"]==1,m
+          assert m["different_start_hexes"] is True,m
+          assert m["adjacent_start_hexes"] is True,m
+          assert m["directed_adjacent_layouts"]==24,m
+          assert m["train_layouts"]==18 and m["heldout_layouts"]==6,m
+          assert m["train_examples"]==4800 and m["eval_examples"]==1200,m
+          assert m["min_kill_targets"]==1 and m["max_kill_targets"]==1,m
+          assert set(m["target_action_keys"])=={"fast_move"},m
+          for file in ["train_rows.jsonl","eval_rows.jsonl"]:
+              for raw in Path("artifacts/data",file).read_text().splitlines():
+                  row=json.loads(raw)
+                  state=row["state"]
+                  assert state["hex_radius"]==1
+                  groups={g["name"]:g for g in state["groups"]}
+                  marine=groups["terran"]["units"][0]
+                  zerg=groups["zerg"]["units"][0]
+                  assert marine["health"]==1
+                  assert marine["cell"]!=zerg["cell"]
+                  targets=row["target_indices"]
+                  assert len(targets)==1
+                  action=row["candidate_actions"][targets[0]]
+                  assert action["action_key"]=="fast_move",action
+                  assert action["end_point"]==marine["cell"],(action,marine)
+          print(json.dumps(m,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: one-hp-zergling-probe-data
+          path: artifacts/data/
+          retention-days: 30
+
+  train:
+    needs: generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: lr1e4
+            lr: 0.0001
+          - label: lr3e4
+            lr: 0.0003
+          - label: lr1e3
+            lr: 0.001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: one-hp-zergling-probe-data
+          path: data
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g5
+          path: checkpoint
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.BASE_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: One supervised pass from current Gen 5 policy
+        run: |
+          mkdir -p "artifacts/${{ matrix.label }}"
+          python -m ml.value_model.train_counterfactual_policy_probe \
+            --base-checkpoint=checkpoint/model.pt \
+            --train-rows=data/train_rows.jsonl \
+            --eval-rows=data/eval_rows.jsonl \
+            --output="artifacts/${{ matrix.label }}/model.pt" \
+            --metrics="artifacts/${{ matrix.label }}/metrics.json" \
+            --learning-rate="${{ matrix.lr }}" \
+            --seed=17 \
+            --device=cpu
+      - name: Audit probe invariants
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          label=os.environ["LABEL"]
+          m=json.loads(Path("artifacts",label,"metrics.json").read_text())
+          assert m["training_passes"]==1 and m["epochs"]==0,m
+          assert m["base_policy_loaded"] is True,m
+          assert m["shared_spatial_encoder_frozen"] is True,m
+          assert m["explicit_action_mechanics_features"] is False,m
+          assert m["train_layouts"]==18 and m["heldout_layouts"]==6,m
+          assert m["vocab_expansion"]["new_action_tokens"]==[],m["vocab_expansion"]
+          assert m["vocab_expansion"]["new_unit_tokens"]==[],m["vocab_expansion"]
+          print(json.dumps({
+            "learning_rate":m["learning_rate"],
+            "train_before":m["before_train"]["top1_kill_accuracy"],
+            "train_after":m["after_train"]["top1_kill_accuracy"],
+            "heldout_before":m["before_eval"]["top1_kill_accuracy"],
+            "heldout_after":m["after_eval"]["top1_kill_accuracy"],
+            "heldout_kill_prob_before":m["before_eval"]["mean_kill_probability"],
+            "heldout_kill_prob_after":m["after_eval"]["mean_kill_probability"],
+            "heldout_margin_before":m["before_eval"]["mean_kill_logit_margin"],
+            "heldout_margin_after":m["after_eval"]["mean_kill_logit_margin"],
+          },indent=2))
+          PY
+        env:
+          LABEL: ${{ matrix.label }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: one-hp-zergling-probe-${{ matrix.label }}
+          path: artifacts/${{ matrix.label }}/
+          retention-days: 30
+
+  report:
+    needs: train
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: one-hp-zergling-probe-lr*
+          path: results
+      - name: Summarize capacity probe
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          rows=[]
+          for p in sorted(Path("results").glob("one-hp-zergling-probe-lr*/metrics.json")):
+              m=json.loads(p.read_text())
+              rows.append({
+                  "learning_rate":m["learning_rate"],
+                  "train_before":m["before_train"]["top1_kill_accuracy"],
+                  "train_after":m["after_train"]["top1_kill_accuracy"],
+                  "eval_before":m["before_eval"]["top1_kill_accuracy"],
+                  "eval_after":m["after_eval"]["top1_kill_accuracy"],
+                  "eval_prob_before":m["before_eval"]["mean_kill_probability"],
+                  "eval_prob_after":m["after_eval"]["mean_kill_probability"],
+                  "eval_margin_before":m["before_eval"]["mean_kill_logit_margin"],
+                  "eval_margin_after":m["after_eval"]["mean_kill_logit_margin"],
+              })
+          assert len(rows)==3,rows
+          Path("capacity_probe.json").write_text(json.dumps(rows,indent=2)+"\n")
+          lines=[
+              "# One-HP adjacent Zergling capacity probe",
+              "",
+              "Current Gen 5 policy; radius 1; one Zergling adjacent to a distinct 1-HP Marine.",
+              "Targets are generated by simulating every legal action. One supervised pass; shared spatial encoder frozen.",
+              "",
+              "| LR | Train top-1 before | Train top-1 after | Heldout top-1 before | Heldout top-1 after | Heldout kill P before | Heldout kill P after |",
+              "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+          ]
+          for r in rows:
+              lines.append(f"| {r['learning_rate']:.0e} | {r['train_before']:.1%} | {r['train_after']:.1%} | {r['eval_before']:.1%} | {r['eval_after']:.1%} | {r['eval_prob_before']:.1%} | {r['eval_prob_after']:.1%} |")
+          summary="\n".join(lines)+"\n"
+          Path("summary.md").write_text(summary)
+          with Path(__import__("os").environ["GITHUB_STEP_SUMMARY"]).open("a") as f:
+              f.write(summary)
+          print(summary)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: one-hp-zergling-capacity-probe-report
+          path: |
+            capacity_probe.json
+            summary.md
+          retention-days: 30
