@@ -47,7 +47,9 @@ jobs:
           assert m["adjacent_start_hexes"] is True,m
           assert m["directed_adjacent_layouts"]==24,m
           assert m["train_layouts"]==18 and m["heldout_layouts"]==6,m
-          assert m["train_examples"]==4800 and m["eval_examples"]==1200,m
+          assert m["source_train_examples"]==18 and m["source_eval_examples"]==6,m
+          assert m["training_examples"]==4860,m
+          assert m["train_examples"]==18 and m["eval_examples"]==6,m
           assert m["min_kill_targets"]==1 and m["max_kill_targets"]==1,m
           assert set(m["target_action_keys"])=={"fast_move"},m
           for file in ["train_rows.jsonl","eval_rows.jsonl"]:
