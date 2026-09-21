@@ -188,6 +188,26 @@ static func _test_turn_limit_keeps_policy_data_without_value_labels(tests: Node)
 	if not (artifacts.get("value_examples", []) as Array).is_empty():
 		tests._fail("unresolved turn-limit game must not create speculative value labels")
 		return false
+	var policy_steps: Array = artifacts.get("human_policy_steps", [])
+	if policy_steps.is_empty():
+		tests._fail("turn-limit game should emit direct-policy imitation rows for human holds")
+		return false
+	if not (artifacts.get("human_policy_step_errors", []) as Array).is_empty():
+		tests._fail("legal human holds should map cleanly into direct-policy candidates")
+		return false
+	for row_variant in policy_steps:
+		if not (row_variant is Dictionary):
+			continue
+		var row: Dictionary = row_variant
+		var candidates: Array = row.get("candidate_actions", [])
+		var selected_index := int(row.get("selected_index", -1))
+		if selected_index < 0 or selected_index >= candidates.size():
+			tests._fail("human policy step must identify a legal selected candidate: %s" % row)
+			return false
+		var selected: Dictionary = candidates[selected_index]
+		if str(selected.get("action_key", "")) != "<hold>":
+			tests._fail("omitted human action should become an explicit autoregressive hold: %s" % selected)
+			return false
 	var policy_example: Dictionary = (artifacts.get("human_policy_examples", []) as Array)[0]
 	if policy_example.get("terminal_outcome", "sentinel") != null:
 		tests._fail("unresolved policy examples should carry a null terminal outcome")
