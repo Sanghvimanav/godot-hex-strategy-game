@@ -67,8 +67,8 @@ static func build_state(seed: int, max_turns: int = DEFAULT_MAX_TURNS) -> Dictio
 
     var marine_cells := _MARINE_HOME.duplicate()
     var zerg_cells := _ZERG_HOME.duplicate()
-    marine_cells.shuffle()
-    zerg_cells.shuffle()
+    _shuffle_cells(marine_cells, rng)
+    _shuffle_cells(zerg_cells, rng)
     _set_group_cells(state, 0, marine_cells.slice(0, marines))
     _set_group_cells(state, 1, zerg_cells.slice(0, zerglings))
 
@@ -106,6 +106,14 @@ static func layout_signature(state: Dictionary) -> String:
         cells.sort()
         parts.append("%s:%s" % [str(group.get("name", "")), ";".join(cells)])
     return "|".join(parts)
+
+
+static func _shuffle_cells(cells: Array, rng: RandomNumberGenerator) -> void:
+    for i in range(cells.size() - 1, 0, -1):
+        var j := rng.randi_range(0, i)
+        var temp = cells[i]
+        cells[i] = cells[j]
+        cells[j] = temp
 
 
 static func _set_group_cells(state: Dictionary, group_index: int, cells: Array) -> void:
