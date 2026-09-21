@@ -171,7 +171,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         lr=args.learning_rate,
         weight_decay=args.weight_decay,
     )
-    order = list(range(len(train_rows)))
+    order = [i % len(train_rows) for i in range(args.training_examples)]
     random.shuffle(order)
     policy_head.train()
     optimizer.zero_grad(set_to_none=True)
@@ -221,8 +221,9 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         "experiment": "one_hp_adjacent_zergling_counterfactual_probe",
         "training_passes": 1,
         "epochs": 0,
-        "train_examples": len(train_rows),
-        "eval_examples": len(eval_rows),
+        "source_train_examples": len(train_rows),
+        "source_eval_examples": len(eval_rows),
+        "training_examples": len(order),
         "train_layouts": len(train_layouts),
         "heldout_layouts": len(eval_layouts),
         "learning_rate": args.learning_rate,
@@ -264,6 +265,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--metrics", type=Path, required=True)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
+    parser.add_argument("--training-examples", type=int, default=4860)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--accumulate-groups", type=int, default=16)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
