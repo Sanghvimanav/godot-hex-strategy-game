@@ -82,7 +82,7 @@ func _run() -> void:
                     continue
                 var turn: Dictionary = turn_variant
                 for perspective_group in ["terran", "zerg"]:
-                    var prefix_key := perspective_group + "_policy_prefix_rows"
+                    var prefix_key: String = str(perspective_group) + "_policy_prefix_rows"
                     var outcome := _outcome_for(winner, status, perspective_group)
                     for row_variant in turn.get(prefix_key, []):
                         if not (row_variant is Dictionary):
