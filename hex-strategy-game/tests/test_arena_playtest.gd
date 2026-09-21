@@ -199,12 +199,12 @@ static func _test_turn_limit_keeps_policy_data_without_value_labels(tests: Node)
 		if not (row_variant is Dictionary):
 			continue
 		var row: Dictionary = row_variant
-		var candidates: Array = row.get("candidate_actions", [])
+		var candidates: Array = (row.get("candidate_actions", []) as Array)
 		var selected_index := int(row.get("selected_index", -1))
 		if selected_index < 0 or selected_index >= candidates.size():
 			tests._fail("human policy step must identify a legal selected candidate: %s" % row)
 			return false
-		var selected: Dictionary = candidates[selected_index]
+		var selected: Dictionary = candidates[selected_index] as Dictionary
 		if str(selected.get("action_key", "")) != "<hold>":
 			tests._fail("omitted human action should become an explicit autoregressive hold: %s" % selected)
 			return false
