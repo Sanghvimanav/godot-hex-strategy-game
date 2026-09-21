@@ -1,0 +1,129 @@
+name: Small Arena Generations V3 Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/heuristic-champion-generations]
+    paths: [.github/small-arena-v3-smoke-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  SEED_RUN_ID: '34799925923'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - name: Run small-arena contract tests
+        working-directory: hex-strategy-game
+        run: godot --headless --path . res://tests/test_runner.tscn
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: checkpoint
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.SEED_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Generate randomized radius-one training games
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/train"
+          godot --headless --path . res://tools/small_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/spatial_policy_v1_model.pt" \
+            --base-games=20 \
+            --generation=1 \
+            --shard-index=0 \
+            --seed-base=8100000 \
+            --temperature=1.0 \
+            --record-training=true \
+            --max-turns=8 \
+            --out="$GITHUB_WORKSPACE/artifacts/train"
+
+      - name: Audit training distribution
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/train/manifest.json").read_text())
+          assert m["experiment"]=="small_arena_generations_v3",m
+          assert m["hex_radius"]==1,m
+          assert m["allowed_unit_types"]==["marine","zergling"],m
+          assert m["base_states"]==20 and m["actual_games"]==40,m
+          assert m["matchup_counts"]["3v3"]["win"] + m["matchup_counts"]["3v3"]["loss"] + m["matchup_counts"]["3v3"]["draw"] + m["matchup_counts"]["3v3"]["unresolved"] == 32,m
+          games=[json.loads(x) for x in Path("artifacts/train/games.jsonl").read_text().splitlines() if x.strip()]
+          assert len({g["scenario_seed"] for g in games})==20
+          assert all(g["matchup"] in {"3v3","2v2","3v2","2v3"} for g in games)
+          print(json.dumps({"counts":m["counts"],"matchups":m["matchup_counts"],"policy_steps":m["policy_steps"]},indent=2))
+          PY
+
+      - name: One clipped outcome update
+        run: |
+          mkdir -p artifacts/model
+          python -m ml.value_model.train_outcome_actor_critic \
+            --base-checkpoint=checkpoint/spatial_policy_v1_model.pt \
+            --policy-steps=artifacts/train/policy_steps.jsonl \
+            --value-examples=artifacts/train/value_examples.jsonl \
+            --output=artifacts/model/model.pt \
+            --value-learning-rate=1e-4 \
+            --policy-learning-rate=1e-4 \
+            --entropy-beta=0.01 \
+            --ppo-clip=0.2 \
+            --seed=1 \
+            --device=cpu \
+            | tee artifacts/model/training_metrics.json
+
+      - name: Greedy fixed-seed small arena evaluation
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/eval"
+          godot --headless --path . res://tools/small_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/artifacts/model/model.pt" \
+            --base-games=20 \
+            --generation=1 \
+            --shard-index=0 \
+            --seed-base=9100000 \
+            --temperature=0 \
+            --record-training=false \
+            --max-turns=8 \
+            --out="$GITHUB_WORKSPACE/artifacts/eval"
+
+      - name: Audit greedy evaluation
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/eval/manifest.json").read_text())
+          assert m["hex_radius"]==1 and m["allowed_unit_types"]==["marine","zergling"],m
+          assert m["actual_games"]==40,m
+          assert m["record_training"] is False,m
+          assert m["temperature"]==0,m
+          print(json.dumps({"counts":m["counts"],"matchups":m["matchup_counts"],"factions":m["faction_counts"]},indent=2))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: small-arena-v3-smoke
+          path: artifacts/
+          retention-days: 30
