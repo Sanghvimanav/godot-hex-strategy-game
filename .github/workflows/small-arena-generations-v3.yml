@@ -70,7 +70,6 @@ jobs:
 
   data_g1:
     name: Generation 1 small-arena training shard ${{ matrix.shard }}
-    needs: []
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
