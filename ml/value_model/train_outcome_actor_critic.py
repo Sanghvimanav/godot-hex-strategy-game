@@ -505,7 +505,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         "policy_supervision": "final_game_outcome_ppo_clipped",
         "value_supervision": "final_game_outcome_value_head_only",
         "shared_spatial_encoder_frozen": True,
-        "training_opponent": "frozen_handwritten",
+        "training_opponent": args.training_opponent,
         "mcts_used": False,
         "explicit_action_mechanics": False,
         "vocab_expansion": policy_config.get("vocab_expansion", {}),
@@ -537,7 +537,7 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         "ppo_clip": args.ppo_clip,
         "shared_spatial_encoder_frozen": True,
         "weight_decay": args.weight_decay,
-        "training_opponent": "frozen_handwritten",
+        "training_opponent": args.training_opponent,
         "direct_policy": True,
         "mcts_used": False,
     }
@@ -561,6 +561,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--entropy-beta", type=float, default=0.01)
     parser.add_argument("--ppo-clip", type=float, default=0.2)
+    parser.add_argument("--training-opponent", default="frozen_handwritten")
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--accumulate-groups", type=int, default=16)
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
