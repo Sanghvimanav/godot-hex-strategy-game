@@ -25,7 +25,7 @@ jobs:
       - name: Generate deterministic one-HP adjacency rows
         run: |
           mkdir -p artifacts/data
-          python -m ml.value_model.make_one_hp_zergling_probe_data \
+          python ml/value_model/make_one_hp_zergling_probe_data.py \
             --out=artifacts/data
       - name: Audit one-HP adjacent-kill contract
         run: |
