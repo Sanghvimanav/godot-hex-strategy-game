@@ -497,6 +497,8 @@ def train(args: argparse.Namespace) -> dict[str, Any]:
         "mean_probability_ratio": mean(probability_ratios),
         "ppo_clipped_fraction": clipped_rows / len(rows),
         "ppo_clip": args.ppo_clip,
+        "policy_learning_rate": args.policy_learning_rate,
+        "value_learning_rate": args.value_learning_rate,
         "entropy_beta": args.entropy_beta,
         "value_before": value_before,
         "value_after": value_after,
