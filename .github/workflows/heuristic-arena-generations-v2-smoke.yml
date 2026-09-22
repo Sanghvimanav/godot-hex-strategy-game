@@ -1,0 +1,95 @@
+name: Heuristic Arena Generations V2 Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/heuristic-champion-generations]
+    paths: [.github/heuristic-arena-generations-v2-smoke-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: checkpoint
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: '34799925923'
+          github-token: ${{ github.token }}
+      - name: Generate randomized training data
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/train"
+          godot --headless --path . res://tools/heuristic_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/spatial_policy_v1_model.pt" \
+            --base-games=2 --generation=1 --shard-index=0 --seed-base=9910001 \
+            --temperature=1.0 --map-profile=compact_v1 --champion-profile=balanced \
+            --out="$GITHUB_WORKSPACE/artifacts/train"
+      - name: One clipped update
+        run: |
+          mkdir -p artifacts/output
+          python -m ml.value_model.train_outcome_actor_critic \
+            --base-checkpoint=checkpoint/spatial_policy_v1_model.pt \
+            --policy-steps=artifacts/train/policy_steps.jsonl \
+            --value-examples=artifacts/train/value_examples.jsonl \
+            --output=artifacts/output/model.pt --ppo-clip=0.2 --seed=1 --device=cpu \
+            | tee artifacts/output/training_metrics.json
+      - name: Direct-policy fast arena
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/arena"
+          godot --headless --path . res://tools/ai_arena.tscn -- \
+            --preset=fast --map-profile=compact_v1 \
+            --champion-profile=balanced --challenger-profile=fast \
+            --champion-evaluator=handwritten --challenger-evaluator=neural \
+            --champion-policy=opponent_response --challenger-policy=direct_neural \
+            --checkpoint="$GITHUB_WORKSPACE/artifacts/output/model.pt" --direct-temperature=0 \
+            --out="$GITHUB_WORKSPACE/artifacts/arena" --shard-index=0 --shard-count=1
+      - name: Audit smoke
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/output/training_metrics.json").read_text())
+          a=json.loads(Path("artifacts/arena/manifest.json").read_text())
+          games=[json.loads(x) for x in Path("artifacts/train/games.jsonl").read_text().splitlines() if x.strip()]
+          assert len(games)==4
+          assert len({g["game_id"] for g in games})==4
+          assert len({g["scenario_seed"] for g in games})==2
+          assert m["epochs"]==0 and m["training_passes"]==1
+          assert m["shared_spatial_encoder_frozen"] is True
+          assert abs(m["ppo_clip"]-.2)<1e-9
+          expansion=m["vocab_expansion"]
+          assert expansion["new_unit_vocab_size"] >= expansion["old_unit_vocab_size"]
+          assert expansion["new_action_vocab_size"] >= expansion["old_action_vocab_size"]
+          assert expansion["new_unit_tokens"] or expansion["new_action_tokens"], expansion
+          assert a["challenger_policy"]=="direct_neural"
+          assert a["champion_evaluator"]=="handwritten"
+          assert a["counts"]["failed"]==0
+          print(json.dumps({"training":m,"arena_counts":a["counts"]},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: heuristic-arena-v2-smoke
+          path: artifacts/
+          retention-days: 30

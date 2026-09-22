@@ -1,0 +1,1028 @@
+name: Small Arena Generations V3
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ai/heuristic-champion-generations]
+    paths: [.github/small-arena-v3-trigger]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: small-arena-v3-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SEED_RUN_ID: '34799925923'
+
+jobs:
+  eval_g0:
+    name: Gen 0 fixed small arena shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: checkpoint
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.SEED_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Fixed greedy radius-one evaluation
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/eval"
+          seed_base=$((9100000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/small_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/spatial_policy_v1_model.pt" \
+            --base-games=20 \
+            --generation=0 \
+            --shard-index="${{ matrix.shard }}" \
+            --seed-base="$seed_base" \
+            --temperature=0 \
+            --record-training=false \
+            --max-turns=8 \
+            --out="$GITHUB_WORKSPACE/artifacts/eval"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-eval-g0-s${{ matrix.shard }}
+          path: artifacts/eval/
+          retention-days: 30
+
+  data_g1:
+    name: Generation 1 small-arena training shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: checkpoint
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.SEED_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Generate randomized radius-one games
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/data"
+          seed_base=$((8100000 + 1 * 1000000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/small_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/spatial_policy_v1_model.pt" \
+            --base-games=80 \
+            --generation=1 \
+            --shard-index="${{ matrix.shard }}" \
+            --seed-base="$seed_base" \
+            --temperature=1.0 \
+            --record-training=true \
+            --max-turns=8 \
+            --out="$GITHUB_WORKSPACE/artifacts/data"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-train-g1-s${{ matrix.shard }}
+          path: artifacts/data/
+          retention-days: 30
+
+  train_g1:
+    name: Train generation 1
+    needs: data_g1
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: spatial-policy-v1-candidate
+          path: checkpoint
+          repository: Sanghvimanav/godot-hex-strategy-game
+          run-id: ${{ env.SEED_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: small-arena-train-g1-s*
+          path: generation-shards
+      - name: Merge generation and audit small-arena contract
+        run: |
+          mkdir -p artifacts/combined artifacts/output
+          find generation-shards -name policy_steps.jsonl -print | sort | xargs cat > artifacts/combined/policy_steps.jsonl
+          find generation-shards -name value_examples.jsonl -print | sort | xargs cat > artifacts/combined/value_examples.jsonl
+          find generation-shards -name games.jsonl -print | sort | xargs cat > artifacts/combined/games.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          games=[json.loads(x) for x in Path("artifacts/combined/games.jsonl").read_text().splitlines() if x.strip()]
+          policy=[json.loads(x) for x in Path("artifacts/combined/policy_steps.jsonl").read_text().splitlines() if x.strip()]
+          values=[json.loads(x) for x in Path("artifacts/combined/value_examples.jsonl").read_text().splitlines() if x.strip()]
+          ids=[g["game_id"] for g in games]
+          assert len(games)==960,len(games)
+          assert len(ids)==len(set(ids)),(len(ids),len(set(ids)))
+          assert len({g["scenario_seed"] for g in games})==480
+          assert sum(g["matchup"]=="3v3" for g in games)==768
+          assert all(g["matchup"] in {"3v3","2v2","3v2","2v3"} for g in games)
+          assert {int(x["generation"]) for x in policy}=={1}
+          assert {int(x["source"]["generation"]) for x in values}=={1}
+          for row in policy[:500]:
+              state=row["state"]
+              assert state["hex_radius"]==1
+              defs={u["def_path"].split("/")[-1] for group in state["groups"] for u in group["units"]}
+              assert defs <= {"marine.tres","zergling.tres"},defs
+          print(json.dumps({"games":len(games),"base_states":len({g["scenario_seed"] for g in games}),"three_v_three_games":sum(g["matchup"]=="3v3" for g in games),"policy_steps":len(policy),"value_examples":len(values)}))
+          PY
+      - name: One clipped outcome update pass
+        run: |
+          python -m ml.value_model.train_outcome_actor_critic \
+            --base-checkpoint="checkpoint/spatial_policy_v1_model.pt" \
+            --policy-steps=artifacts/combined/policy_steps.jsonl \
+            --value-examples=artifacts/combined/value_examples.jsonl \
+            --output=artifacts/output/model.pt \
+            --value-learning-rate=1e-4 \
+            --policy-learning-rate=1e-4 \
+            --entropy-beta=0.01 \
+            --ppo-clip=0.2 \
+            --seed=1 \
+            --device=cpu \
+            | tee artifacts/output/training_metrics.json
+      - name: Audit training invariants
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/output/training_metrics.json").read_text())
+          assert m["training_passes"]==1 and m["epochs"]==0,m
+          assert m["mcts_used"] is False,m
+          assert m["training_opponent"]=="frozen_handwritten",m
+          assert m["shared_spatial_encoder_frozen"] is True,m
+          assert abs(m["ppo_clip"]-0.2)<1e-9,m
+          assert m["vocab_expansion"]["new_unit_tokens"]==[],m["vocab_expansion"]
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-g1
+          path: artifacts/output/
+          retention-days: 30
+
+  eval_g1:
+    name: Gen 1 fixed small arena shard ${{ matrix.shard }}
+    needs: train_g1
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g1
+          path: checkpoint
+      - name: Fixed greedy radius-one evaluation
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/eval"
+          seed_base=$((9100000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/small_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=20 \
+            --generation=1 \
+            --shard-index="${{ matrix.shard }}" \
+            --seed-base="$seed_base" \
+            --temperature=0 \
+            --record-training=false \
+            --max-turns=8 \
+            --out="$GITHUB_WORKSPACE/artifacts/eval"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-eval-g1-s${{ matrix.shard }}
+          path: artifacts/eval/
+          retention-days: 30
+
+  data_g2:
+    name: Generation 2 small-arena training shard ${{ matrix.shard }}
+    needs: train_g1
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g1
+          path: checkpoint
+      - name: Generate randomized radius-one games
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/data"
+          seed_base=$((8100000 + 2 * 1000000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/small_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=80 \
+            --generation=2 \
+            --shard-index="${{ matrix.shard }}" \
+            --seed-base="$seed_base" \
+            --temperature=1.0 \
+            --record-training=true \
+            --max-turns=8 \
+            --out="$GITHUB_WORKSPACE/artifacts/data"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-train-g2-s${{ matrix.shard }}
+          path: artifacts/data/
+          retention-days: 30
+
+  train_g2:
+    name: Train generation 2
+    needs: data_g2
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g1
+          path: checkpoint
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: small-arena-train-g2-s*
+          path: generation-shards
+      - name: Merge generation and audit small-arena contract
+        run: |
+          mkdir -p artifacts/combined artifacts/output
+          find generation-shards -name policy_steps.jsonl -print | sort | xargs cat > artifacts/combined/policy_steps.jsonl
+          find generation-shards -name value_examples.jsonl -print | sort | xargs cat > artifacts/combined/value_examples.jsonl
+          find generation-shards -name games.jsonl -print | sort | xargs cat > artifacts/combined/games.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          games=[json.loads(x) for x in Path("artifacts/combined/games.jsonl").read_text().splitlines() if x.strip()]
+          policy=[json.loads(x) for x in Path("artifacts/combined/policy_steps.jsonl").read_text().splitlines() if x.strip()]
+          values=[json.loads(x) for x in Path("artifacts/combined/value_examples.jsonl").read_text().splitlines() if x.strip()]
+          ids=[g["game_id"] for g in games]
+          assert len(games)==960,len(games)
+          assert len(ids)==len(set(ids)),(len(ids),len(set(ids)))
+          assert len({g["scenario_seed"] for g in games})==480
+          assert sum(g["matchup"]=="3v3" for g in games)==768
+          assert all(g["matchup"] in {"3v3","2v2","3v2","2v3"} for g in games)
+          assert {int(x["generation"]) for x in policy}=={2}
+          assert {int(x["source"]["generation"]) for x in values}=={2}
+          for row in policy[:500]:
+              state=row["state"]
+              assert state["hex_radius"]==1
+              defs={u["def_path"].split("/")[-1] for group in state["groups"] for u in group["units"]}
+              assert defs <= {"marine.tres","zergling.tres"},defs
+          print(json.dumps({"games":len(games),"base_states":len({g["scenario_seed"] for g in games}),"three_v_three_games":sum(g["matchup"]=="3v3" for g in games),"policy_steps":len(policy),"value_examples":len(values)}))
+          PY
+      - name: One clipped outcome update pass
+        run: |
+          python -m ml.value_model.train_outcome_actor_critic \
+            --base-checkpoint="checkpoint/model.pt" \
+            --policy-steps=artifacts/combined/policy_steps.jsonl \
+            --value-examples=artifacts/combined/value_examples.jsonl \
+            --output=artifacts/output/model.pt \
+            --value-learning-rate=1e-4 \
+            --policy-learning-rate=1e-4 \
+            --entropy-beta=0.01 \
+            --ppo-clip=0.2 \
+            --seed=2 \
+            --device=cpu \
+            | tee artifacts/output/training_metrics.json
+      - name: Audit training invariants
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/output/training_metrics.json").read_text())
+          assert m["training_passes"]==1 and m["epochs"]==0,m
+          assert m["mcts_used"] is False,m
+          assert m["training_opponent"]=="frozen_handwritten",m
+          assert m["shared_spatial_encoder_frozen"] is True,m
+          assert abs(m["ppo_clip"]-0.2)<1e-9,m
+          assert m["vocab_expansion"]["new_unit_tokens"]==[],m["vocab_expansion"]
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-g2
+          path: artifacts/output/
+          retention-days: 30
+
+  eval_g2:
+    name: Gen 2 fixed small arena shard ${{ matrix.shard }}
+    needs: train_g2
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g2
+          path: checkpoint
+      - name: Fixed greedy radius-one evaluation
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/eval"
+          seed_base=$((9100000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/small_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=20 \
+            --generation=2 \
+            --shard-index="${{ matrix.shard }}" \
+            --seed-base="$seed_base" \
+            --temperature=0 \
+            --record-training=false \
+            --max-turns=8 \
+            --out="$GITHUB_WORKSPACE/artifacts/eval"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-eval-g2-s${{ matrix.shard }}
+          path: artifacts/eval/
+          retention-days: 30
+
+  data_g3:
+    name: Generation 3 small-arena training shard ${{ matrix.shard }}
+    needs: train_g2
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g2
+          path: checkpoint
+      - name: Generate randomized radius-one games
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/data"
+          seed_base=$((8100000 + 3 * 1000000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/small_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=80 \
+            --generation=3 \
+            --shard-index="${{ matrix.shard }}" \
+            --seed-base="$seed_base" \
+            --temperature=1.0 \
+            --record-training=true \
+            --max-turns=8 \
+            --out="$GITHUB_WORKSPACE/artifacts/data"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-train-g3-s${{ matrix.shard }}
+          path: artifacts/data/
+          retention-days: 30
+
+  train_g3:
+    name: Train generation 3
+    needs: data_g3
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g2
+          path: checkpoint
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: small-arena-train-g3-s*
+          path: generation-shards
+      - name: Merge generation and audit small-arena contract
+        run: |
+          mkdir -p artifacts/combined artifacts/output
+          find generation-shards -name policy_steps.jsonl -print | sort | xargs cat > artifacts/combined/policy_steps.jsonl
+          find generation-shards -name value_examples.jsonl -print | sort | xargs cat > artifacts/combined/value_examples.jsonl
+          find generation-shards -name games.jsonl -print | sort | xargs cat > artifacts/combined/games.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          games=[json.loads(x) for x in Path("artifacts/combined/games.jsonl").read_text().splitlines() if x.strip()]
+          policy=[json.loads(x) for x in Path("artifacts/combined/policy_steps.jsonl").read_text().splitlines() if x.strip()]
+          values=[json.loads(x) for x in Path("artifacts/combined/value_examples.jsonl").read_text().splitlines() if x.strip()]
+          ids=[g["game_id"] for g in games]
+          assert len(games)==960,len(games)
+          assert len(ids)==len(set(ids)),(len(ids),len(set(ids)))
+          assert len({g["scenario_seed"] for g in games})==480
+          assert sum(g["matchup"]=="3v3" for g in games)==768
+          assert all(g["matchup"] in {"3v3","2v2","3v2","2v3"} for g in games)
+          assert {int(x["generation"]) for x in policy}=={3}
+          assert {int(x["source"]["generation"]) for x in values}=={3}
+          for row in policy[:500]:
+              state=row["state"]
+              assert state["hex_radius"]==1
+              defs={u["def_path"].split("/")[-1] for group in state["groups"] for u in group["units"]}
+              assert defs <= {"marine.tres","zergling.tres"},defs
+          print(json.dumps({"games":len(games),"base_states":len({g["scenario_seed"] for g in games}),"three_v_three_games":sum(g["matchup"]=="3v3" for g in games),"policy_steps":len(policy),"value_examples":len(values)}))
+          PY
+      - name: One clipped outcome update pass
+        run: |
+          python -m ml.value_model.train_outcome_actor_critic \
+            --base-checkpoint="checkpoint/model.pt" \
+            --policy-steps=artifacts/combined/policy_steps.jsonl \
+            --value-examples=artifacts/combined/value_examples.jsonl \
+            --output=artifacts/output/model.pt \
+            --value-learning-rate=1e-4 \
+            --policy-learning-rate=1e-4 \
+            --entropy-beta=0.01 \
+            --ppo-clip=0.2 \
+            --seed=3 \
+            --device=cpu \
+            | tee artifacts/output/training_metrics.json
+      - name: Audit training invariants
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/output/training_metrics.json").read_text())
+          assert m["training_passes"]==1 and m["epochs"]==0,m
+          assert m["mcts_used"] is False,m
+          assert m["training_opponent"]=="frozen_handwritten",m
+          assert m["shared_spatial_encoder_frozen"] is True,m
+          assert abs(m["ppo_clip"]-0.2)<1e-9,m
+          assert m["vocab_expansion"]["new_unit_tokens"]==[],m["vocab_expansion"]
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-g3
+          path: artifacts/output/
+          retention-days: 30
+
+  eval_g3:
+    name: Gen 3 fixed small arena shard ${{ matrix.shard }}
+    needs: train_g3
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g3
+          path: checkpoint
+      - name: Fixed greedy radius-one evaluation
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/eval"
+          seed_base=$((9100000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/small_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=20 \
+            --generation=3 \
+            --shard-index="${{ matrix.shard }}" \
+            --seed-base="$seed_base" \
+            --temperature=0 \
+            --record-training=false \
+            --max-turns=8 \
+            --out="$GITHUB_WORKSPACE/artifacts/eval"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-eval-g3-s${{ matrix.shard }}
+          path: artifacts/eval/
+          retention-days: 30
+
+  data_g4:
+    name: Generation 4 small-arena training shard ${{ matrix.shard }}
+    needs: train_g3
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g3
+          path: checkpoint
+      - name: Generate randomized radius-one games
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/data"
+          seed_base=$((8100000 + 4 * 1000000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/small_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=80 \
+            --generation=4 \
+            --shard-index="${{ matrix.shard }}" \
+            --seed-base="$seed_base" \
+            --temperature=1.0 \
+            --record-training=true \
+            --max-turns=8 \
+            --out="$GITHUB_WORKSPACE/artifacts/data"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-train-g4-s${{ matrix.shard }}
+          path: artifacts/data/
+          retention-days: 30
+
+  train_g4:
+    name: Train generation 4
+    needs: data_g4
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g3
+          path: checkpoint
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: small-arena-train-g4-s*
+          path: generation-shards
+      - name: Merge generation and audit small-arena contract
+        run: |
+          mkdir -p artifacts/combined artifacts/output
+          find generation-shards -name policy_steps.jsonl -print | sort | xargs cat > artifacts/combined/policy_steps.jsonl
+          find generation-shards -name value_examples.jsonl -print | sort | xargs cat > artifacts/combined/value_examples.jsonl
+          find generation-shards -name games.jsonl -print | sort | xargs cat > artifacts/combined/games.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          games=[json.loads(x) for x in Path("artifacts/combined/games.jsonl").read_text().splitlines() if x.strip()]
+          policy=[json.loads(x) for x in Path("artifacts/combined/policy_steps.jsonl").read_text().splitlines() if x.strip()]
+          values=[json.loads(x) for x in Path("artifacts/combined/value_examples.jsonl").read_text().splitlines() if x.strip()]
+          ids=[g["game_id"] for g in games]
+          assert len(games)==960,len(games)
+          assert len(ids)==len(set(ids)),(len(ids),len(set(ids)))
+          assert len({g["scenario_seed"] for g in games})==480
+          assert sum(g["matchup"]=="3v3" for g in games)==768
+          assert all(g["matchup"] in {"3v3","2v2","3v2","2v3"} for g in games)
+          assert {int(x["generation"]) for x in policy}=={4}
+          assert {int(x["source"]["generation"]) for x in values}=={4}
+          for row in policy[:500]:
+              state=row["state"]
+              assert state["hex_radius"]==1
+              defs={u["def_path"].split("/")[-1] for group in state["groups"] for u in group["units"]}
+              assert defs <= {"marine.tres","zergling.tres"},defs
+          print(json.dumps({"games":len(games),"base_states":len({g["scenario_seed"] for g in games}),"three_v_three_games":sum(g["matchup"]=="3v3" for g in games),"policy_steps":len(policy),"value_examples":len(values)}))
+          PY
+      - name: One clipped outcome update pass
+        run: |
+          python -m ml.value_model.train_outcome_actor_critic \
+            --base-checkpoint="checkpoint/model.pt" \
+            --policy-steps=artifacts/combined/policy_steps.jsonl \
+            --value-examples=artifacts/combined/value_examples.jsonl \
+            --output=artifacts/output/model.pt \
+            --value-learning-rate=1e-4 \
+            --policy-learning-rate=1e-4 \
+            --entropy-beta=0.01 \
+            --ppo-clip=0.2 \
+            --seed=4 \
+            --device=cpu \
+            | tee artifacts/output/training_metrics.json
+      - name: Audit training invariants
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/output/training_metrics.json").read_text())
+          assert m["training_passes"]==1 and m["epochs"]==0,m
+          assert m["mcts_used"] is False,m
+          assert m["training_opponent"]=="frozen_handwritten",m
+          assert m["shared_spatial_encoder_frozen"] is True,m
+          assert abs(m["ppo_clip"]-0.2)<1e-9,m
+          assert m["vocab_expansion"]["new_unit_tokens"]==[],m["vocab_expansion"]
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-g4
+          path: artifacts/output/
+          retention-days: 30
+
+  eval_g4:
+    name: Gen 4 fixed small arena shard ${{ matrix.shard }}
+    needs: train_g4
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g4
+          path: checkpoint
+      - name: Fixed greedy radius-one evaluation
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/eval"
+          seed_base=$((9100000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/small_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=20 \
+            --generation=4 \
+            --shard-index="${{ matrix.shard }}" \
+            --seed-base="$seed_base" \
+            --temperature=0 \
+            --record-training=false \
+            --max-turns=8 \
+            --out="$GITHUB_WORKSPACE/artifacts/eval"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-eval-g4-s${{ matrix.shard }}
+          path: artifacts/eval/
+          retention-days: 30
+
+  data_g5:
+    name: Generation 5 small-arena training shard ${{ matrix.shard }}
+    needs: train_g4
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g4
+          path: checkpoint
+      - name: Generate randomized radius-one games
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/data"
+          seed_base=$((8100000 + 5 * 1000000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/small_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=80 \
+            --generation=5 \
+            --shard-index="${{ matrix.shard }}" \
+            --seed-base="$seed_base" \
+            --temperature=1.0 \
+            --record-training=true \
+            --max-turns=8 \
+            --out="$GITHUB_WORKSPACE/artifacts/data"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-train-g5-s${{ matrix.shard }}
+          path: artifacts/data/
+          retention-days: 30
+
+  train_g5:
+    name: Train generation 5
+    needs: data_g5
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g4
+          path: checkpoint
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: small-arena-train-g5-s*
+          path: generation-shards
+      - name: Merge generation and audit small-arena contract
+        run: |
+          mkdir -p artifacts/combined artifacts/output
+          find generation-shards -name policy_steps.jsonl -print | sort | xargs cat > artifacts/combined/policy_steps.jsonl
+          find generation-shards -name value_examples.jsonl -print | sort | xargs cat > artifacts/combined/value_examples.jsonl
+          find generation-shards -name games.jsonl -print | sort | xargs cat > artifacts/combined/games.jsonl
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          games=[json.loads(x) for x in Path("artifacts/combined/games.jsonl").read_text().splitlines() if x.strip()]
+          policy=[json.loads(x) for x in Path("artifacts/combined/policy_steps.jsonl").read_text().splitlines() if x.strip()]
+          values=[json.loads(x) for x in Path("artifacts/combined/value_examples.jsonl").read_text().splitlines() if x.strip()]
+          ids=[g["game_id"] for g in games]
+          assert len(games)==960,len(games)
+          assert len(ids)==len(set(ids)),(len(ids),len(set(ids)))
+          assert len({g["scenario_seed"] for g in games})==480
+          assert sum(g["matchup"]=="3v3" for g in games)==768
+          assert all(g["matchup"] in {"3v3","2v2","3v2","2v3"} for g in games)
+          assert {int(x["generation"]) for x in policy}=={5}
+          assert {int(x["source"]["generation"]) for x in values}=={5}
+          for row in policy[:500]:
+              state=row["state"]
+              assert state["hex_radius"]==1
+              defs={u["def_path"].split("/")[-1] for group in state["groups"] for u in group["units"]}
+              assert defs <= {"marine.tres","zergling.tres"},defs
+          print(json.dumps({"games":len(games),"base_states":len({g["scenario_seed"] for g in games}),"three_v_three_games":sum(g["matchup"]=="3v3" for g in games),"policy_steps":len(policy),"value_examples":len(values)}))
+          PY
+      - name: One clipped outcome update pass
+        run: |
+          python -m ml.value_model.train_outcome_actor_critic \
+            --base-checkpoint="checkpoint/model.pt" \
+            --policy-steps=artifacts/combined/policy_steps.jsonl \
+            --value-examples=artifacts/combined/value_examples.jsonl \
+            --output=artifacts/output/model.pt \
+            --value-learning-rate=1e-4 \
+            --policy-learning-rate=1e-4 \
+            --entropy-beta=0.01 \
+            --ppo-clip=0.2 \
+            --seed=5 \
+            --device=cpu \
+            | tee artifacts/output/training_metrics.json
+      - name: Audit training invariants
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("artifacts/output/training_metrics.json").read_text())
+          assert m["training_passes"]==1 and m["epochs"]==0,m
+          assert m["mcts_used"] is False,m
+          assert m["training_opponent"]=="frozen_handwritten",m
+          assert m["shared_spatial_encoder_frozen"] is True,m
+          assert abs(m["ppo_clip"]-0.2)<1e-9,m
+          assert m["vocab_expansion"]["new_unit_tokens"]==[],m["vocab_expansion"]
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-g5
+          path: artifacts/output/
+          retention-days: 30
+
+  eval_g5:
+    name: Gen 5 fixed small arena shard ${{ matrix.shard }}
+    needs: train_g5
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: 4.6.0
+          use-dotnet: false
+          include-templates: false
+      - name: Import Godot project
+        working-directory: hex-strategy-game
+        run: godot --headless --import
+      - uses: actions/download-artifact@v4
+        with:
+          name: small-arena-g5
+          path: checkpoint
+      - name: Fixed greedy radius-one evaluation
+        working-directory: hex-strategy-game
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/eval"
+          seed_base=$((9100000 + ${{ matrix.shard }} * 100000))
+          godot --headless --path . res://tools/small_arena_generation.tscn -- \
+            --checkpoint="$GITHUB_WORKSPACE/checkpoint/model.pt" \
+            --base-games=20 \
+            --generation=5 \
+            --shard-index="${{ matrix.shard }}" \
+            --seed-base="$seed_base" \
+            --temperature=0 \
+            --record-training=false \
+            --max-turns=8 \
+            --out="$GITHUB_WORKSPACE/artifacts/eval"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-eval-g5-s${{ matrix.shard }}
+          path: artifacts/eval/
+          retention-days: 30
+
+  report:
+    name: Build small-arena learning curve
+    needs: [eval_g0, eval_g1, eval_g2, eval_g3, eval_g4, eval_g5]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: small-arena-eval-g*-s*
+          path: eval-shards
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: small-arena-g*
+          path: checkpoints
+      - name: Summarize fixed radius-one progression
+        run: |
+          mkdir -p artifacts/report
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          rows=[]
+          for gen in range(6):
+              manifests=[json.loads(p.read_text()) for p in sorted(Path("eval-shards").glob(f"small-arena-eval-g{gen}-s*/manifest.json"))]
+              assert len(manifests)==4,(gen,len(manifests))
+              games=[g for m in manifests for g in m["games"]]
+              assert len(games)==160,(gen,len(games))
+              counts={k:0 for k in ["win","loss","draw","unresolved","failed"]}
+              matchup={}
+              faction={}
+              for g in games:
+                  if not g["valid"]:
+                      bucket="failed"
+                  elif g["status"]=="turn_limit":
+                      bucket="unresolved"
+                  elif g["neural_outcome"]>0:
+                      bucket="win"
+                  elif g["neural_outcome"]<0:
+                      bucket="loss"
+                  else:
+                      bucket="draw"
+                  counts[bucket]+=1
+                  matchup.setdefault(g["matchup"],{k:0 for k in counts})[bucket]+=1
+                  faction.setdefault(g["neural_group"],{k:0 for k in counts})[bucket]+=1
+              decisive=counts["win"]+counts["loss"]
+              row={"generation":gen,"games":160,"counts":counts,
+                   "decisive_win_rate":counts["win"]/decisive if decisive else 0,
+                   "matchup_counts":matchup,"faction_counts":faction}
+              if gen>0:
+                  m=json.loads(Path(f"checkpoints/small-arena-g{gen}/training_metrics.json").read_text())
+                  row["ppo_clipped_fraction"]=m["ppo_clipped_fraction"]
+                  row["policy_entropy_after"]=m["policy_after"]["mean_entropy"]
+                  row["mean_advantage"]=m["mean_advantage"]
+                  row["mean_abs_advantage"]=m["mean_abs_advantage"]
+                  row["value_mse_after"]=m["value_after"]["mse"]
+              rows.append(row)
+          Path("artifacts/report/learning_curve.json").write_text(json.dumps(rows,indent=2)+"\n")
+          lines=[
+              "# Radius-one Marine vs Zergling learning curve",
+              "",
+              "Direct neural policy vs frozen handwritten heuristic. Fixed evaluation: 160 games/generation, 80% 3v3 base states.",
+              "",
+              "| Gen | Neural wins | Heuristic wins | Draw | Unresolved | Decisive win rate | Entropy |",
+              "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+          ]
+          for r in rows:
+              ent="" if r["generation"]==0 else f"{r['policy_entropy_after']:.3f}"
+              lines.append(f"| {r['generation']} | {r['counts']['win']} | {r['counts']['loss']} | {r['counts']['draw']} | {r['counts']['unresolved']} | {r['decisive_win_rate']:.1%} | {ent} |")
+          summary="\n".join(lines)+"\n"
+          Path("artifacts/report/summary.md").write_text(summary)
+          with Path(__import__("os").environ["GITHUB_STEP_SUMMARY"]).open("a") as h:
+              h.write(summary)
+          print(summary)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: small-arena-v3-learning-curve
+          path: artifacts/report/
+          retention-days: 30

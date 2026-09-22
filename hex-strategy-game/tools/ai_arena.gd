@@ -10,6 +10,7 @@ extends Node
 const PureStateArenaSuite = preload("res://src/simulation/pure_state_arena_suite.gd")
 const PureStateGameRollout = preload("res://src/simulation/pure_state_game_rollout.gd")
 const PureStateNeuralEvaluator = preload("res://src/simulation/pure_state_neural_evaluator.gd")
+const GameplayAI = preload("res://src/battle/ai/gameplay_ai.gd")
 const DeterministicShard = preload("res://tools/deterministic_shard.gd")
 
 const MANIFEST_SCHEMA_VERSION := 1
@@ -27,6 +28,8 @@ func _run_arena() -> void:
 	var challenger_profile := str(args.get("challenger-profile", "fast"))
 	var champion_evaluator := str(args.get("champion-evaluator", "handwritten"))
 	var challenger_evaluator := str(args.get("challenger-evaluator", "handwritten"))
+	var champion_policy := str(args.get("champion-policy", GameplayAI.POLICY_OPPONENT_RESPONSE))
+	var challenger_policy := str(args.get("challenger-policy", GameplayAI.POLICY_OPPONENT_RESPONSE))
 	var seed_base := int(args.get("seed-base", str(PureStateArenaSuite.DEFAULT_SEED_BASE)))
 	var shard_index := int(args.get("shard-index", "0"))
 	var shard_count := int(args.get("shard-count", "1"))
@@ -44,6 +47,8 @@ func _run_arena() -> void:
 		return
 	var champion_settings := PureStateArenaSuite.agent_settings(champion_profile, champion_evaluator)
 	var challenger_settings := PureStateArenaSuite.agent_settings(challenger_profile, challenger_evaluator)
+	champion_settings["policy"] = champion_policy
+	challenger_settings["policy"] = challenger_policy
 	if champion_settings.is_empty() or challenger_settings.is_empty():
 		push_error("Unknown arena agent config champion=%s/%s challenger=%s/%s" % [
 			champion_profile, champion_evaluator, challenger_profile, challenger_evaluator,
@@ -57,6 +62,7 @@ func _run_arena() -> void:
 		if str(settings.get("evaluator", "")) == "neural" and args.has("checkpoint"):
 			evaluation["checkpoint_path"] = str(args["checkpoint"])
 			evaluation["learned_proposals"] = str(args.get("learned-proposals", "false")) == "true"
+			evaluation["temperature"] = float(args.get("direct-temperature", "0.0"))
 		settings["evaluator_settings"] = evaluation
 	if str(args.get("challenger-selective-continuation", "false")) == "true":
 		var challenger_eval: Dictionary = challenger_settings.get("evaluator_settings", {}).duplicate(true)
@@ -201,6 +207,8 @@ func _run_arena() -> void:
 		"challenger_profile": challenger_profile,
 		"champion_evaluator": champion_evaluator,
 		"challenger_evaluator": challenger_evaluator,
+		"champion_policy": champion_policy,
+		"challenger_policy": challenger_policy,
 		"champion_settings": champion_settings.duplicate(true),
 		"challenger_settings": challenger_settings.duplicate(true),
 		"preset_games": all_jobs.size(),

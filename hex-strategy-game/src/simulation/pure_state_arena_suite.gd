@@ -199,6 +199,14 @@ static func get_preset(
 	return jobs
 
 
+static func build_generated_pair_jobs(
+	scenario_seed: int,
+	preset_name: String = "training",
+	map_profile: String = DEFAULT_MAP_PROFILE
+) -> Array:
+	return _make_pair_jobs(scenario_seed, preset_name, map_profile)
+
+
 static func build_generated_state(
 	scenario_seed: int,
 	preset_name: String = "fast",

@@ -172,6 +172,10 @@ static func play_game_with_settings(
 		turn_record[group_b + "_worst_case_score"] = float(diagnostics_b.get("best_worst_case_score", 0.0))
 		_add_search_metrics(turn_record, group_a, diagnostics_a)
 		_add_search_metrics(turn_record, group_b, diagnostics_b)
+		if diagnostics_a.has("prefix_rows"):
+			turn_record[group_a + "_policy_prefix_rows"] = (diagnostics_a.get("prefix_rows", []) as Array).duplicate(true)
+		if diagnostics_b.has("prefix_rows"):
+			turn_record[group_b + "_policy_prefix_rows"] = (diagnostics_b.get("prefix_rows", []) as Array).duplicate(true)
 		if record_states:
 			turn_record["state_before"] = state.duplicate(true)
 			turn_record["state_after"] = next_state.duplicate(true)
