@@ -42,7 +42,7 @@ jobs:
         run: godot --headless --import
       - uses: actions/download-artifact@v4
         with:
-          name: small-selfplay-v5-balanced-g10
+          name: small-selfplay-v5-balanced-g5
           path: checkpoint
           repository: Sanghvimanav/godot-hex-strategy-game
           run-id: ${{ env.CONTINUE_RUN_ID }}
@@ -80,7 +80,7 @@ jobs:
       - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - uses: actions/download-artifact@v4
         with:
-          name: small-selfplay-v5-balanced-g10
+          name: small-selfplay-v5-balanced-g5
           path: checkpoint
           repository: Sanghvimanav/godot-hex-strategy-game
           run-id: ${{ env.CONTINUE_RUN_ID }}
