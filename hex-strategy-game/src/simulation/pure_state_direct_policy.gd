@@ -75,6 +75,107 @@ static func choose_plan(
     }
 
 
+static func build_demonstration_rows(
+    state: Dictionary,
+    group_name: String,
+    opponent_group: String,
+    chosen_actions: Array
+) -> Dictionary:
+    var chosen_by_unit: Dictionary = {}
+    for action_variant in chosen_actions:
+        if not (action_variant is Dictionary):
+            continue
+        var action: Dictionary = (action_variant as Dictionary).duplicate(true)
+        chosen_by_unit[int(action.get("unit_id", -1))] = action
+
+    var prefix: Array = []
+    var rows: Array = []
+    var seen_units: Dictionary = {}
+    for unit_variant in _alive_units(state, group_name):
+        var unit: Dictionary = unit_variant
+        var unit_id := int(unit.get("unit_id", -1))
+        seen_units[unit_id] = true
+        var candidates := _planning_actions(state, unit)
+        if candidates.is_empty():
+            continue
+        var chosen: Dictionary = (
+            (chosen_by_unit[unit_id] as Dictionary).duplicate(true)
+            if chosen_by_unit.has(unit_id)
+            else _hold_action(unit)
+        )
+        var selected_index := _candidate_index(candidates, chosen)
+        if selected_index < 0:
+            return {
+                "valid": false,
+                "error": "human_action_not_in_legal_candidates",
+                "unit_id": unit_id,
+                "chosen_action": chosen,
+                "rows": rows,
+            }
+        var selected: Dictionary = (candidates[selected_index] as Dictionary).duplicate(true)
+        rows.append({
+            "state": state.duplicate(true),
+            "perspective_group": group_name,
+            "opponent_group": opponent_group,
+            "prefix_actions": prefix.duplicate(true),
+            "candidate_actions": candidates.duplicate(true),
+            "selected_index": selected_index,
+            "chosen_action": selected.duplicate(true),
+            "demonstration": true,
+        })
+        prefix.append(selected)
+
+    for unit_id_variant in chosen_by_unit.keys():
+        if not seen_units.has(int(unit_id_variant)):
+            return {
+                "valid": false,
+                "error": "human_action_unit_not_alive",
+                "unit_id": int(unit_id_variant),
+                "rows": rows,
+            }
+
+    return {
+        "valid": true,
+        "error": "",
+        "rows": rows,
+    }
+
+
+static func _candidate_index(candidates: Array, chosen: Dictionary) -> int:
+    var exact := _signature(chosen)
+    for i in range(candidates.size()):
+        var candidate_variant = candidates[i]
+        if candidate_variant is Dictionary and _signature(candidate_variant as Dictionary) == exact:
+            return i
+
+    # Live actions and pure-state actions should normally be exact matches. The
+    # path can differ only in representation for an otherwise unique action, so
+    # allow a path-insensitive fallback when it identifies exactly one candidate.
+    var loose := _loose_signature(chosen)
+    var match_index := -1
+    for i in range(candidates.size()):
+        var candidate_variant = candidates[i]
+        if not (candidate_variant is Dictionary):
+            continue
+        if _loose_signature(candidate_variant as Dictionary) != loose:
+            continue
+        if match_index >= 0:
+            return -1
+        match_index = i
+    return match_index
+
+
+static func _hold_action(unit: Dictionary) -> Dictionary:
+    var cell_variant = unit.get("cell", [0, 0])
+    var cell: Array = (cell_variant as Array).duplicate() if cell_variant is Array else [0, 0]
+    return {
+        "unit_id": int(unit.get("unit_id", -1)),
+        "action_key": "<hold>",
+        "path": [],
+        "end_point": cell,
+    }
+
+
 static func _alive_units(state: Dictionary, group_name: String) -> Array:
     var result: Array = []
     for group_variant in state.get("groups", []):
@@ -102,14 +203,7 @@ static func _planning_actions(state: Dictionary, unit: Dictionary) -> Array:
             continue
         seen[signature] = true
         actions.append(action)
-    var cell_variant = unit.get("cell", [0, 0])
-    var cell: Array = (cell_variant as Array).duplicate() if cell_variant is Array else [0, 0]
-    var hold := {
-        "unit_id": int(unit.get("unit_id", -1)),
-        "action_key": "<hold>",
-        "path": [],
-        "end_point": cell,
-    }
+    var hold := _hold_action(unit)
     var hold_signature := _signature(hold)
     if not seen.has(hold_signature):
         actions.append(hold)
@@ -184,4 +278,12 @@ static func _signature(action: Dictionary) -> String:
         str(action.get("action_key", "")),
         str(action.get("end_point", [])),
         str(action.get("path", [])),
+    ]
+
+
+static func _loose_signature(action: Dictionary) -> String:
+    return "%d|%s|%s" % [
+        int(action.get("unit_id", -1)),
+        str(action.get("action_key", "")),
+        str(action.get("end_point", [])),
     ]

@@ -488,9 +488,10 @@ func _show_finish_overlay(status: String, winner: String, termination_reason: St
 	var data_label := Label.new()
 	data_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	if bool(write_result.get("ok", false)):
-		data_label.text = "Saved training/evaluation data to:\n%s\n%d human-policy examples • %d value examples" % [
+		data_label.text = "Saved training/evaluation data to:\n%s\n%d human turns • %d direct-policy steps • %d value examples" % [
 			str(write_result.get("absolute_path", write_result.get("path", ""))),
 			int(write_result.get("human_policy_example_count", 0)),
+			int(write_result.get("human_policy_step_count", 0)),
 			int(write_result.get("value_example_count", 0)),
 		]
 	else:

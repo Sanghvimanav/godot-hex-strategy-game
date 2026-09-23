@@ -5,10 +5,12 @@ class_name ArenaPlaytestData
 ## schema; every completed turn also becomes a human-policy demonstration.
 
 const PureStateTrainingData = preload("res://src/simulation/pure_state_training_data.gd")
+const PureStateDirectPolicy = preload("res://src/simulation/pure_state_direct_policy.gd")
 
 const MANIFEST_SCHEMA_VERSION := 1
 const TRACE_SCHEMA_VERSION := 1
 const POLICY_SCHEMA_VERSION := 1
+const POLICY_STEP_SCHEMA_VERSION := 1
 const DEFAULT_OUTPUT_ROOT := "user://arena_playtests"
 
 
@@ -51,6 +53,17 @@ static func build_artifacts(
 		winner,
 		source
 	)
+	var policy_steps_result := _build_human_policy_steps(
+		game_id,
+		human_group,
+		ai_group,
+		history,
+		status,
+		winner,
+		source
+	)
+	var policy_steps: Array = (policy_steps_result.get("rows", []) as Array).duplicate(true)
+	var policy_step_errors: Array = (policy_steps_result.get("errors", []) as Array).duplicate(true)
 	var trace := {
 		"trace_schema_version": TRACE_SCHEMA_VERSION,
 		"game_id": game_id,
@@ -78,10 +91,13 @@ static func build_artifacts(
 		"source": source.duplicate(true),
 		"value_example_count": value_examples.size(),
 		"human_policy_example_count": policy_examples.size(),
+		"human_policy_step_count": policy_steps.size(),
+		"human_policy_step_error_count": policy_step_errors.size(),
 		"files": {
 			"trace": "trace.json",
 			"value_examples": "value_examples.jsonl",
 			"human_policy_examples": "human_policy_examples.jsonl",
+			"human_policy_steps": "human_policy_steps.jsonl",
 		},
 	}
 	return {
@@ -89,6 +105,8 @@ static func build_artifacts(
 		"trace": trace,
 		"value_examples": value_examples,
 		"human_policy_examples": policy_examples,
+		"human_policy_steps": policy_steps,
+		"human_policy_step_errors": policy_step_errors,
 	}
 
 
@@ -140,13 +158,19 @@ static func write_session(
 		out_dir.path_join("human_policy_examples.jsonl"),
 		artifacts.get("human_policy_examples", []) as Array
 	)
-	var ok := manifest_ok and trace_ok and value_ok and policy_ok
+	var policy_steps_ok := PureStateTrainingData.write_jsonl(
+		out_dir.path_join("human_policy_steps.jsonl"),
+		artifacts.get("human_policy_steps", []) as Array
+	)
+	var ok := manifest_ok and trace_ok and value_ok and policy_ok and policy_steps_ok
 	return {
 		"ok": ok,
 		"path": out_dir,
 		"absolute_path": abs_out,
 		"value_example_count": (artifacts.get("value_examples", []) as Array).size(),
 		"human_policy_example_count": (artifacts.get("human_policy_examples", []) as Array).size(),
+		"human_policy_step_count": (artifacts.get("human_policy_steps", []) as Array).size(),
+		"human_policy_step_error_count": (artifacts.get("human_policy_step_errors", []) as Array).size(),
 	}
 
 
@@ -190,6 +214,66 @@ static func _build_human_policy_examples(
 			"state": state_before.duplicate(true),
 		})
 	return examples
+
+
+static func _build_human_policy_steps(
+	game_id: String,
+	human_group: String,
+	ai_group: String,
+	history: Array,
+	status: String,
+	winner: String,
+	source: Dictionary
+) -> Dictionary:
+	var rows: Array = []
+	var errors: Array = []
+	var terminal_outcome: Variant = null
+	if status == "terminal":
+		terminal_outcome = _perspective_outcome(winner, human_group)
+	for turn_index in range(history.size()):
+		var turn_variant = history[turn_index]
+		if not (turn_variant is Dictionary):
+			continue
+		var turn: Dictionary = turn_variant
+		var state_before_variant = turn.get("state_before", null)
+		if not (state_before_variant is Dictionary):
+			continue
+		var state_before: Dictionary = state_before_variant
+		var built := PureStateDirectPolicy.build_demonstration_rows(
+			state_before,
+			human_group,
+			ai_group,
+			(turn.get("human_actions", []) as Array).duplicate(true)
+		)
+		if not bool(built.get("valid", false)):
+			errors.append({
+				"game_id": game_id,
+				"turn_index": turn_index,
+				"error": str(built.get("error", "unknown")),
+				"unit_id": int(built.get("unit_id", -1)),
+			})
+			continue
+		var step_index := 0
+		for row_variant in built.get("rows", []):
+			if not (row_variant is Dictionary):
+				continue
+			var row: Dictionary = (row_variant as Dictionary).duplicate(true)
+			row.merge({
+				"schema_version": POLICY_STEP_SCHEMA_VERSION,
+				"example_type": "human_policy_step",
+				"game_id": game_id,
+				"scenario_id": str(state_before.get("scenario_id", "")),
+				"turn_index": turn_index,
+				"step_index": step_index,
+				"terminal_outcome": terminal_outcome,
+				"source": source.duplicate(true),
+			}, true)
+			rows.append(row)
+			step_index += 1
+	return {
+		"rows": rows,
+		"errors": errors,
+	}
 
 
 static func _perspective_outcome(winner: String, perspective_group: String) -> float:
